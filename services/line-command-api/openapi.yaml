@@ -1,0 +1,199 @@
+openapi: 3.1.0
+info:
+  title: line-command-api
+  version: "0.1.0"
+  description: AR holographic work instruction overlay API for BMW iFactoryOS line-command.
+servers:
+  - url: /api/v1
+paths:
+  /ar/instructions/{vin}:
+    get:
+      tags:
+        - AR Instructions
+      summary: Retrieve VIN-specific AR holographic work instruction overlay
+      operationId: getArInstructions
+      description: >
+        Returns the full work instruction payload for the given VIN including
+        option codes, torque specifications, step sequence, variant delta
+        indicators, and a fallback PDF QR code URL. Must respond within 5 s
+        at p95 to satisfy AC-00bc6b07.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: vin
+          required: true
+          description: 17-character Vehicle Identification Number
+          schema:
+            type: string
+            pattern: ^[A-HJ-NPR-Z0-9]{17}$
+        - in: query
+          name: stationId
+          required: true
+          description: "Station identifier (e.g. MARRIAGE-01, FINAL-02)"
+          schema:
+            type: string
+        - in: query
+          name: deviceType
+          required: true
+          description: AR device type for overlay rendering
+          schema:
+            type: string
+            enum:
+              - HoloLens2
+              - iPad
+      responses:
+        "200":
+          description: VIN-specific AR instruction overlay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArInstructionResponse"
+        "400":
+          description: Invalid VIN or missing required query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller does not have the assembly-associate or shift-lead role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: VIN not found in digital thread
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: >
+            Upstream digital thread or instruction store did not respond within
+            timeout; fallback payload included
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArInstructionFallbackResponse"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ArInstructionStep:
+      type: object
+      required:
+        - stepNumber
+        - description
+        - torqueSpecNm
+        - torqueToleranceNm
+        - fastenerPointId
+      properties:
+        stepNumber:
+          type: integer
+        description:
+          type: string
+        torqueSpecNm:
+          type: number
+          format: double
+        torqueToleranceNm:
+          type: number
+          format: double
+        fastenerPointId:
+          type: string
+        isVariantDelta:
+          type: boolean
+          description: True if this step differs from standard i4 configuration
+        variantDeltaNote:
+          type: string
+          description: Human-readable description of what differs for this variant
+        holographicAssetUrl:
+          type: string
+          format: uri
+    ArInstructionResponse:
+      type: object
+      required:
+        - vin
+        - stationId
+        - optionCodes
+        - variantCode
+        - isRareVariant
+        - steps
+        - instructionVersion
+        - fetchedAt
+      properties:
+        vin:
+          type: string
+        stationId:
+          type: string
+        optionCodes:
+          type: array
+          items:
+            type: string
+        variantCode:
+          type: string
+        isRareVariant:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArInstructionStep"
+        instructionVersion:
+          type: string
+        fetchedAt:
+          type: string
+          format: date-time
+        fallbackPdfQrUrl:
+          type: string
+          format: uri
+          description: QR code URL for fallback PDF; always populated
+    ArInstructionFallbackResponse:
+      type: object
+      required:
+        - vin
+        - stationId
+        - fallbackPdfQrUrl
+        - failureLoggedAt
+        - correlationId
+      properties:
+        vin:
+          type: string
+        stationId:
+          type: string
+        fallbackPdfQrUrl:
+          type: string
+          format: uri
+        failureLoggedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+    Error:
+      type: object
+      required:
+        - code
+        - message
+        - correlation_id
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code
+        message:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true

@@ -1,4 +1,5 @@
 import type { ConstraintThreshold, ThresholdListResponse } from "../types/constraints";
+import type { OptimizeRequest, OptimizeResponse } from "../types/optimizer";
 
 const TOKEN_KEY = "ifos_planning_cockpit_token";
 
@@ -60,4 +61,15 @@ export async function upsertConstraintThreshold(
 export function getConstraintStreamUrl(): string {
   if (typeof window === "undefined") return "";
   return `${baseUrl}/constraints/stream`;
+}
+
+export async function postOptimize(body: OptimizeRequest): Promise<OptimizeResponse> {
+  return request<OptimizeResponse>("/optimize", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getOptimizeRun(runId: string): Promise<OptimizeResponse> {
+  return request<OptimizeResponse>(`/optimize/${encodeURIComponent(runId)}`);
 }

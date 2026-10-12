@@ -28,4 +28,14 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
 
 
-settings = Settings()
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+settings = get_settings()

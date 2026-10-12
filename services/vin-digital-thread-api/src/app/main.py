@@ -22,13 +22,19 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Validate config at startup — fails fast with a clear message.
     get_settings()
 
+    from app.torque_consumer import start_torque_consumer
+
+    await start_torque_consumer()
+
     yield
 
     from app.db import close_pool
     from app.kafka_producer import stop_producer
+    from app.torque_consumer import stop_torque_consumer
 
     await close_pool()
     await stop_producer()
+    await stop_torque_consumer()
 
 
 def _error_body(code: str, message: str) -> dict:

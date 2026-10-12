@@ -113,5 +113,13 @@
     "stepLabel": "Schritt {{number}}",
     "torqueUnit": "Nm",
     "translationPending": "Übersetzung ausstehend — Inhalt nicht verfügbar"
+  },
+  "constraintRadar": {
+    "subtitle": "Live Constraint-Überwachung — UNS-Daten, 60-s-Frischegarantie",
+    "configureThresholds": "Schwellenwerte konfigurieren",
+    "refresh": "Aktualisieren",
+    "loading": "Schwellenwerte werden geladen …",
+    "streamDegraded": "UNS-Stream beeinträchtigt",
+    "tilesRegionLabel": "Constraint-Kacheln"
   }
 }

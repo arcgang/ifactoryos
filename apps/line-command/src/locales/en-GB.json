@@ -1,0 +1,101 @@
+{
+  "app": {
+    "name": "BMW Factory OS",
+    "console": "Line Command · Body Shop"
+  },
+  "nav": {
+    "section_line": "Line",
+    "section_shift": "Shift",
+    "command_center": "Command Centre",
+    "station_detail": "Station Detail",
+    "andon_log": "Andon Log",
+    "handover_builder": "Handover Builder",
+    "settings": "Settings"
+  },
+  "lang_toggle": {
+    "label": "Language",
+    "de": "Deutsch",
+    "en": "English"
+  },
+  "command_center": {
+    "title": "Shift Command Centre",
+    "oee_card_title": "OEE — Welding Lines 1–4",
+    "oee_live_badge": "Live",
+    "andon_open_title": "Open Andon Alerts",
+    "andon_active": "{{count}} active",
+    "shift_handover_title": "Shift Handover",
+    "shift_end": "Shift end: {{time}} · {{remaining}} remaining",
+    "open_handover_builder": "Open Handover Builder",
+    "maintenance_dispatch": "Dispatch Maintenance",
+    "acknowledge": "Acknowledge"
+  },
+  "oee_table": {
+    "col_line": "Line",
+    "col_current": "OEE Current",
+    "col_avg": "30-Day Avg",
+    "col_trend": "Trend",
+    "col_status": "Status",
+    "status_normal": "Normal",
+    "status_check": "Check",
+    "status_critical": "Critical"
+  },
+  "andon": {
+    "predictive_label": "Predictive Andon",
+    "reactive_label": "Andon",
+    "minutes_until_failure": "{{count}} min until predicted failure",
+    "translation_pending": "Translation pending"
+  },
+  "alerts": {
+    "electrode_wear_title": "Predictive Andon — Electrode Wear Welding Cell 7",
+    "electrode_wear_body": "Welding current curve shows deviation of −8% from baseline. Predicted failure in {{countdown}}. Dispatch maintenance immediately.",
+    "electrode_wear_source": "Today · 06:02 · Source: Beckhoff PLC — Welding Line 3",
+    "oee_below_target_title": "OEE Below Daily Target — Welding Line 2",
+    "oee_below_target_body": "Current OEE {{current}} · Target {{target}}. Trend last 30 min declining. Possible cause: electrode cleaning cycle overdue.",
+    "oee_below_target_source": "Today · 05:55"
+  },
+  "ar_workbench": {
+    "title": "AR Workbench",
+    "loading": "Loading work instructions…",
+    "error": "Failed to load work instructions.",
+    "retry": "Retry",
+    "empty": "No work instructions available for this VIN.",
+    "step_label": "Step {{number}}",
+    "torque_unit": "Nm",
+    "translation_pending": "Translation pending"
+  },
+  "maintenance_dispatch": {
+    "title": "Maintenance Dispatch",
+    "station_label": "Station",
+    "issue_label": "Issue",
+    "priority_label": "Priority",
+    "priority_high": "High",
+    "priority_medium": "Medium",
+    "priority_low": "Low",
+    "submit": "Submit Order",
+    "cancel": "Cancel",
+    "success": "Maintenance order submitted successfully.",
+    "error": "Submission failed. Please try again."
+  },
+  "handover_builder": {
+    "title": "Handover Builder",
+    "shift_label": "Shift",
+    "open_issues_label": "Open Issues",
+    "notes_label": "Notes",
+    "submit": "Complete Handover",
+    "cancel": "Cancel",
+    "success": "Handover submitted successfully.",
+    "error": "Submission failed. Please try again."
+  },
+  "settings": {
+    "title": "Settings",
+    "language_section": "Language",
+    "language_label": "Display Language",
+    "save": "Save",
+    "saved": "Settings saved."
+  },
+  "errors": {
+    "generic": "An error occurred. Please reload the page.",
+    "not_found": "Page not found.",
+    "unauthorized": "Unauthorised. Please sign in again."
+  }
+}

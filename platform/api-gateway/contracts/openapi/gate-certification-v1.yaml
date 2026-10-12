@@ -1,0 +1,400 @@
+openapi: 3.1.0
+info:
+  title: Gate Certification API
+  version: 1.0.0
+  description: >
+    Quality gate health-score evaluation, digital birth certificate issuance, and repair
+    routing. Results anchored on Hyperledger Fabric for tamper-evidence.
+    Data residency: Azure Germany West Central (EU).
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/gate
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/gate
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "60/minute per client"
+
+paths:
+  /health-score/{vin}:
+    get:
+      operationId: getHealthScore
+      summary: Retrieve the current quality gate health score for a VIN
+      x-rate-limit: "120/minute per client"
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          description: 17-character Vehicle Identification Number
+      responses:
+        "200":
+          description: VIN health score
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthScoreResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /certify:
+    post:
+      operationId: certifyVin
+      summary: Issue a Digital Birth Certificate for a VIN that has passed all gates
+      x-rate-limit: "30/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertifyRequest"
+      responses:
+        "201":
+          description: Certificate issued and anchored on Fabric
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /route-to-repair:
+    post:
+      operationId: routeToRepair
+      summary: Route a VIN to the repair bay based on gate failure analysis
+      x-rate-limit: "30/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RouteToRepairRequest"
+      responses:
+        "201":
+          description: VIN routed to repair
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteToRepairResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: VIN not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Certificate already issued for this VIN
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: VIN has not passed all required quality gates
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    GateResultSnapshot:
+      type: object
+      required:
+        - gateId
+        - stationResults
+      properties:
+        gateId:
+          type: string
+          description: Quality gate identifier (e.g., GATE-3)
+        stationResults:
+          type: array
+          items:
+            type: object
+            required:
+              - stationCode
+              - result
+            properties:
+              stationCode:
+                type: string
+                enum:
+                  - DIM
+                  - LEAK
+                  - ELEC
+                  - NVH
+                  - ADAS
+                description: Gate station code
+              result:
+                type: string
+                enum:
+                  - PASS
+                  - CONDITIONAL
+                  - FAIL
+                description: Station-level result
+              details:
+                type: string
+                description: Optional free-text detail or anomaly description
+      description: Snapshot of all gate station results at time of certification
+
+    HealthScoreResponse:
+      type: object
+      required:
+        - vin
+        - healthScore
+        - gateResult
+        - evaluatedAt
+      properties:
+        vin:
+          type: string
+        healthScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        gateResult:
+          $ref: "#/components/schemas/GateResultSnapshot"
+        evaluatedAt:
+          type: string
+          format: date-time
+        requiresRepair:
+          type: boolean
+
+    CertifyRequest:
+      type: object
+      required:
+        - vin
+        - gateResultSnapshot
+        - healthScore
+        - validatorId
+      properties:
+        vin:
+          type: string
+          minLength: 17
+          maxLength: 17
+        gateResultSnapshot:
+          $ref: "#/components/schemas/GateResultSnapshot"
+        healthScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        validatorId:
+          type: string
+          format: uuid
+        shiftId:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+          format: uuid
+
+    CertificateRecord:
+      type: object
+      required:
+        - certificateId
+        - vin
+        - gateResultSnapshot
+        - healthScore
+        - validatorId
+        - issuedAt
+        - certificateHash
+        - fabricTransactionId
+        - fabricBlockNumber
+        - anchoredAt
+        - sourceSystem
+      properties:
+        certificateId:
+          type: string
+          format: uuid
+        vin:
+          type: string
+          minLength: 17
+          maxLength: 17
+        gateResultSnapshot:
+          $ref: "#/components/schemas/GateResultSnapshot"
+        healthScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        validatorId:
+          type: string
+          format: uuid
+        issuedAt:
+          type: string
+          format: date-time
+        certificateHash:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+        fabricTransactionId:
+          type: string
+        fabricBlockNumber:
+          type: integer
+          format: int64
+        anchoredAt:
+          type: string
+          format: date-time
+        sourceSystem:
+          type: string
+          enum:
+            - quality-studio
+            - legacy
+        shiftId:
+          type: string
+          format: uuid
+
+    RouteToRepairRequest:
+      type: object
+      required:
+        - vin
+        - gateId
+        - failedStations
+        - routedByUserId
+      properties:
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        gateId:
+          type: string
+        failedStations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - DIM
+              - LEAK
+              - ELEC
+              - NVH
+              - ADAS
+        routedByUserId:
+          type: string
+          format: uuid
+        notes:
+          type: string
+          maxLength: 2000
+        idempotencyKey:
+          type: string
+          format: uuid
+
+    RouteToRepairResponse:
+      type: object
+      required:
+        - repairOrderId
+        - vin
+        - repairBayId
+        - routedAt
+      properties:
+        repairOrderId:
+          type: string
+          format: uuid
+        vin:
+          type: string
+        repairBayId:
+          type: string
+        routedAt:
+          type: string
+          format: date-time
+        estimatedCompletionAt:
+          type:
+            - string
+            - "null"
+          format: date-time

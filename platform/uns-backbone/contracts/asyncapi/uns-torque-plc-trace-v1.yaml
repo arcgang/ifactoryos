@@ -1,0 +1,112 @@
+asyncapi: 2.6.0
+info:
+  title: UNS Torque PLC Trace
+  version: 1.0.0
+  description: High-frequency torque trace events captured from Beckhoff PLC controllers via the UNS backbone.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.ifos.munich.uns.torque.plc-trace.v1:
+    description: Raw torque trace from PLC captured during bolt tightening; used for Predictive Andon threshold evaluation.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID; set to your service name (e.g. vin-digital-thread-torque-consumer)
+        partitions: 12
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveTorquePlcTrace
+      summary: Receive a PLC torque trace event
+      message:
+        $ref: '#/components/messages/TorquePlcTrace'
+
+components:
+  messages:
+    TorquePlcTrace:
+      name: TorquePlcTrace
+      title: Torque PLC Trace
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TorquePlcTracePayload'
+
+  schemas:
+    TorquePlcTracePayload:
+      type: object
+      required:
+        - eventId
+        - correlationId
+        - occurredAt
+        - plant
+        - stationId
+        - vin
+        - boltId
+        - targetTorqueNm
+        - actualTorqueNm
+        - withinTolerance
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        correlationId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        boltId:
+          type: string
+          description: Bolt or fastener identifier within the station fixture
+        targetTorqueNm:
+          type: number
+          format: double
+          description: Programmed target torque in Newton-metres
+        actualTorqueNm:
+          type: number
+          format: double
+          description: Measured actual torque in Newton-metres
+        withinTolerance:
+          type: boolean
+          description: True if actualTorqueNm is within the configured tolerance band
+        plcTimestampUs:
+          type: integer
+          description: PLC hardware timestamp in microseconds since epoch
+        tracePoints:
+          type: array
+          description: Time-series trace samples from the PLC controller
+          items:
+            type: object
+            required: [timeOffsetMs, torqueNm]
+            properties:
+              timeOffsetMs:
+                type: integer
+                description: Milliseconds offset from tightening start
+              torqueNm:
+                type: number
+                format: double
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

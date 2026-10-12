@@ -1,0 +1,114 @@
+{
+  "app": {
+    "title": "Quality Studio",
+    "appName": "BMW Factory OS"
+  },
+  "nav": {
+    "manufacturing": "Manufacturing",
+    "arWorkbench": "AR Workbench",
+    "defectDashboard": "Defect Dashboard",
+    "processReplay": "Process Replay",
+    "quality": "Quality",
+    "gateCommand": "Gate Command",
+    "certificateStudio": "Certificate Studio",
+    "settings": "Settings"
+  },
+  "topbar": {
+    "arWorkbench": "Quality Studio · AR Workbench",
+    "languageLabel": "Language: English"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageSelect": "Select display language",
+    "save": "Save",
+    "saved": "Saved"
+  },
+  "language": {
+    "de-DE": "German",
+    "en-GB": "English"
+  },
+  "arWorkbench": {
+    "title": "AR Workbench",
+    "vin": "VIN",
+    "station": "Station",
+    "step": "Step",
+    "stepOf": "Step {{current}} of {{total}}",
+    "instruction": "Instruction",
+    "torqueSpec": "Torque Specification",
+    "complete": "Complete",
+    "next": "Next",
+    "prev": "Previous"
+  },
+  "defectDashboard": {
+    "title": "Defect Dashboard",
+    "defectClass": "Defect Class",
+    "runDefectGenome": "Run DefectGenome",
+    "rootCause": "Root Cause",
+    "probability": "Probability",
+    "affectedVins": "Affected VINs",
+    "lowConfidenceBadge": "Low Confidence",
+    "createCorrectiveAction": "Create Corrective Action",
+    "loading": "Loading…",
+    "error": "Error loading defect data. Please retry.",
+    "empty": "No defects found.",
+    "retry": "Retry"
+  },
+  "processReplay": {
+    "title": "Process Replay",
+    "launch": "Launch Process Replay",
+    "stage": "Prep Stage",
+    "dataUnavailable": "Data Unavailable",
+    "completeness": "Completeness",
+    "loading": "Loading replay…",
+    "error": "Error loading replay. Please retry.",
+    "empty": "No replay available."
+  },
+  "gateCommand": {
+    "title": "Gate Command",
+    "healthScore": "Health Score",
+    "gate": "Gate",
+    "pass": "Pass",
+    "conditionalPass": "Conditional Pass",
+    "fail": "Fail",
+    "pending": "Pending",
+    "certify": "Certify",
+    "certifyDisabledTooltip": "Cannot certify — pending gate results: {{gates}}",
+    "manualOverride": "Manual Override",
+    "overrideJustification": "Enter justification",
+    "awaitingSupervisor": "Awaiting supervisor approval",
+    "loading": "Loading gate results…",
+    "error": "Error loading gate results. Please retry.",
+    "empty": "No gate results available."
+  },
+  "certificateStudio": {
+    "title": "Certificate Studio",
+    "digitalBirthCertificate": "Digital Birth Certificate",
+    "exportShiftSummary": "Export Shift Summary",
+    "fabricHash": "Fabric Transaction Hash",
+    "issuedAt": "Issued at",
+    "loading": "Loading certificate…",
+    "error": "Error loading certificate. Please retry.",
+    "empty": "No certificate available."
+  },
+  "alerts": {
+    "translationPending": "Translation pending",
+    "defectCluster": {
+      "title": "DefectGenome Cluster Alert",
+      "body": "Cluster {{clusterId}}: {{count}} affected VINs · Root cause: {{rootCause}} · Confidence {{confidence}}%",
+      "viewReplay": "Open Process Replay",
+      "acknowledge": "Acknowledge"
+    },
+    "gateAnomaly": {
+      "title": "Gate Anomaly Detected",
+      "body": "VIN {{vin}} – Gate {{gate}}: measurement {{actual}} outside tolerance [{{low}}–{{high}}]",
+      "acknowledge": "Acknowledge"
+    }
+  },
+  "errors": {
+    "unauthorized": "Unauthorised. Please log in again.",
+    "networkError": "Network error. Please check your connection.",
+    "serverError": "Server error. Please contact support.",
+    "sessionExpired": "Session expired. Please log in."
+  }
+}

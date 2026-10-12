@@ -1,0 +1,29 @@
+name: asyncapi
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install AsyncAPI CLI
+        run: npm install -g @asyncapi/cli
+      - name: Validate all AsyncAPI specs
+        run: |
+          for f in platform/uns-backbone/contracts/asyncapi/*.yaml; do
+            echo "Validating $f"
+            asyncapi validate "$f"
+          done
+      - name: Generate stub (sequence-optimizer — Node.js example)
+        run: |
+          asyncapi generate fromTemplate \
+            platform/uns-backbone/contracts/asyncapi/sequence-optimizer-events-v1.yaml \
+            @asyncapi/nodejs-template \
+            --output /tmp/asyncapi-gen-out/sequence-optimizer \
+            --param server=production \
+            --force-write

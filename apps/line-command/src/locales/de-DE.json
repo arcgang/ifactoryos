@@ -1,0 +1,101 @@
+{
+  "app": {
+    "name": "BMW Factory OS",
+    "console": "Line Command · Karosseriebau"
+  },
+  "nav": {
+    "section_line": "Linie",
+    "section_shift": "Schicht",
+    "command_center": "Leitstand",
+    "station_detail": "Stationsdetail",
+    "andon_log": "Andon-Protokoll",
+    "handover_builder": "Übergabe-Builder",
+    "settings": "Einstellungen"
+  },
+  "lang_toggle": {
+    "label": "Sprache",
+    "de": "Deutsch",
+    "en": "English"
+  },
+  "command_center": {
+    "title": "Schichtleitstand",
+    "oee_card_title": "OEE — Schweißlinien 1–4",
+    "oee_live_badge": "Live",
+    "andon_open_title": "Offene Andon-Meldungen",
+    "andon_active": "{{count}} aktiv",
+    "shift_handover_title": "Schichtübergabe",
+    "shift_end": "Schichtende: {{time}} Uhr · Noch {{remaining}}",
+    "open_handover_builder": "Übergabe-Builder öffnen",
+    "maintenance_dispatch": "Wartung beauftragen",
+    "acknowledge": "Bestätigen"
+  },
+  "oee_table": {
+    "col_line": "Linie",
+    "col_current": "OEE aktuell",
+    "col_avg": "30-Tage-Ø",
+    "col_trend": "Trend",
+    "col_status": "Status",
+    "status_normal": "Normal",
+    "status_check": "Prüfen",
+    "status_critical": "Kritisch"
+  },
+  "andon": {
+    "predictive_label": "Prädikativer Andon",
+    "reactive_label": "Andon",
+    "minutes_until_failure": "{{count}} Min. bis zum prognostizierten Ausfall",
+    "translation_pending": "Übersetzung ausstehend"
+  },
+  "alerts": {
+    "electrode_wear_title": "Prädikativer Andon — Elektrodenverschleiß Schweißzelle 7",
+    "electrode_wear_body": "Schweißstrom-Kurve zeigt Abweichung von −8 % gegenüber Basis. Prognostizierter Ausfall in {{countdown}}. Sofort Wartung beauftragen.",
+    "electrode_wear_source": "Heute · 06:02 Uhr · Quelle: Beckhoff PLC — Schweißlinie 3",
+    "oee_below_target_title": "OEE unter Tagesziel — Schweißlinie 2",
+    "oee_below_target_body": "Aktueller OEE {{current}} · Ziel {{target}}. Tendenz letzte 30 Min. fallend. Mögliche Ursache: Elektrodenreinigungszyklus überfällig.",
+    "oee_below_target_source": "Heute · 05:55 Uhr"
+  },
+  "ar_workbench": {
+    "title": "AR Workbench",
+    "loading": "Arbeitsanweisungen werden geladen…",
+    "error": "Arbeitsanweisungen konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "empty": "Keine Arbeitsanweisungen für diese VIN verfügbar.",
+    "step_label": "Schritt {{number}}",
+    "torque_unit": "Nm",
+    "translation_pending": "Übersetzung ausstehend"
+  },
+  "maintenance_dispatch": {
+    "title": "Wartungsauftrag",
+    "station_label": "Station",
+    "issue_label": "Problem",
+    "priority_label": "Priorität",
+    "priority_high": "Hoch",
+    "priority_medium": "Mittel",
+    "priority_low": "Niedrig",
+    "submit": "Auftrag senden",
+    "cancel": "Abbrechen",
+    "success": "Wartungsauftrag erfolgreich gesendet.",
+    "error": "Senden fehlgeschlagen. Bitte erneut versuchen."
+  },
+  "handover_builder": {
+    "title": "Übergabe-Builder",
+    "shift_label": "Schicht",
+    "open_issues_label": "Offene Punkte",
+    "notes_label": "Notizen",
+    "submit": "Übergabe abschließen",
+    "cancel": "Abbrechen",
+    "success": "Übergabe erfolgreich übermittelt.",
+    "error": "Übermittlung fehlgeschlagen. Bitte erneut versuchen."
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language_section": "Sprache",
+    "language_label": "Anzeigesprache",
+    "save": "Speichern",
+    "saved": "Einstellungen gespeichert."
+  },
+  "errors": {
+    "generic": "Ein Fehler ist aufgetreten. Bitte Seite neu laden.",
+    "not_found": "Seite nicht gefunden.",
+    "unauthorized": "Nicht autorisiert. Bitte erneut anmelden."
+  }
+}

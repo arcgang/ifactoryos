@@ -1,0 +1,160 @@
+asyncapi: 2.6.0
+info:
+  title: Hyperledger Fabric Certificate Events
+  version: 1.0.0
+  description: >
+    Events published by the Hyperledger Fabric 2.5 service covering X.509 certificate
+    issuance and verification failures for immutable audit and compliance workflows.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.ifos.munich.fabric.certificate.issued.v1:
+    description: Published when a Hyperledger Fabric X.509 certificate is successfully issued for a manufacturing transaction.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID (e.g. immutable-audit-log-fabric-consumer)
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveFabricCertificateIssued
+      summary: Receive a Fabric certificate issued event
+      message:
+        $ref: '#/components/messages/FabricCertificateIssued'
+
+  bmw.ifos.munich.fabric.certificate.verify-failed.v1:
+    description: Published when verification of a Hyperledger Fabric certificate fails.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID (e.g. immutable-audit-log-fabric-consumer)
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveFabricCertificateVerifyFailed
+      summary: Receive a Fabric certificate verify-failed event
+      message:
+        $ref: '#/components/messages/FabricCertificateVerifyFailed'
+
+components:
+  messages:
+    FabricCertificateIssued:
+      name: FabricCertificateIssued
+      title: Fabric Certificate Issued
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/FabricCertificateIssuedPayload'
+
+    FabricCertificateVerifyFailed:
+      name: FabricCertificateVerifyFailed
+      title: Fabric Certificate Verify Failed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/FabricCertificateVerifyFailedPayload'
+
+  schemas:
+    FabricCertificateIssuedPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - certificateId
+        - subjectDn
+        - issuerDn
+        - transactionId
+        - channelId
+        - chaincodeId
+        - notBefore
+        - notAfter
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        certificateId:
+          type: string
+          description: SHA-256 fingerprint of the issued certificate
+        subjectDn:
+          type: string
+          description: X.509 Subject Distinguished Name
+        issuerDn:
+          type: string
+          description: X.509 Issuer Distinguished Name
+        transactionId:
+          type: string
+          description: Hyperledger Fabric transaction ID
+        channelId:
+          type: string
+          description: Hyperledger Fabric channel identifier
+        chaincodeId:
+          type: string
+          description: Go chaincode identifier
+        notBefore:
+          type: string
+          format: date-time
+        notAfter:
+          type: string
+          format: date-time
+        serialNumber:
+          type: string
+          description: Certificate serial number in hex
+
+    FabricCertificateVerifyFailedPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - certificateId
+        - transactionId
+        - channelId
+        - failureReason
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        certificateId:
+          type: string
+          description: SHA-256 fingerprint of the certificate that failed verification
+        transactionId:
+          type: string
+        channelId:
+          type: string
+        failureReason:
+          type: string
+          enum: [expired, revoked, invalid_signature, chain_of_trust_broken, unknown]
+        errorDetail:
+          type: string
+          nullable: true
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

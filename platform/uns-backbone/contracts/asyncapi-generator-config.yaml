@@ -1,0 +1,20 @@
+# AsyncAPI Generator configuration
+# Used to validate stub generation for all contracts in contracts/asyncapi/.
+# Run: asyncapi generate fromTemplate <spec.yaml> @asyncapi/nodejs-template -o /tmp/gen-out
+
+template: "@asyncapi/nodejs-template"
+parameters:
+  server: production
+  asyncapiFileDir: ./contracts/asyncapi
+  generateTestClient: true
+  securityScheme: mtls
+
+# Example invocations (executed by CI — see .github/workflows/asyncapi.yml):
+#
+#   asyncapi generate fromTemplate \
+#     platform/uns-backbone/contracts/asyncapi/sequence-optimizer-events-v1.yaml \
+#     @asyncapi/nodejs-template \
+#     -o /tmp/asyncapi-gen-out/sequence-optimizer \
+#     -p server=production
+#
+# Any exit code other than 0 fails the CI step.

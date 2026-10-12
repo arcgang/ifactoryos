@@ -1,0 +1,117 @@
+{
+  "nav": {
+    "planning": "Planung",
+    "sequenceBuilder": "Sequenzgenerator",
+    "constraintRadar": "Constraint-Radar",
+    "scenarioLab": "Szenarienlabor",
+    "reports": "Berichte",
+    "changeLog": "Änderungsprotokoll",
+    "settings": "Einstellungen",
+    "publishCenter": "Veröffentlichungszentrum",
+    "overrideLog": "Überschreibungsprotokoll",
+    "my26ConfigWizard": "MY26-Konfigurationsassistent"
+  },
+  "topbar": {
+    "appName": "Planungs-Cockpit",
+    "languageLabel": "Sprache: Deutsch"
+  },
+  "languageSwitcher": {
+    "label": "Sprache",
+    "deutsch": "Deutsch",
+    "english": "English",
+    "saved": "Sprache gespeichert"
+  },
+  "alerts": {
+    "paintCapacityCritical": {
+      "title": "Lackkapazität kritisch — Kabine 3 eingeschränkt",
+      "body": "Kabine 3 läuft mit 61 % Kapazität. Montag-Sequenz enthält 14 VINs mit Farbwechsel Metallic → Uni. Optimierungsläufe neu starten, um Engpass zu berücksichtigen.",
+      "time": "Heute · 05:41 Uhr · Quelle: Beckhoff PLC"
+    },
+    "sequenceLockBlocked": {
+      "title": "Sequenz-Sperre blockiert — Übersetzung fehlt",
+      "body": "Arbeitsanweisung WI-2041 fehlt die englische Übersetzung. Veröffentlichung bis zur Freigabe beider Sprachversionen gesperrt.",
+      "time": "Heute · 05:38 Uhr"
+    },
+    "translationPending": "Übersetzung ausstehend",
+    "confirm": "Bestätigen"
+  },
+  "sequence": {
+    "title": "Optimierte Montag-Sequenz — KW 42",
+    "subtitle": "Quelle: SequenzOptimizer · 50 Läufe · Rangfolge nach Constraint-Score",
+    "preview": "Vorschau",
+    "publishToOpCenter": "An OpCenter veröffentlichen",
+    "columns": {
+      "position": "Pos.",
+      "vin": "VIN",
+      "model": "Modell",
+      "color": "Farbe",
+      "order": "Auftrag",
+      "constraintScore": "Constraint-Score",
+      "status": "Status"
+    },
+    "statuses": {
+      "ready": "Bereit",
+      "overrideRequired": "Überschreibung erforderlich",
+      "maintenancePending": "Wartungsfreigabe ausstehend"
+    }
+  },
+  "stats": {
+    "activeVins": "Aktive VINs in Sequenz",
+    "changeRate": "Sequenzänderungsrate",
+    "changeRateDelta": "▼ Ziel < 15 % erreicht",
+    "lockDeadline": "Sperr-Deadline",
+    "lockDeadlineDelta": "⏱ {{minutes}} Minuten verbleibend",
+    "monteCarloRuns": "Monte-Carlo-Läufe",
+    "monteCarloCompleted": "Abgeschlossen · 04:58 Uhr",
+    "sinceYesterday": "▲ {{count}} seit gestern"
+  },
+  "errors": {
+    "loadFailed": "Laden fehlgeschlagen",
+    "retry": "Erneut versuchen",
+    "noData": "Keine Daten verfügbar",
+    "unauthorized": "Nicht autorisiert. Bitte erneut anmelden.",
+    "requestFailed": "Anfrage fehlgeschlagen",
+    "constraintSnapshotStale": "Constraint-Snapshot veraltet. Bitte aktualisieren.",
+    "publishFailed": "Veröffentlichung fehlgeschlagen. Bitte erneut versuchen.",
+    "optimizerRunFailed": "Optimierungslauf fehlgeschlagen.",
+    "missingTranslation": "Übersetzung ausstehend"
+  },
+  "publishCenter": {
+    "title": "Veröffentlichungszentrum",
+    "gateBlocked": "Veröffentlichung gesperrt",
+    "gateBlockedDesc": "Folgende Punkte müssen erfüllt sein, bevor die Sequenz veröffentlicht werden kann:",
+    "gateReady": "Bereit zur Veröffentlichung",
+    "gateReadyDesc": "Alle Anforderungen erfüllt. Sequenz kann veröffentlicht werden.",
+    "checkDeTranslation": "Deutsche Übersetzung vorhanden",
+    "checkEnTranslation": "Englische Übersetzung vorhanden",
+    "checkConstraintScore": "Constraint-Score ≥ 80",
+    "checkMaintenanceClear": "Keine offenen Wartungsfreigaben",
+    "publish": "Veröffentlichen",
+    "cancel": "Abbrechen"
+  },
+  "overrideLog": {
+    "title": "Überschreibungsprotokoll",
+    "columns": {
+      "timestamp": "Zeitstempel",
+      "vin": "VIN",
+      "reason": "Grund",
+      "approvedBy": "Genehmigt von"
+    },
+    "empty": "Keine Überschreibungen vorhanden."
+  },
+  "my26": {
+    "title": "MY26-Konfigurationsassistent",
+    "step1": "Modellauswahl",
+    "step2": "Constraint-Konfiguration",
+    "step3": "Überprüfung & Bestätigung",
+    "next": "Weiter",
+    "back": "Zurück",
+    "finish": "Abschließen"
+  },
+  "workInstruction": {
+    "title": "Arbeitsanweisung",
+    "stepLabel": "Schritt {{number}}",
+    "torqueUnit": "Nm",
+    "translationPending": "Übersetzung ausstehend — Inhalt nicht verfügbar"
+  }
+}

@@ -1,0 +1,12 @@
+[project]
+name = "audit_client"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "azure-identity>=1.17",
+    "azure-storage-blob>=12.22",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

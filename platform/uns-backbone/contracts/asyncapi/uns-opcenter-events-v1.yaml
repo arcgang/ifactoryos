@@ -1,0 +1,252 @@
+asyncapi: 2.6.0
+info:
+  title: UNS OpCenter Events
+  version: 1.0.0
+  description: OpCenter integration events (gate results, sequence publish status, Andon alerts) bridged from Siemens OpCenter via the UNS backbone.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.munich.opcenter.gate_result.received:
+    description: Gate inspection result received from OpCenter; no versioned suffix — legacy topic retained for backward compatibility.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+    subscribe:
+      operationId: receiveGateResult
+      summary: Receive an OpCenter gate inspection result
+      message:
+        $ref: '#/components/messages/GateResult'
+
+  bmw.munich.opcenter.sequence.published:
+    description: Notification that a production sequence was successfully published to OpCenter.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+    subscribe:
+      operationId: receiveSequencePublished
+      summary: Receive a sequence-published confirmation
+      message:
+        $ref: '#/components/messages/SequencePublished'
+
+  bmw.munich.opcenter.sequence.publish_failed:
+    description: Notification that publishing a production sequence to OpCenter failed.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+    subscribe:
+      operationId: receiveSequencePublishFailed
+      summary: Receive a sequence publish-failed notification
+      message:
+        $ref: '#/components/messages/SequencePublishFailed'
+
+  bmw.munich.opcenter.andon.alert:
+    description: Andon alert received directly from OpCenter; no versioned suffix — legacy topic retained for backward compatibility.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+    subscribe:
+      operationId: receiveOpcenterAndonAlert
+      summary: Receive an OpCenter Andon alert
+      message:
+        $ref: '#/components/messages/OpcenterAndonAlert'
+
+  factory.munich.opcenter.andon.alert.v1:
+    description: Versioned Andon alert event from OpCenter via the factory namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveFactoryAndonAlert
+      summary: Receive a versioned factory Andon alert
+      message:
+        $ref: '#/components/messages/OpcenterAndonAlert'
+
+  factory.munich.uns.manufacturing.event.v1:
+    description: Generic manufacturing event published from the factory UNS namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 12
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveManufacturingEvent
+      summary: Receive a generic manufacturing event
+      message:
+        $ref: '#/components/messages/ManufacturingEvent'
+
+components:
+  messages:
+    GateResult:
+      name: GateResult
+      title: Gate Inspection Result
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GateResultPayload'
+
+    SequencePublished:
+      name: SequencePublished
+      title: Sequence Published
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SequencePublishedPayload'
+
+    SequencePublishFailed:
+      name: SequencePublishFailed
+      title: Sequence Publish Failed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SequencePublishFailedPayload'
+
+    OpcenterAndonAlert:
+      name: OpcenterAndonAlert
+      title: OpCenter Andon Alert
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OpcenterAndonAlertPayload'
+
+    ManufacturingEvent:
+      name: ManufacturingEvent
+      title: Manufacturing Event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ManufacturingEventPayload'
+
+  schemas:
+    GateResultPayload:
+      type: object
+      required: [eventId, occurredAt, plant, gateId, vin, result]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        gateId:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        result:
+          type: string
+          enum: [pass, fail, conditional_pass]
+        defectCodes:
+          type: array
+          items:
+            type: string
+
+    SequencePublishedPayload:
+      type: object
+      required: [eventId, occurredAt, plant, weekIso, sequenceVersion]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        weekIso:
+          type: string
+          pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+        sequenceVersion:
+          type: string
+          format: uuid
+
+    SequencePublishFailedPayload:
+      type: object
+      required: [eventId, occurredAt, plant, weekIso, reason]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        weekIso:
+          type: string
+          pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+        reason:
+          type: string
+
+    OpcenterAndonAlertPayload:
+      type: object
+      required: [eventId, occurredAt, plant, stationId, alertType, severity]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        alertType:
+          type: string
+          enum: [line_stop, quality_hold, maintenance_call, safety_stop]
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+
+    ManufacturingEventPayload:
+      type: object
+      required: [eventId, eventType, occurredAt, plant]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          description: Discriminator for the manufacturing event subtype
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        payload:
+          type: object
+          description: Event-type-specific payload; schema varies by eventType
+          additionalProperties: true
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

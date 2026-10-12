@@ -1,0 +1,300 @@
+openapi: 3.1.0
+info:
+  title: Process Replay API
+  version: 1.0.0
+  description: >
+    VIN-level process replay — reconstruct the full assembly and quality sequence for any
+    produced vehicle from the digital thread. Used by quality-studio for root cause analysis.
+    Data residency: Azure Germany West Central (EU).
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/replay
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/replay
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "60/minute per client"
+
+paths:
+  /vin/{vin}/stages:
+    get:
+      operationId: getVinStages
+      summary: Get all process stages recorded for a VIN (cursor-paginated)
+      x-rate-limit: "60/minute per client"
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          description: 17-character Vehicle Identification Number
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+        - name: stageType
+          in: query
+          schema:
+            type: string
+            enum:
+              - PAINT_PREP
+              - BODY_WELD
+              - MARRIAGE
+              - FINAL_TRIM
+              - QUALITY_GATE
+      responses:
+        "200":
+          description: Paginated stage list for the VIN
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VinStageListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /vin/{vin}/timeline:
+    get:
+      operationId: getVinTimeline
+      summary: Get the full chronological process timeline for a VIN
+      x-rate-limit: "30/minute per client"
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          description: 17-character Vehicle Identification Number
+      responses:
+        "200":
+          description: Full VIN process timeline
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VinTimelineResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  parameters:
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    BadRequest:
+      description: Invalid VIN format
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: VIN not found in digital thread
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+        prev_cursor:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    VinStageListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessStage"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    ProcessStage:
+      type: object
+      required:
+        - stageId
+        - stageType
+        - stationCode
+        - startedAt
+        - status
+      properties:
+        stageId:
+          type: string
+          format: uuid
+        stageType:
+          type: string
+          enum:
+            - PAINT_PREP
+            - BODY_WELD
+            - MARRIAGE
+            - FINAL_TRIM
+            - QUALITY_GATE
+        stationCode:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        status:
+          type: string
+          enum:
+            - in_progress
+            - completed
+            - failed
+            - skipped
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Stage-specific measurement parameters (e.g. ecoat_voltage_v, phosphate_concentration_g_l)
+
+    VinTimelineResponse:
+      type: object
+      required:
+        - vin
+        - stages
+        - totalDurationMs
+        - firstSeenAt
+        - lastEventAt
+      properties:
+        vin:
+          type: string
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessStage"
+        totalDurationMs:
+          type: integer
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastEventAt:
+          type: string
+          format: date-time
+        qualityGateResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/QualityGateResult"
+
+    QualityGateResult:
+      type: object
+      required:
+        - gateId
+        - result
+        - evaluatedAt
+      properties:
+        gateId:
+          type: string
+        result:
+          type: string
+          enum:
+            - PASS
+            - CONDITIONAL
+            - FAIL
+        evaluatedAt:
+          type: string
+          format: date-time
+        detail:
+          type: string

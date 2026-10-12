@@ -75,6 +75,7 @@ async def run_torque_consumer(
                         publish_fn=_publish,
                         vdt_base_url=vdt_base_url,
                         vdt_timeout_seconds=vdt_timeout_seconds,
+                        pool=pool,
                     )
             except asyncio.CancelledError:
                 raise

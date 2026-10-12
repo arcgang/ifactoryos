@@ -5,7 +5,9 @@ Implements AC-13685a24, AC-69c77dfd, AC-b734032a, AC-fd1f00c6.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import binascii
 import json
 import logging
 import uuid
@@ -15,18 +17,21 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
+from opentelemetry import trace
 from pydantic import BaseModel, Field, field_validator
 
 from app.auth import require_bearer
 from app.db import get_pool
 from app.kafka_producer import publish
 from app.torque_service import (
+    _publish_torque_submitted_with_pool,
     apply_tolerance,
     insert_torque_log,
     is_duplicate,
     lookup_tolerance,
-    set_alert_id,
 )
+
+_tracer = trace.get_tracer("line-command-api.torque_router")
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +125,7 @@ def _encode_cursor(row_id: str) -> str:
 def _decode_cursor(cursor: str) -> str | None:
     try:
         return base64.urlsafe_b64decode(cursor.encode()).decode()
-    except Exception:
+    except (binascii.Error, UnicodeDecodeError):
         return None
 
 
@@ -201,17 +206,14 @@ async def submit_torque_log(
 
         recorded_at = datetime.now(timezone.utc)
 
-        # Out-of-tolerance: set alert_id in DB before returning 422.
-        # alert_id is generated here so both the DB row and the HTTP response carry the same value.
+        # Pre-generate alert_id so the HTTP 422 response and the Kafka event carry the same UUID.
+        # The background task will persist it to the DB via _publish_out_of_tolerance.
         alert_id: str | None = None
         if in_tolerance is False and spec_nm is not None and tolerance_nm is not None:
             alert_id = str(uuid.uuid4())
-            await set_alert_id(conn, row_id, alert_id)
 
         # Publish TorqueSubmittedEvent asynchronously (does not block HTTP response).
         # Acquires its own pool connection so the handler's conn can close normally.
-        import asyncio
-
         asyncio.create_task(
             _async_publish_submitted(
                 pool=pool,
@@ -276,71 +278,53 @@ async def _async_publish_submitted(
     tolerance_nm: Decimal | None,
     alert_id: str | None,
 ) -> None:
-    """Background task: publish TorqueSubmittedEvent and update DB status.
+    """Background task: publish TorqueSubmittedEvent, OoT event, AdoptionEvent.
 
-    Acquires its own pool connection to avoid using a connection that has
-    already been released back to the pool by the HTTP handler.
+    Delegates Kafka publish and DB status update to torque_service, then
+    publishes AdoptionEvent.  Acquires its own pool connections.
     """
-    from app.torque_service import (
-        TOPIC_TORQUE_OUT_OF_TOLERANCE,
-        TOPIC_TORQUE_SUBMITTED,
-        mark_publish_failed,
-        mark_published,
+    from app.kafka_producer import TOPIC_ADOPTION_EVENT
+
+    # TorqueSubmittedEvent (+ OoT if applicable) via shared service function.
+    # _publish_torque_submitted_with_pool acquires its own connection internally.
+    await _publish_torque_submitted_with_pool(
+        pool=pool,
+        publish_fn=publish,
+        row_id=row_id,
+        vin=vin,
+        station_id=station_id,
+        fastener_point_id=fastener_point_id,
+        torque_nm=torque_nm,
+        angles_deg=angles_deg,
+        plc_timestamp=plc_timestamp,
+        in_tolerance=in_tolerance,
+        spec_nm=spec_nm,
+        tolerance_nm=tolerance_nm,
+        alert_id=alert_id,
     )
-    import asyncio
 
-    published_at = datetime.now(timezone.utc)
-    payload: dict = {
-        "torqueLogId": row_id,
-        "vin": vin,
-        "stationId": station_id,
-        "fastenerPointId": fastener_point_id,
-        "torqueNm": float(torque_nm),
-        "anglesDeg": float(angles_deg),
-        "plcTimestamp": plc_timestamp.isoformat(),
-        "publishedAt": published_at.isoformat(),
-    }
-    if in_tolerance is not None:
-        payload["inTolerance"] = in_tolerance
-
-    async with pool.acquire() as conn:
-        try:
-            await publish(TOPIC_TORQUE_SUBMITTED, payload)
-            await mark_published(conn, row_id, published_at)
-        except (OSError, asyncio.TimeoutError, RuntimeError) as exc:
-            logger.error(
-                "TorqueSubmittedEvent publish failed for torqueLogId=%s: %s", row_id, exc
-            )
-            try:
-                await mark_publish_failed(conn, row_id)
-            except OSError as db_exc:
-                logger.error(
-                    "Failed to mark publish_failed for torqueLogId=%s: %s", row_id, db_exc
-                )
-            return
-
-        if in_tolerance is False and spec_nm is not None and tolerance_nm is not None:
-            occurred_at = datetime.now(timezone.utc).isoformat()
-            try:
-                await publish(
-                    TOPIC_TORQUE_OUT_OF_TOLERANCE,
+    # Publish AdoptionEvent — best-effort, 1s timeout
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        with _tracer.start_as_current_span("kafka.produce.adoption_event") as span:
+            span.set_attribute("messaging.destination", TOPIC_ADOPTION_EVENT)
+            span.set_attribute("vin", vin)
+            await asyncio.wait_for(
+                publish(
+                    TOPIC_ADOPTION_EVENT,
                     {
-                        "alertId": alert_id,
-                        "torqueLogId": row_id,
+                        "eventId": str(uuid.uuid4()),
+                        "actionType": "TORQUE_LOG_SUBMITTED",
                         "vin": vin,
                         "stationId": station_id,
-                        "fastenerPointId": fastener_point_id,
-                        "torqueNm": float(torque_nm),
-                        "specNm": float(spec_nm),
-                        "toleranceNm": float(tolerance_nm),
-                        "occurredAt": occurred_at,
+                        "torqueLogId": row_id,
+                        "occurredAt": now_iso,
                     },
-                )
-            except (OSError, asyncio.TimeoutError, RuntimeError) as exc:
-                logger.error(
-                    "TorqueOutOfToleranceEvent publish failed for torqueLogId=%s: %s",
-                    row_id, exc,
-                )
+                ),
+                timeout=1.0,
+            )
+    except (OSError, asyncio.TimeoutError, RuntimeError) as exc:
+        logger.warning("AdoptionEvent publish failed for torqueLogId=%s: %s", row_id, exc)
 
 
 # ---------------------------------------------------------------------------

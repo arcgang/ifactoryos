@@ -15,10 +15,12 @@ from decimal import Decimal
 from typing import Any, Protocol
 
 import httpx
+from opentelemetry import trace
 
 from app.kafka_producer import TOPIC_ADOPTION_EVENT
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer("line-command-api.torque_service")
 
 TOPIC_TORQUE_SUBMITTED = "bmw.ifos.munich.line-command.torque.submitted.v1"
 TOPIC_TORQUE_OUT_OF_TOLERANCE = "bmw.ifos.munich.line-command.torque.out-of-tolerance.v1"
@@ -55,27 +57,31 @@ async def insert_torque_log(
     """Insert a new torque_log row with uns_publish_status='queued'. Returns the new UUID."""
     row_id = str(uuid.uuid4())
     trace_json = json.dumps(trace_data) if trace_data is not None else None
-    await conn.execute(
-        """
-        INSERT INTO torque_log
-            (id, vin, station_id, fastener_point_id, torque_nm, angles_deg,
-             plc_timestamp, uns_publish_status, edge_buffered, idempotency_key,
-             trace_data)
-        VALUES
-            ($1::uuid, $2, $3, $4, $5, $6, $7, 'queued', $8, $9::uuid,
-             $10::jsonb)
-        """,
-        row_id,
-        vin,
-        station_id,
-        fastener_point_id,
-        torque_nm,
-        angles_deg,
-        plc_timestamp,
-        edge_buffered,
-        idempotency_key,
-        trace_json,
-    )
+    with _tracer.start_as_current_span("db.torque_log.insert") as span:
+        span.set_attribute("db.table", "torque_log")
+        span.set_attribute("vin", vin)
+        span.set_attribute("station_id", station_id)
+        await conn.execute(
+            """
+            INSERT INTO torque_log
+                (id, vin, station_id, fastener_point_id, torque_nm, angles_deg,
+                 plc_timestamp, uns_publish_status, edge_buffered, idempotency_key,
+                 trace_data)
+            VALUES
+                ($1::uuid, $2, $3, $4, $5, $6, $7, 'queued', $8, $9::uuid,
+                 $10::jsonb)
+            """,
+            row_id,
+            vin,
+            station_id,
+            fastener_point_id,
+            torque_nm,
+            angles_deg,
+            plc_timestamp,
+            edge_buffered,
+            idempotency_key,
+            trace_json,
+        )
     return row_id
 
 
@@ -200,6 +206,7 @@ async def process_torque_event(
     publish_fn: Any,
     vdt_base_url: str,
     vdt_timeout_seconds: float,
+    pool: Any = None,
 ) -> None:
     """Process one PlcTorqueTraceEvent.
 
@@ -210,6 +217,11 @@ async def process_torque_event(
     4. Publish TorqueSubmittedEvent asynchronously; update status on ack/failure.
     5. If out-of-tolerance, publish TorqueOutOfToleranceEvent.
     6. Publish AdoptionEvent (acks=1, within 1s).
+
+    When pool is supplied the background publish task acquires its own
+    connection so conn can be safely released by the caller after this
+    coroutine returns.  When pool is None (unit-test path) the background
+    task reuses conn directly.
     """
     idempotency_key = str(event["idempotencyKey"])
     vin = event["vin"]
@@ -251,23 +263,43 @@ async def process_torque_event(
     if spec_nm is not None and tolerance_nm is not None:
         in_tolerance = await apply_tolerance(conn, row_id, torque_nm, spec_nm, tolerance_nm)
 
-    # Publish TorqueSubmittedEvent asynchronously
-    asyncio.create_task(
-        _publish_torque_submitted(
-            conn=conn,
-            publish_fn=publish_fn,
-            row_id=row_id,
-            vin=vin,
-            station_id=station_id,
-            fastener_point_id=fastener_point_id,
-            torque_nm=torque_nm,
-            angles_deg=angles_deg,
-            plc_timestamp=plc_timestamp,
-            in_tolerance=in_tolerance,
-            spec_nm=spec_nm,
-            tolerance_nm=tolerance_nm,
+    # Publish TorqueSubmittedEvent asynchronously.
+    # When a pool is available the background task acquires a fresh connection
+    # so the caller can safely release conn after this coroutine returns.
+    if pool is not None:
+        asyncio.create_task(
+            _publish_torque_submitted_with_pool(
+                pool=pool,
+                publish_fn=publish_fn,
+                row_id=row_id,
+                vin=vin,
+                station_id=station_id,
+                fastener_point_id=fastener_point_id,
+                torque_nm=torque_nm,
+                angles_deg=angles_deg,
+                plc_timestamp=plc_timestamp,
+                in_tolerance=in_tolerance,
+                spec_nm=spec_nm,
+                tolerance_nm=tolerance_nm,
+            )
         )
-    )
+    else:
+        asyncio.create_task(
+            _publish_torque_submitted(
+                conn=conn,
+                publish_fn=publish_fn,
+                row_id=row_id,
+                vin=vin,
+                station_id=station_id,
+                fastener_point_id=fastener_point_id,
+                torque_nm=torque_nm,
+                angles_deg=angles_deg,
+                plc_timestamp=plc_timestamp,
+                in_tolerance=in_tolerance,
+                spec_nm=spec_nm,
+                tolerance_nm=tolerance_nm,
+            )
+        )
 
     # Publish AdoptionEvent synchronously within 1s (acks=1 per settled decision)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -290,6 +322,46 @@ async def process_torque_event(
         logger.warning("AdoptionEvent publish failed for torqueLogId=%s: %s", row_id, exc)
 
 
+async def _publish_torque_submitted_with_pool(
+    pool: Any,
+    publish_fn: Any,
+    row_id: str,
+    vin: str,
+    station_id: str,
+    fastener_point_id: str,
+    torque_nm: Decimal,
+    angles_deg: Decimal,
+    plc_timestamp: datetime,
+    in_tolerance: bool | None,
+    spec_nm: Decimal | None,
+    tolerance_nm: Decimal | None,
+    alert_id: str | None = None,
+) -> None:
+    """Acquire a fresh pool connection and delegate to _publish_torque_submitted.
+
+    Used by the Kafka consumer path so the caller's connection can be safely
+    released after process_torque_event returns.  alert_id may be pre-supplied
+    by the HTTP handler so the response body and the Kafka event carry the same
+    UUID; when None a new one is generated by _publish_out_of_tolerance.
+    """
+    async with pool.acquire() as conn:
+        await _publish_torque_submitted(
+            conn=conn,
+            publish_fn=publish_fn,
+            row_id=row_id,
+            vin=vin,
+            station_id=station_id,
+            fastener_point_id=fastener_point_id,
+            torque_nm=torque_nm,
+            angles_deg=angles_deg,
+            plc_timestamp=plc_timestamp,
+            in_tolerance=in_tolerance,
+            spec_nm=spec_nm,
+            tolerance_nm=tolerance_nm,
+            alert_id=alert_id,
+        )
+
+
 async def _publish_torque_submitted(
     conn: DBConnection,
     publish_fn: Any,
@@ -303,6 +375,7 @@ async def _publish_torque_submitted(
     in_tolerance: bool | None,
     spec_nm: Decimal | None,
     tolerance_nm: Decimal | None,
+    alert_id: str | None = None,
 ) -> None:
     """Publish TorqueSubmittedEvent and update uns_publish_status."""
     published_at = datetime.now(timezone.utc)
@@ -320,8 +393,13 @@ async def _publish_torque_submitted(
         payload["inTolerance"] = in_tolerance
 
     try:
-        await publish_fn(TOPIC_TORQUE_SUBMITTED, payload)
-        await mark_published(conn, row_id, published_at)
+        with _tracer.start_as_current_span("kafka.produce.torque_submitted") as span:
+            span.set_attribute("messaging.destination", TOPIC_TORQUE_SUBMITTED)
+            span.set_attribute("vin", vin)
+            await publish_fn(TOPIC_TORQUE_SUBMITTED, payload)
+        with _tracer.start_as_current_span("db.torque_log.mark_published") as span:
+            span.set_attribute("db.table", "torque_log")
+            await mark_published(conn, row_id, published_at)
         logger.info(
             "TorqueSubmittedEvent published: torqueLogId=%s vin=%s in_tolerance=%s",
             row_id, vin, in_tolerance,
@@ -351,6 +429,7 @@ async def _publish_torque_submitted(
             torque_nm=torque_nm,
             spec_nm=spec_nm,
             tolerance_nm=tolerance_nm,
+            alert_id=alert_id,
         )
 
 
@@ -364,25 +443,32 @@ async def _publish_out_of_tolerance(
     torque_nm: Decimal,
     spec_nm: Decimal,
     tolerance_nm: Decimal,
+    alert_id: str | None = None,
 ) -> None:
-    alert_id = str(uuid.uuid4())
+    alert_id = alert_id or str(uuid.uuid4())
     occurred_at = datetime.now(timezone.utc).isoformat()
     try:
-        await publish_fn(
-            TOPIC_TORQUE_OUT_OF_TOLERANCE,
-            {
-                "alertId": alert_id,
-                "torqueLogId": row_id,
-                "vin": vin,
-                "stationId": station_id,
-                "fastenerPointId": fastener_point_id,
-                "torqueNm": float(torque_nm),
-                "specNm": float(spec_nm),
-                "toleranceNm": float(tolerance_nm),
-                "occurredAt": occurred_at,
-            },
-        )
-        await set_alert_id(conn, row_id, alert_id)
+        with _tracer.start_as_current_span("kafka.produce.torque_out_of_tolerance") as span:
+            span.set_attribute("messaging.destination", TOPIC_TORQUE_OUT_OF_TOLERANCE)
+            span.set_attribute("vin", vin)
+            span.set_attribute("alert_id", alert_id)
+            await publish_fn(
+                TOPIC_TORQUE_OUT_OF_TOLERANCE,
+                {
+                    "alertId": alert_id,
+                    "torqueLogId": row_id,
+                    "vin": vin,
+                    "stationId": station_id,
+                    "fastenerPointId": fastener_point_id,
+                    "torqueNm": float(torque_nm),
+                    "specNm": float(spec_nm),
+                    "toleranceNm": float(tolerance_nm),
+                    "occurredAt": occurred_at,
+                },
+            )
+        with _tracer.start_as_current_span("db.torque_log.set_alert_id") as span:
+            span.set_attribute("db.table", "torque_log")
+            await set_alert_id(conn, row_id, alert_id)
         logger.warning(
             "TorqueOutOfToleranceEvent published: alertId=%s vin=%s fastener=%s",
             alert_id, vin, fastener_point_id,

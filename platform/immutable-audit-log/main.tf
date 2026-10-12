@@ -182,6 +182,122 @@ resource "azurerm_role_assignment" "audit_compliance_reader" {
 }
 
 # ---------------------------------------------------------------------------
+# Azure Policy — allowedLocations: restrict audit log resources to EU regions
+#
+# Denies any attempt to replicate, failover, or copy audit blobs to non-EU
+# regions.  Scoped to the resource group so that every resource in this module
+# (storage, Service Bus, Key Vault) inherits the constraint.
+# Allowed: germanywestcentral (primary) + westeurope (secondary, Works Council).
+# ---------------------------------------------------------------------------
+resource "azurerm_resource_group_policy_assignment" "eu_residency" {
+  name                 = "audit-log-eu-residency-${var.environment}"
+  resource_group_id    = azurerm_resource_group.audit_log.id
+  policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/e56962a6-4747-49cd-b67b-bf8b01975c4f"
+
+  parameters = jsonencode({
+    listOfAllowedLocations = {
+      value = ["germanywestcentral", "westeurope"]
+    }
+  })
+
+  description = "Restricts all audit log infrastructure to EU regions (germanywestcentral, westeurope). Denies replication, copy, or failover to non-EU regions per GDPR US-028 and Works Council requirement."
+}
+
+# ---------------------------------------------------------------------------
+# Service Bus — DLQ for schema-rejected audit writes + CISO alert
+#
+# The audit client validates that user_id is not a raw employee ID.  If a
+# caller bypasses the SDK and writes a non-conforming event directly, the
+# schema validator (deployed as an AKS sidecar) drops it onto this DLQ.
+# An Azure Monitor metric alert fires within 60 s of any message landing.
+# ---------------------------------------------------------------------------
+resource "azurerm_servicebus_namespace" "audit_dlq" {
+  name                = "sbns-audit-dlq-${var.environment}"
+  resource_group_name = azurerm_resource_group.audit_log.name
+  location            = azurerm_resource_group.audit_log.location
+  sku                 = "Standard"
+
+  tags = azurerm_resource_group.audit_log.tags
+}
+
+resource "azurerm_servicebus_queue" "schema_rejected" {
+  name         = "audit-schema-rejected"
+  namespace_id = azurerm_servicebus_namespace.audit_dlq.id
+
+  # Dead-letter queue is always enabled on the built-in DLQ sub-queue;
+  # this queue is the primary target for validator rejections.
+  dead_lettering_on_message_expiration = true
+  max_delivery_count                   = 1
+  # Messages expire after 7 days — retained for forensic investigation
+  default_message_ttl = "P7D"
+  lock_duration       = "PT1M"
+}
+
+resource "azurerm_monitor_metric_alert" "dlq_ciso_alert" {
+  name                = "audit-dlq-schema-rejected-${var.environment}"
+  resource_group_name = azurerm_resource_group.audit_log.name
+  scopes              = [azurerm_servicebus_namespace.audit_dlq.id]
+  description         = "CISO alert: audit event rejected by schema validator (employee ID or missing required field). Investigate within 60 seconds."
+  severity            = 1
+  frequency           = "PT1M"
+  window_size         = "PT1M"
+
+  criteria {
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
+    metric_name      = "ActiveMessages"
+    aggregation      = "Maximum"
+    operator         = "GreaterThan"
+    threshold        = 0
+
+    dimension {
+      name     = "EntityName"
+      operator = "Include"
+      values   = [azurerm_servicebus_queue.schema_rejected.name]
+    }
+  }
+
+  tags = azurerm_resource_group.audit_log.tags
+}
+
+# ---------------------------------------------------------------------------
+# GDPR Article 30 Workbook — record of processing activities
+#
+# Azure Monitor workbook rendered from the ARM template JSON in
+# workbooks/article30_gdpr.json.  The DPO runs this workbook against the
+# live Log Analytics workspace to produce the Article 30 inventory within
+# 5 business days of a Works Council request.
+#
+# The workbook lists: data category, processing purpose, legal basis,
+# retention period, and storage location for each category of personal
+# or worker-linked data processed by the IFOS platform.
+# ---------------------------------------------------------------------------
+locals {
+  # Deterministic UUID-per-environment for the Article 30 workbook.
+  # Azure requires the workbook name to be a UUID; using a static map keeps
+  # the resource ID stable across plan/apply cycles.
+  article30_workbook_uuid = {
+    dev  = "d3c4e5f6-0001-4000-a000-000000000010"
+    pp   = "d3c4e5f6-0001-4000-a000-000000000011"
+    prod = "d3c4e5f6-0001-4000-a000-000000000012"
+  }
+}
+
+resource "azurerm_application_insights_workbook" "article30" {
+  name                = lookup(local.article30_workbook_uuid, var.environment, "d3c4e5f6-0001-4000-a000-000000000010")
+  resource_group_name = azurerm_resource_group.audit_log.name
+  location            = azurerm_resource_group.audit_log.location
+  display_name        = "GDPR Article 30 — IFOS Record of Processing Activities"
+  source_id           = "azure monitor"
+
+  data_json = file("${path.module}/workbooks/article30_gdpr.json")
+
+  tags = merge(azurerm_resource_group.audit_log.tags, {
+    gdpr_article = "30"
+    dpo_contact  = "dpo@bmwgroup.com"
+  })
+}
+
+# ---------------------------------------------------------------------------
 # Outputs consumed by client SDKs
 # ---------------------------------------------------------------------------
 output "storage_account_name" {
@@ -197,4 +313,34 @@ output "audit_container_name" {
 output "storage_account_id" {
   description = "Resource ID of the audit log storage account"
   value       = azurerm_storage_account.audit_log.id
+}
+
+output "audit_log_storage_account_id" {
+  description = "Resource ID of the audit log storage account (canonical alias for downstream modules)"
+  value       = azurerm_storage_account.audit_log.id
+}
+
+output "audit_log_container_name" {
+  description = "Blob container name for audit events (canonical alias for downstream modules)"
+  value       = azurerm_storage_container.audit_events.name
+}
+
+output "worm_policy_id" {
+  description = "Resource manager ID of the WORM immutability policy on the audit container"
+  value       = azurerm_storage_blob_immutability_policy.audit_events.id
+}
+
+output "service_bus_namespace_id" {
+  description = "Resource ID of the Service Bus namespace hosting the schema-rejected DLQ"
+  value       = azurerm_servicebus_namespace.audit_dlq.id
+}
+
+output "article30_workbook_id" {
+  description = "Resource ID of the GDPR Article 30 Azure Monitor workbook"
+  value       = azurerm_application_insights_workbook.article30.id
+}
+
+output "eu_residency_policy_assignment_id" {
+  description = "Resource ID of the allowedLocations policy assignment enforcing EU data residency"
+  value       = azurerm_resource_group_policy_assignment.eu_residency.id
 }

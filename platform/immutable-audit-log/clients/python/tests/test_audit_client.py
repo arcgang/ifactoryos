@@ -5,6 +5,9 @@ Covers:
   2. Lifecycle/delete rejection: blob_client.delete_blob raises
   3. Blob schema: all six required fields present in uploaded payload
   4. Latency gate: write_event raises WriteLatencyExceeded when upload is slow
+  5. Employee-ID rejection: 8-digit numeric user_id raises EmployeeIdRejected (GDPR US-028)
+  6. Extended GDPR Article 30 fields in blob payload
+  7. Instance isolation: sequential-ID fields restart on a new instance
 """
 
 import json
@@ -16,6 +19,7 @@ import pytest
 
 from audit_client._client import (
     AuditClient,
+    EmployeeIdRejected,
     WriteLatencyExceeded,
     _make_blob_name,
     _validate_sha256,
@@ -167,7 +171,7 @@ class TestWormDeleteRejection:
 
 class TestBlobSchema:
     def test_uploaded_payload_contains_all_six_fields(self):
-        """Blob JSON must contain user_id, action_type, entity_id, before_hash, after_hash, utc_ts."""
+        """Blob JSON must contain user_id, action_type, entity_id, before_hash, after_hash, timestamp."""
         client, fake = _make_client()
 
         client.write_event(
@@ -188,10 +192,10 @@ class TestBlobSchema:
         assert payload["entity_id"] == "VIN-ABCDEFGHJKLMNPRA"
         assert payload["before_hash"] == BEFORE_HASH
         assert payload["after_hash"] == AFTER_HASH
-        assert payload["utc_ts"] == _ANCHOR_TS
+        assert payload["timestamp"] == _ANCHOR_TS
 
-    def test_no_extra_fields_leak_into_payload(self):
-        """Payload must contain exactly the six required fields — no extras."""
+    def test_no_extra_fields_leak_into_payload_without_optional_args(self):
+        """Payload must contain exactly the six core fields when no optional args supplied."""
         client, fake = _make_client()
 
         client.write_event(
@@ -211,8 +215,33 @@ class TestBlobSchema:
             "entity_id",
             "before_hash",
             "after_hash",
-            "utc_ts",
+            "timestamp",
         }
+
+    def test_optional_article30_fields_appear_when_provided(self):
+        """correlation_id, session_id, component, result are included when supplied."""
+        client, fake = _make_client()
+
+        client.write_event(
+            user_id="u-operator-07",
+            action_type="TORQUE_LOG_SUBMITTED",
+            entity_id="VIN-TORQUE000000001A",
+            before_hash=BEFORE_HASH,
+            after_hash=AFTER_HASH,
+            utc_ts=_ANCHOR_TS,
+            correlation_id="trace-abc-123",
+            session_id="sess-xyz-456",
+            component="line-command-api",
+            result="success",
+        )
+
+        blobs = list(fake._container._blobs.values())
+        payload = json.loads(blobs[0].uploads[0]["data"])
+
+        assert payload["correlation_id"] == "trace-abc-123"
+        assert payload["session_id"] == "sess-xyz-456"
+        assert payload["component"] == "line-command-api"
+        assert payload["result"] == "success"
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +324,81 @@ class TestInputValidation:
                 after_hash="short",
                 utc_ts=_ANCHOR_TS,
             )
+
+
+# ---------------------------------------------------------------------------
+# Employee-ID rejection (GDPR US-028) — raw 8-digit numeric IDs are rejected
+# ---------------------------------------------------------------------------
+
+class TestEmployeeIdRejection:
+    def test_eight_digit_numeric_user_id_raises_employee_id_rejected(self):
+        """user_id matching ^\d{8}$ must raise EmployeeIdRejected before any blob write."""
+        client, fake = _make_client()
+
+        with pytest.raises(EmployeeIdRejected, match="8-digit numeric employee IDs are rejected"):
+            client.write_event(
+                user_id="12345678",
+                action_type="TORQUE_LOG_SUBMITTED",
+                entity_id="VIN-TORQUE000000001A",
+                before_hash=BEFORE_HASH,
+                after_hash=AFTER_HASH,
+                utc_ts=_ANCHOR_TS,
+            )
+
+        # No blob must have been written — rejection happens before upload
+        assert list(fake._container._blobs.values()) == []
+
+    def test_seven_digit_numeric_user_id_is_accepted(self):
+        """user_id with only 7 digits does not match the 8-digit employee pattern."""
+        client, _ = _make_client()
+        blob_name = client.write_event(
+            user_id="1234567",
+            action_type="X",
+            entity_id="E-001",
+            before_hash=BEFORE_HASH,
+            after_hash=AFTER_HASH,
+            utc_ts=_ANCHOR_TS,
+        )
+        assert blob_name
+
+    def test_nine_digit_numeric_user_id_is_accepted(self):
+        """user_id with 9 digits does not match the 8-digit employee pattern."""
+        client, _ = _make_client()
+        blob_name = client.write_event(
+            user_id="123456789",
+            action_type="X",
+            entity_id="E-001",
+            before_hash=BEFORE_HASH,
+            after_hash=AFTER_HASH,
+            utc_ts=_ANCHOR_TS,
+        )
+        assert blob_name
+
+    def test_uuid_user_id_is_accepted(self):
+        """A UUID-format operator token must pass the employee-ID guard."""
+        client, _ = _make_client()
+        blob_name = client.write_event(
+            user_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            action_type="VIN_CREATED",
+            entity_id="VIN-VALID000000001A",
+            before_hash=BEFORE_HASH,
+            after_hash=AFTER_HASH,
+            utc_ts=_ANCHOR_TS,
+        )
+        assert blob_name
+
+    def test_alphanumeric_user_id_with_eight_chars_is_accepted(self):
+        """An 8-character user_id containing letters is not a raw employee ID."""
+        client, _ = _make_client()
+        blob_name = client.write_event(
+            user_id="op-1234a",
+            action_type="X",
+            entity_id="E-001",
+            before_hash=BEFORE_HASH,
+            after_hash=AFTER_HASH,
+            utc_ts=_ANCHOR_TS,
+        )
+        assert blob_name
 
 
 # ---------------------------------------------------------------------------

@@ -132,3 +132,76 @@ class TestArSessionMigration:
     def test_wrapped_in_transaction(self):
         assert "BEGIN;" in self._SQL
         assert "COMMIT;" in self._SQL
+
+
+class TestTorqueLogMigration:
+    _SQL = _read("20261012_004_torque_log.sql")
+
+    def test_table_created_with_if_not_exists(self):
+        assert "CREATE TABLE IF NOT EXISTS torque_log" in self._SQL
+
+    def test_all_required_columns_present(self):
+        for col in (
+            "id", "vin", "station_id", "fastener_point_id",
+            "torque_nm", "angles_deg", "spec_nm", "tolerance_nm",
+            "in_tolerance", "trace_data", "plc_timestamp",
+            "uns_publish_status", "uns_published_at", "edge_buffered",
+            "idempotency_key", "alert_id", "created_at", "updated_at",
+        ):
+            assert col in self._SQL, f"Missing column: {col}"
+
+    def test_uuid_primary_key_with_default(self):
+        assert "UUID" in self._SQL
+        assert "gen_random_uuid()" in self._SQL
+
+    def test_numeric_torque_and_angles_columns(self):
+        assert "NUMERIC(10,4)" in self._SQL
+
+    def test_jsonb_trace_data_column(self):
+        assert "JSONB" in self._SQL
+
+    def test_timestamptz_columns(self):
+        assert "TIMESTAMPTZ" in self._SQL
+
+    def test_uns_publish_status_check_constraint(self):
+        assert "CHECK" in self._SQL
+        assert "'published'" in self._SQL
+        assert "'queued'" in self._SQL
+        assert "'failed'" in self._SQL
+
+    def test_uns_publish_status_default_is_queued(self):
+        assert "DEFAULT 'queued'" in self._SQL
+
+    def test_idempotency_unique_constraint(self):
+        assert "uq_torque_log_idempotency" in self._SQL
+        assert "UNIQUE (idempotency_key)" in self._SQL
+
+    def test_all_required_indexes(self):
+        assert "idx_torque_log_vin" in self._SQL
+        assert "idx_torque_log_station_id" in self._SQL
+        assert "idx_torque_log_vin_fastener" in self._SQL
+        assert "idx_torque_log_plc_timestamp" in self._SQL
+        assert "idx_torque_log_uns_publish_status" in self._SQL
+        assert "idx_torque_log_in_tolerance" in self._SQL
+
+    def test_plc_timestamp_index_is_descending(self):
+        assert "plc_timestamp DESC" in self._SQL
+
+    def test_partial_index_on_uns_publish_status(self):
+        assert "uns_publish_status != 'published'" in self._SQL
+
+    def test_partial_index_on_in_tolerance_false(self):
+        assert "in_tolerance = FALSE" in self._SQL
+
+    def test_data_residency_classification_comment(self):
+        assert "data_residency=eu-germany-west-central" in self._SQL
+        assert "classification=confidential" in self._SQL
+
+    def test_wrapped_in_transaction(self):
+        assert "BEGIN;" in self._SQL
+        assert "COMMIT;" in self._SQL
+
+    def test_migration_version_is_timestamp_not_integer(self):
+        filename = "20261012_004_torque_log.sql"
+        assert filename[0].isdigit()
+        assert len(filename.split("_")[0]) == 8  # YYYYMMDD

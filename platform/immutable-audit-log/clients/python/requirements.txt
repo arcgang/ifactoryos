@@ -1,0 +1,5 @@
+# Direct dependencies for audit_client.
+# Exact transitive pins live in constraints.txt.
+azure-identity>=1.17
+azure-storage-blob>=12.22
+pytest

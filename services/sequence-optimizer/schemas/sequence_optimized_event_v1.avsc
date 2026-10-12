@@ -1,0 +1,72 @@
+{
+  "type": "record",
+  "name": "SequenceOptimizedEvent",
+  "namespace": "bmw.munich.i4.sequence",
+  "doc": "Published when a Monte Carlo or heuristic optimisation run completes.",
+  "fields": [
+    {
+      "name": "runId",
+      "type": "string",
+      "doc": "UUID of the optimisation run."
+    },
+    {
+      "name": "weekIso",
+      "type": "string",
+      "doc": "ISO week string (e.g. 2026-W42) for which the sequence was computed."
+    },
+    {
+      "name": "resultType",
+      "type": {
+        "type": "enum",
+        "name": "ResultType",
+        "symbols": ["monte_carlo", "heuristic_fallback"]
+      },
+      "doc": "Indicates whether the result came from Monte Carlo or the rule-based heuristic fallback."
+    },
+    {
+      "name": "rankedSequence",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "RankedVin",
+          "fields": [
+            { "name": "vin",             "type": "string" },
+            { "name": "position",        "type": "int" },
+            { "name": "constraintScore", "type": "double" },
+            { "name": "vipPriority",     "type": ["null", "boolean"], "default": null },
+            { "name": "regulatoryHold",  "type": ["null", "boolean"], "default": null }
+          ]
+        }
+      },
+      "doc": "Ranked VIN sequence, ascending by position."
+    },
+    {
+      "name": "confidenceScore",
+      "type": "double",
+      "doc": "Confidence score in [0, 1]; <0.70 triggers fallback consideration."
+    },
+    {
+      "name": "durationMs",
+      "type": "int",
+      "doc": "Total wall-clock time of the optimisation run in milliseconds."
+    },
+    {
+      "name": "completedAt",
+      "type": "string",
+      "doc": "ISO-8601 UTC timestamp when the run completed."
+    },
+    {
+      "name": "my26ConfigVersion",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "MY26 config version UUID, if applicable."
+    },
+    {
+      "name": "constraintSnapshotTimestamp",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "ISO-8601 UTC timestamp of the constraint snapshot used."
+    }
+  ]
+}

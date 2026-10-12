@@ -1,0 +1,41 @@
+# ArgoCD Application — SPIRE server and agent on DR cluster
+# Must be synced and healthy before drill day; SVID issuance verified in smoke test
+# Realises: US-025 · BR-16
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spire-dr
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    dr_role: "secondary"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ifos-dr
+
+  source:
+    repoURL: https://github.com/bmwgroup/ifactoryos-gitops
+    targetRevision: HEAD
+    path: platform/uns-backbone/helm/spire-dr
+    helm:
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://api.ifos-dr-euno.germanyNorth.aroapp.io:6443
+    namespace: spire
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,39 @@
+# ArgoCD Application — UNS backbone (Kafka, Schema Registry, HiveMQ) on DR cluster
+# Synced to DR cluster (Germany North ARO) at 50% replica count
+# Realises: US-025 · BR-16
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: uns-backbone-dr
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    dr_role: "secondary"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ifos-dr
+
+  source:
+    repoURL: https://github.com/bmwgroup/ifactoryos-gitops
+    targetRevision: HEAD
+    path: platform/uns-backbone/overlays/dr
+
+  destination:
+    server: https://api.ifos-dr-euno.germanyNorth.aroapp.io:6443
+    namespace: confluent
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { postOptimize, getOptimizeRun, createOverride } from "../services/api";
+import {
+  emitOptimizerRunEvent,
+  emitOverrideAppliedEvent,
+} from "../instrumentation/sessionEvents";
 import type {
   OptimizeResponse,
   RankedVin,
@@ -38,45 +42,6 @@ function generateIdempotencyKey(): string {
   });
 }
 
-function emitOptimizerRunEvent(userId: string, sessionId: string): void {
-  const event = {
-    action: "optimizer_run",
-    userId,
-    sessionId,
-    timestamp: new Date().toISOString(),
-  };
-  if (
-    typeof window !== "undefined" &&
-    typeof (
-      window as Window & { otelClient?: { track: (e: unknown) => void } }
-    ).otelClient?.track === "function"
-  ) {
-    (
-      window as Window & { otelClient: { track: (e: unknown) => void } }
-    ).otelClient.track(event);
-  }
-  window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
-}
-
-function emitOverrideAppliedEvent(userId: string, sessionId: string): void {
-  const event = {
-    action: "override_applied",
-    userId,
-    sessionId,
-    timestamp: new Date().toISOString(),
-  };
-  if (
-    typeof window !== "undefined" &&
-    typeof (
-      window as Window & { otelClient?: { track: (e: unknown) => void } }
-    ).otelClient?.track === "function"
-  ) {
-    (
-      window as Window & { otelClient: { track: (e: unknown) => void } }
-    ).otelClient.track(event);
-  }
-  window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
-}
 
 function makeConstraintSnapshot(): ConstraintSnapshot {
   return {
@@ -262,7 +227,7 @@ function OverrideForm({ runId, vin, originalPosition, onSaved, onCancel }: Overr
           newPosition: newPos,
           justification,
         });
-        emitOverrideAppliedEvent("anonymous", `session-${runId.slice(0, 8)}`);
+        emitOverrideAppliedEvent();
         setShowToast(true);
         setTimeout(() => {
           onSaved(record);
@@ -510,7 +475,7 @@ export function SequenceBuilderPage() {
     setOverrideTarget(null);
     setOverrides([]);
 
-    emitOptimizerRunEvent("anonymous", "session-" + idempotencyKeyRef.current.slice(0, 8));
+    emitOptimizerRunEvent();
 
     const vins = makeSampleVins();
     const constraintSnapshot = makeConstraintSnapshot();

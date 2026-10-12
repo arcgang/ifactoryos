@@ -48,14 +48,6 @@ function emitAdoptionEvent(userId: string, sessionId: string): void {
     sessionId,
     timestamp: new Date().toISOString(),
   };
-  if (
-    typeof window !== "undefined" &&
-    typeof (window as Window & { otelClient?: { track: (e: unknown) => void } })
-      .otelClient?.track === "function"
-  ) {
-    (window as Window & { otelClient: { track: (e: unknown) => void } }).otelClient.track(event);
-  }
-  // Always emit as a custom DOM event so other subscribers (e.g. otel-web-sdk auto-instrument) can pick it up
   window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
 }
 

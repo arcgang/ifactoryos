@@ -81,3 +81,15 @@ services:
       POSTGRES_PASSWORD: local
       POSTGRES_DB: app
     restart: unless-stopped
+  identity-service:
+    build:
+      context: services/identity-service
+    ports:
+      - ${IDENTITY_SERVICE_PORT:-8083}:8080
+    environment:
+      IDENTITY_DB_URL: postgresql://identity_service:localpassword@citus:5432/app
+      AUDIT_STORAGE_ACCOUNT: ${AUDIT_STORAGE_ACCOUNT:-stauditlogdev}
+      AUDIT_CONTAINER_NAME: ${AUDIT_CONTAINER_NAME:-audit-events}
+    depends_on:
+      - citus
+    restart: unless-stopped

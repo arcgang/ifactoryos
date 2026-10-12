@@ -154,6 +154,9 @@ locals {
     "planning-cockpit-mi",
     "line-command-mi",
     "quality-studio-mi",
+    # identity-service writes IDENTITY_DELETION_REQUESTED and IDENTITY_PSEUDONYMISED
+    # audit events (GDPR US-028 / BR-13).
+    "identity-service-mi",
   ]
 }
 

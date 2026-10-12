@@ -502,9 +502,80 @@ resource "kubectl_manifest" "hivemq_config" {
   YAML
 }
 
-# HiveMQ cluster — 3 nodes, TLS 1.3, Sparkplug B + Kafka extensions
+# HiveMQ ACL rules ConfigMap — loaded by Enterprise Security Extension
+# Rules file enforces per-gateway publish ACLs derived from SPIFFE SVID usernames.
+resource "kubectl_manifest" "hivemq_acl_configmap" {
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: hivemq-acl-rules
+      namespace: hivemq
+      labels:
+        app.kubernetes.io/component: hivemq
+        app.kubernetes.io/managed-by: terraform
+        data_residency: "eu-de-west-central"
+    data:
+      mqtt-acl-rules.xml: |
+        ${indent(8, file("${path.module}/helm/mqtt-acl-rules.xml"))}
+  YAML
+}
+
+# HiveMQ rejection webhook extension ConfigMap
+resource "kubectl_manifest" "hivemq_rejection_webhook_configmap" {
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: hivemq-rejection-webhook-extension-config
+      namespace: hivemq
+      labels:
+        app.kubernetes.io/component: hivemq
+        app.kubernetes.io/managed-by: terraform
+        data_residency: "eu-de-west-central"
+    data:
+      hivemq-rejection-webhook-extension.xml: |
+        ${indent(8, file("${path.module}/helm/hivemq-rejection-webhook-extension.xml"))}
+  YAML
+}
+
+# SPIRE CA bundle refresh sidecar ConfigMap — spiffe-helper config
+resource "kubectl_manifest" "spire_bundle_refresher_configmap" {
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: spire-bundle-refresher-config
+      namespace: hivemq
+      labels:
+        app.kubernetes.io/component: spire-bundle-refresher
+        app.kubernetes.io/managed-by: terraform
+        data_residency: "eu-de-west-central"
+    data:
+      helper.conf: |
+        agent_address = "/run/spire/sockets/agent.sock"
+        svid_file_name = "svid.pem"
+        svid_key_file_name = "svid_key.pem"
+        svid_bundle_file_name = "bundle.pem"
+        renew_signal = ""
+        cmd = ""
+        cmd_args = ""
+  YAML
+}
+
+# HiveMQ cluster — 3 nodes, TLS 1.3, mTLS (requireClientCert), Sparkplug B + Kafka extensions
+# Extended with:
+#   - SPIRE CA bundle sidecar (spiffe-helper) that refreshes the trust bundle at ≤ 60 s
+#   - Enterprise Security Extension for per-gateway MQTT publish ACLs
+#   - Rejection webhook extension that audits every failed TLS handshake within 1 s
 resource "kubectl_manifest" "hivemq_cluster" {
-  depends_on = [helm_release.hivemq_operator, kubectl_manifest.hivemq_config]
+  depends_on = [
+    helm_release.hivemq_operator,
+    kubectl_manifest.hivemq_config,
+    kubectl_manifest.hivemq_acl_configmap,
+    kubectl_manifest.hivemq_rejection_webhook_configmap,
+    kubectl_manifest.spire_bundle_refresher_configmap,
+  ]
 
   yaml_body = <<-YAML
     apiVersion: hivemq.com/v1
@@ -550,6 +621,10 @@ resource "kubectl_manifest" "hivemq_cluster" {
       configMaps:
         - name: hivemq-config
           path: /opt/hivemq/conf
+        - name: hivemq-acl-rules
+          path: /opt/hivemq/extensions/hivemq-enterprise-security-extension/conf
+        - name: hivemq-rejection-webhook-extension-config
+          path: /opt/hivemq/extensions/hivemq-rejection-webhook-extension/conf
       resources:
         cpu: "2"
         memory: "4Gi"
@@ -563,12 +638,120 @@ resource "kubectl_manifest" "hivemq_cluster" {
         - name: hivemq-kafka-extension
           extensionUri: "hivemq/hivemq-kafka-extension:1.3.3"
           enabled: true
+        - name: hivemq-enterprise-security-extension
+          extensionUri: "hivemq/hivemq-enterprise-security-extension:4.29.0"
+          enabled: true
+        - name: hivemq-rejection-webhook-extension
+          extensionUri: "local:///opt/hivemq/extensions/hivemq-rejection-webhook-extension"
+          enabled: true
       podTemplate:
         spec:
           securityContext:
             runAsNonRoot: true
             runAsUser: 10000
             fsGroup: 10000
+          volumes:
+            # Shared emptyDir between SPIRE sidecar and HiveMQ: sidecar writes the CA bundle.
+            - name: spire-ca-bundle
+              emptyDir: {}
+            # SPIRE agent Workload API socket — hostPath from the spiffe-spire DaemonSet.
+            - name: spire-agent-socket
+              hostPath:
+                path: /run/spire/sockets
+                type: DirectoryOrCreate
+            # spiffe-helper config
+            - name: spire-bundle-refresher-config
+              configMap:
+                name: spire-bundle-refresher-config
+          initContainers:
+            # Runs once before HiveMQ starts; ensures bundle.pem exists before the broker
+            # tries to load the truststore, preventing a startup race.
+            - name: spire-bundle-init
+              image: ghcr.io/spiffe/spiffe-helper:0.6.0
+              args:
+                - -config
+                - /etc/spiffe-helper/helper.conf
+                - -exitWhenBundleFetched
+              env:
+                - name: SPIFFE_ENDPOINT_SOCKET
+                  value: unix:///run/spire/sockets/agent.sock
+              volumeMounts:
+                - name: spire-agent-socket
+                  mountPath: /run/spire/sockets
+                  readOnly: true
+                - name: spire-ca-bundle
+                  mountPath: /run/spire/bundle
+                - name: spire-bundle-refresher-config
+                  mountPath: /etc/spiffe-helper
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 10001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+          containers:
+            - name: spire-bundle-refresher
+              image: ghcr.io/spiffe/spiffe-helper:0.6.0
+              args:
+                - -config
+                - /etc/spiffe-helper/helper.conf
+              env:
+                - name: SPIFFE_ENDPOINT_SOCKET
+                  value: unix:///run/spire/sockets/agent.sock
+              volumeMounts:
+                - name: spire-agent-socket
+                  mountPath: /run/spire/sockets
+                  readOnly: true
+                - name: spire-ca-bundle
+                  mountPath: /run/spire/bundle
+                - name: spire-bundle-refresher-config
+                  mountPath: /etc/spiffe-helper
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 10001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+              livenessProbe:
+                exec:
+                  command:
+                    - test
+                    - -S
+                    - /run/spire/sockets/agent.sock
+                initialDelaySeconds: 5
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
+              readinessProbe:
+                exec:
+                  command:
+                    - test
+                    - -s
+                    - /run/spire/bundle/bundle.pem
+                initialDelaySeconds: 10
+                periodSeconds: 15
+                timeoutSeconds: 5
+                failureThreshold: 3
+          additionalVolumeMounts:
+            # Mount the SPIRE CA bundle into the HiveMQ container so HiveMQ's file-based
+            # truststore reload mechanism can pick up rotated CA certificates.
+            - name: spire-ca-bundle
+              mountPath: /opt/hivemq/conf/spire-ca
+              readOnly: true
   YAML
 }
 

@@ -1,0 +1,258 @@
+asyncapi: 2.6.0
+info:
+  title: Defect Genome Events
+  version: 1.0.0
+  description: >
+    Events published by the defect-genome service (KServe, DBSCAN, XGBoost) for
+    paint defect cluster alerts, corrective action recommendations, and query results.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.munich.defectgenome.cluster.alerts.v1:
+    description: Published when the DefectGenome DBSCAN model detects a new paint defect cluster requiring intervention.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID (e.g. quality-studio-defect-consumer)
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveDefectClusterAlert
+      summary: Receive a paint defect cluster alert
+      message:
+        $ref: '#/components/messages/DefectClusterAlert'
+
+  bmw.munich.defectgenome.corrective.actions.v1:
+    description: Published when the DefectGenome XGBoost model recommends corrective actions for a defect cluster.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveCorrectiveActions
+      summary: Receive corrective action recommendations
+      message:
+        $ref: '#/components/messages/CorrectiveActions'
+
+  bmw.munich.defectgenome.query.results.v1:
+    description: Published in response to a defect-genome query request (async query/response pattern).
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveDefectQueryResults
+      summary: Receive defect genome query results
+      message:
+        $ref: '#/components/messages/DefectQueryResults'
+
+  bmw.munich.paint.defect.events.v1:
+    description: Raw paint defect events captured from the paint shop quality sensors.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 12
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receivePaintDefectEvent
+      summary: Receive a raw paint defect event
+      message:
+        $ref: '#/components/messages/PaintDefectEvent'
+
+components:
+  messages:
+    DefectClusterAlert:
+      name: DefectClusterAlert
+      title: Defect Cluster Alert
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DefectClusterAlertPayload'
+
+    CorrectiveActions:
+      name: CorrectiveActions
+      title: Corrective Actions
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CorrectiveActionsPayload'
+
+    DefectQueryResults:
+      name: DefectQueryResults
+      title: Defect Query Results
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DefectQueryResultsPayload'
+
+    PaintDefectEvent:
+      name: PaintDefectEvent
+      title: Paint Defect Event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PaintDefectEventPayload'
+
+  schemas:
+    DefectClusterAlertPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - clusterId
+        - defectType
+        - affectedVinCount
+        - severity
+        - stationIds
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        clusterId:
+          type: string
+          format: uuid
+          description: DBSCAN cluster identifier
+        defectType:
+          type: string
+          description: Defect category (e.g. dust_inclusion, sag, orange_peel, crater)
+        affectedVinCount:
+          type: integer
+          minimum: 1
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        stationIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        confidenceScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+
+    CorrectiveActionsPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - clusterId
+        - actions
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        clusterId:
+          type: string
+          format: uuid
+        actions:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [actionId, description, priority]
+            properties:
+              actionId:
+                type: string
+                format: uuid
+              description:
+                type: string
+              priority:
+                type: integer
+                minimum: 1
+              estimatedImpactPct:
+                type: number
+                format: double
+                minimum: 0
+                maximum: 100
+
+    DefectQueryResultsPayload:
+      type: object
+      required:
+        - eventId
+        - correlationId
+        - occurredAt
+        - results
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        correlationId:
+          type: string
+          format: uuid
+          description: Correlation ID from the originating query request
+        occurredAt:
+          type: string
+          format: date-time
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    PaintDefectEventPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - stationId
+        - vin
+        - defectCode
+        - severity
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        defectCode:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        imageRef:
+          type: string
+          description: Reference to defect image stored in Azure Blob Storage (EU-only)
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

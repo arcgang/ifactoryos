@@ -1,0 +1,94 @@
+asyncapi: 2.6.0
+info:
+  title: UNS Andon Alerts
+  version: 1.0.0
+  description: Real-time Andon alert events published from the Unified Namespace backbone.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.ifos.munich.uns.andon.alerts.v1:
+    description: Andon alert raised by a line station, published via the UNS backbone.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID; set to your service name (e.g. planning-cockpit-andon-consumer)
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveAndonAlert
+      summary: Receive an Andon alert event
+      message:
+        $ref: '#/components/messages/AndonAlert'
+
+components:
+  messages:
+    AndonAlert:
+      name: AndonAlert
+      title: Andon Alert
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AndonAlertPayload'
+
+  schemas:
+    AndonAlertPayload:
+      type: object
+      required:
+        - eventId
+        - correlationId
+        - occurredAt
+        - plant
+        - stationId
+        - alertType
+        - severity
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique identifier for this event instance
+        correlationId:
+          type: string
+          format: uuid
+          description: Trace correlation identifier linking related events
+        occurredAt:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp when the alert was raised
+        plant:
+          type: string
+          description: Plant identifier (e.g. munich)
+        stationId:
+          type: string
+          description: Station or workstation that raised the Andon
+        alertType:
+          type: string
+          enum: [line_stop, quality_hold, maintenance_call, safety_stop]
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        description:
+          type: string
+          description: Human-readable description of the alert condition
+        resolvedAt:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp when the alert was resolved; absent if still active
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

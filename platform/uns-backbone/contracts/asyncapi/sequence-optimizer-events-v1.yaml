@@ -1,0 +1,370 @@
+asyncapi: 2.6.0
+info:
+  title: Sequence Optimizer Events
+  version: 1.0.0
+  description: >
+    Events published by the sequence-optimizer service (KServe, scikit-optimize)
+    for VIN sequencing results, constraint alerts, MY26 config activation, and
+    resequence triggers.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.munich.i4.sequence.optimized.v1:
+    description: Published when a Monte Carlo or heuristic-fallback optimisation run completes successfully.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID (e.g. planning-cockpit-sequence-consumer)
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveSequenceOptimized
+      summary: Receive a completed ranked VIN sequence
+      message:
+        $ref: '#/components/messages/SequenceOptimized'
+
+  bmw.munich.i4.sequence.constraint.alert.v1:
+    description: Published when a live constraint value breaches a configured threshold.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveConstraintAlert
+      summary: Receive a constraint threshold alert
+      message:
+        $ref: '#/components/messages/ConstraintAlert'
+
+  bmw.munich.i4.sequence.my26.config.activated.v1:
+    description: Published when a new MY26 configuration version is activated.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveMy26ConfigActivated
+      summary: Receive a MY26 config activation event
+      message:
+        $ref: '#/components/messages/My26ConfigActivated'
+
+  bmw.munich.i4.sequence.override.applied.v1:
+    description: Published when a planner manually overrides the optimised sequence.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveSequenceOverride
+      summary: Receive a sequence override event
+      message:
+        $ref: '#/components/messages/SequenceOverride'
+
+  bmw.munich.i4.sequence.resequence.triggered.v1:
+    description: Published when an event (constraint breach, Andon alert) triggers a resequence request.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveResequenceTriggered
+      summary: Receive a resequence trigger event
+      message:
+        $ref: '#/components/messages/ResequenceTriggered'
+
+  bmw.munich.i4.uns.constraints.live.v1:
+    description: Periodic publish of live constraint snapshot fetched from the UNS for use by the sequence optimizer.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveLiveConstraints
+      summary: Receive a live UNS constraint snapshot
+      message:
+        $ref: '#/components/messages/LiveConstraints'
+
+components:
+  messages:
+    SequenceOptimized:
+      name: SequenceOptimized
+      title: Sequence Optimized
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SequenceOptimizedPayload'
+
+    ConstraintAlert:
+      name: ConstraintAlert
+      title: Constraint Alert
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConstraintAlertPayload'
+
+    My26ConfigActivated:
+      name: My26ConfigActivated
+      title: MY26 Config Activated
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/My26ConfigActivatedPayload'
+
+    SequenceOverride:
+      name: SequenceOverride
+      title: Sequence Override Applied
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SequenceOverridePayload'
+
+    ResequenceTriggered:
+      name: ResequenceTriggered
+      title: Resequence Triggered
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ResequenceTriggeredPayload'
+
+    LiveConstraints:
+      name: LiveConstraints
+      title: Live UNS Constraints
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/LiveConstraintsPayload'
+
+  schemas:
+    SequenceOptimizedPayload:
+      type: object
+      required:
+        - eventId
+        - runId
+        - weekIso
+        - resultType
+        - completedAt
+        - durationMs
+        - confidenceScore
+        - rankedSequence
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        runId:
+          type: string
+          format: uuid
+          description: Matches optimizer_run.run_id in the sequence-optimizer database
+        weekIso:
+          type: string
+          pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+        resultType:
+          type: string
+          enum: [monte_carlo, heuristic_fallback]
+        completedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          minimum: 0
+        confidenceScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        my26ConfigVersion:
+          type: string
+          format: uuid
+          nullable: true
+        rankedSequence:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [vin, position, constraintScore]
+            properties:
+              vin:
+                type: string
+                pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+              position:
+                type: integer
+                minimum: 1
+              constraintScore:
+                type: number
+                format: double
+              vipPriority:
+                type: boolean
+              regulatoryHold:
+                type: boolean
+
+    ConstraintAlertPayload:
+      type: object
+      required: [eventId, occurredAt, plant, constraintName, currentValue, thresholdValue, severity]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        constraintName:
+          type: string
+          enum: [paint_capacity_utilisation, body_wip_queue_depth, kitting_readiness_pct, uns_latency_ms]
+        currentValue:
+          type: number
+          format: double
+        thresholdValue:
+          type: number
+          format: double
+        severity:
+          type: string
+          enum: [critical, high, medium]
+
+    My26ConfigActivatedPayload:
+      type: object
+      required: [eventId, occurredAt, configId, activatedBy]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        configId:
+          type: string
+          format: uuid
+        previousConfigId:
+          type: string
+          format: uuid
+          nullable: true
+        activatedBy:
+          type: string
+          description: Entra ID subject of the user who activated the config
+
+    SequenceOverridePayload:
+      type: object
+      required: [eventId, occurredAt, runId, weekIso, overriddenBy, reason]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        runId:
+          type: string
+          format: uuid
+        weekIso:
+          type: string
+          pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+        overriddenBy:
+          type: string
+          description: Entra ID subject of the planner who applied the override
+        reason:
+          type: string
+
+    ResequenceTriggeredPayload:
+      type: object
+      required: [eventId, occurredAt, plant, weekIso, triggerSource, triggerEventId]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        weekIso:
+          type: string
+          pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+        triggerSource:
+          type: string
+          enum: [constraint_alert, andon_alert, manual, schedule]
+        triggerEventId:
+          type: string
+          format: uuid
+          description: eventId of the upstream event that caused this resequence
+
+    LiveConstraintsPayload:
+      type: object
+      required:
+        - eventId
+        - snapshotTimestamp
+        - plant
+        - paintCapacityUtilisation
+        - bodyWipQueueDepth
+        - kittingReadinessPct
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        snapshotTimestamp:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        paintCapacityUtilisation:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        bodyWipQueueDepth:
+          type: integer
+          minimum: 0
+        kittingReadinessPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        unsLatencyMs:
+          type: integer
+          description: UNS p99 latency at snapshot time in milliseconds
+        maintenanceWindows:
+          type: array
+          items:
+            type: object
+            required: [windowId, stationId, startsAt, endsAt]
+            properties:
+              windowId:
+                type: string
+                format: uuid
+              stationId:
+                type: string
+              startsAt:
+                type: string
+                format: date-time
+              endsAt:
+                type: string
+                format: date-time
+              description:
+                type: string
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

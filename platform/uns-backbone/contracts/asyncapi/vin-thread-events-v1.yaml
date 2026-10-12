@@ -1,0 +1,263 @@
+asyncapi: 2.6.0
+info:
+  title: VIN Digital Thread Events
+  version: 1.0.0
+  description: >
+    Events published to the VIN digital thread (Neo4j 5.x) covering completeness
+    alerts, event linkage, torque feedback, and final gate completion.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  factory.munich.vin.thread.completeness.alert.v1:
+    description: Alert published when VIN thread completeness falls below the 95% threshold.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID (e.g. vin-digital-thread-alert-consumer)
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveVinCompletenessAlert
+      summary: Receive a VIN thread completeness alert
+      message:
+        $ref: '#/components/messages/VinCompletenessAlert'
+
+  factory.munich.vin.thread.event.linked.v1:
+    description: Published when a manufacturing event is linked to a VIN node in the digital thread graph.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 12
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveVinEventLinked
+      summary: Receive a VIN thread event linked notification
+      message:
+        $ref: '#/components/messages/VinEventLinked'
+
+  factory.munich.vin.thread.final.gate.complete.v1:
+    description: Published when the final quality gate for a VIN is completed in OpCenter.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveVinFinalGateComplete
+      summary: Receive a VIN final gate completion event
+      message:
+        $ref: '#/components/messages/VinFinalGateComplete'
+
+  factory.munich.vin-thread.torque.feedback.v1:
+    description: Torque feedback events fed back into the VIN digital thread from torque measurement results.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveVinTorqueFeedback
+      summary: Receive a VIN torque feedback event
+      message:
+        $ref: '#/components/messages/VinTorqueFeedback'
+
+components:
+  messages:
+    VinCompletenessAlert:
+      name: VinCompletenessAlert
+      title: VIN Completeness Alert
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/VinCompletenessAlertPayload'
+
+    VinEventLinked:
+      name: VinEventLinked
+      title: VIN Event Linked
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/VinEventLinkedPayload'
+
+    VinFinalGateComplete:
+      name: VinFinalGateComplete
+      title: VIN Final Gate Complete
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/VinFinalGateCompletePayload'
+
+    VinTorqueFeedback:
+      name: VinTorqueFeedback
+      title: VIN Torque Feedback
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/VinTorqueFeedbackPayload'
+
+  schemas:
+    VinCompletenessAlertPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - vin
+        - completenessPct
+        - missingBuckets
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        completenessPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: Current completeness percentage; alert fires when below 95%
+        missingBuckets:
+          type: array
+          description: List of event buckets with insufficient samples
+          items:
+            type: object
+            required: [bucketName, expectedCount, actualCount]
+            properties:
+              bucketName:
+                type: string
+              expectedCount:
+                type: integer
+                minimum: 0
+              actualCount:
+                type: integer
+                minimum: 0
+
+    VinEventLinkedPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - vin
+        - linkedEventId
+        - linkedEventType
+        - nodeId
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        linkedEventId:
+          type: string
+          format: uuid
+          description: ID of the manufacturing event linked to this VIN
+        linkedEventType:
+          type: string
+          description: Type of the linked event (e.g. torque_submitted, gate_result)
+        nodeId:
+          type: string
+          description: Neo4j node ID in the digital thread graph
+
+    VinFinalGateCompletePayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - vin
+        - gateId
+        - result
+        - completedAt
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        gateId:
+          type: string
+        result:
+          type: string
+          enum: [pass, fail, conditional_pass]
+        completedAt:
+          type: string
+          format: date-time
+        defectCodes:
+          type: array
+          items:
+            type: string
+
+    VinTorqueFeedbackPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - vin
+        - stationId
+        - boltId
+        - actualTorqueNm
+        - withinTolerance
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        stationId:
+          type: string
+        boltId:
+          type: string
+        actualTorqueNm:
+          type: number
+          format: double
+        withinTolerance:
+          type: boolean
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

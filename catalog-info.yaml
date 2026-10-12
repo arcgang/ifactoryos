@@ -202,6 +202,7 @@ metadata:
   annotations:
     github.com/project-slug: arcgang/ifactoryos
     backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/uns-backbone
+    backstage.io/techdocs-ref: dir:platform/uns-backbone/contracts
     sdlc.io/lld-component: cmp:uns-backbone
     sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
 spec:

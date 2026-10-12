@@ -1,0 +1,62 @@
+---
+# Ansible inventory for the 10 Siemens SIMATIC edge gateways.
+# 2 gateways per shop (primary + standby); IEC 62443 SL2.
+# IP ranges: 10.200.{shop_octet}.{11|12}/24 in OT VLAN.
+
+all:
+  children:
+    inbound:
+      hosts:
+        edge-inbound-01:
+          ansible_host: 10.200.10.11
+          gateway_role: primary
+          shop: inbound
+        edge-inbound-02:
+          ansible_host: 10.200.10.12
+          gateway_role: standby
+          shop: inbound
+    body:
+      hosts:
+        edge-body-01:
+          ansible_host: 10.200.20.11
+          gateway_role: primary
+          shop: body
+        edge-body-02:
+          ansible_host: 10.200.20.12
+          gateway_role: standby
+          shop: body
+    paint:
+      hosts:
+        edge-paint-01:
+          ansible_host: 10.200.30.11
+          gateway_role: primary
+          shop: paint
+        edge-paint-02:
+          ansible_host: 10.200.30.12
+          gateway_role: standby
+          shop: paint
+    assembly:
+      hosts:
+        edge-assembly-01:
+          ansible_host: 10.200.40.11
+          gateway_role: primary
+          shop: assembly
+        edge-assembly-02:
+          ansible_host: 10.200.40.12
+          gateway_role: standby
+          shop: assembly
+    quality:
+      hosts:
+        edge-quality-01:
+          ansible_host: 10.200.50.11
+          gateway_role: primary
+          shop: quality
+        edge-quality-02:
+          ansible_host: 10.200.50.12
+          gateway_role: standby
+          shop: quality
+  vars:
+    ansible_user: ifos-ansible
+    ansible_ssh_private_key_file: /run/secrets/ansible-ssh-key
+    ansible_become: true
+    ansible_python_interpreter: /usr/bin/python3

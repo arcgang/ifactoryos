@@ -1,0 +1,70 @@
+---
+# Quality shop — Beckhoff ADS tag catalogue and sample rates.
+# PLCs: measurement stations, vision systems, final gate.
+
+shop: quality
+
+plc_group:
+  - plc_id: QA-PLC-01
+    ads_net_id: "192.168.50.11.1.1"
+    tags:
+      - name: measurement_value_mm
+        ads_symbol: "MAIN.MeasValue"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: measurement_nominal_mm
+        ads_symbol: "MAIN.MeasNominal"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: measurement_tolerance_mm
+        ads_symbol: "MAIN.MeasTolerance"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: gate_result
+        ads_symbol: "MAIN.GateResult"
+        data_type: String
+        sample_rate_ms: 100
+      - name: defect_code
+        ads_symbol: "MAIN.DefectCode"
+        data_type: Int32
+        sample_rate_ms: 100
+      - name: vision_confidence_pct
+        ads_symbol: "MAIN.VisionConfidence"
+        data_type: Double
+        unit: pct
+        sample_rate_ms: 500
+
+  - plc_id: QA-PLC-02
+    ads_net_id: "192.168.50.12.1.1"
+    tags:
+      - name: measurement_value_mm
+        ads_symbol: "MAIN.MeasValue"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: measurement_nominal_mm
+        ads_symbol: "MAIN.MeasNominal"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: measurement_tolerance_mm
+        ads_symbol: "MAIN.MeasTolerance"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: gate_result
+        ads_symbol: "MAIN.GateResult"
+        data_type: String
+        sample_rate_ms: 100
+      - name: defect_code
+        ads_symbol: "MAIN.DefectCode"
+        data_type: Int32
+        sample_rate_ms: 100
+      - name: vision_confidence_pct
+        ads_symbol: "MAIN.VisionConfidence"
+        data_type: Double
+        unit: pct
+        sample_rate_ms: 500

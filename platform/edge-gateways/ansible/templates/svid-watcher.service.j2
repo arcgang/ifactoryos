@@ -1,0 +1,20 @@
+[Unit]
+Description=SPIRE SVID certificate watcher — triggers SIMATIC Edge Runtime TLS reload
+After=network.target spire-agent.service
+Requires=spire-agent.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/svid-watcher \
+    --socket {{ spire_agent_socket }} \
+    --cert-out {{ svid_cert_path }} \
+    --key-out {{ svid_key_path }} \
+    --bundle-out {{ spire_bundle_path }} \
+    --on-rotate "kill -HUP $(systemctl show -p MainPID --value {{ simatic_edge_service }})"
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

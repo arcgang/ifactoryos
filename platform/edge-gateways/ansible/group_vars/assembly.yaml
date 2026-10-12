@@ -1,0 +1,78 @@
+---
+# Assembly shop — Beckhoff ADS tag catalogue and sample rates.
+# PLCs: torque tools, robot arms, conveyor stations (highest tag density).
+
+shop: assembly
+
+plc_group:
+  - plc_id: AS-PLC-01
+    ads_net_id: "192.168.40.11.1.1"
+    tags:
+      - name: torque_nm
+        ads_symbol: "MAIN.Torque"
+        data_type: Double
+        unit: Nm
+        sample_rate_ms: 50
+      - name: torque_angle_deg
+        ads_symbol: "MAIN.TorqueAngle"
+        data_type: Double
+        unit: deg
+        sample_rate_ms: 50
+      - name: torque_result
+        ads_symbol: "MAIN.TorqueResult"
+        data_type: String
+        sample_rate_ms: 50
+      - name: fastener_count
+        ads_symbol: "MAIN.FastenerCount"
+        data_type: Int32
+        sample_rate_ms: 100
+      - name: robot_force_n
+        ads_symbol: "MAIN.RobotForce"
+        data_type: Double
+        unit: N
+        sample_rate_ms: 100
+      - name: station_cycle_time_s
+        ads_symbol: "MAIN.CycleTime"
+        data_type: Double
+        unit: s
+        sample_rate_ms: 1000
+      - name: vin_scan
+        ads_symbol: "MAIN.VinScan"
+        data_type: String
+        sample_rate_ms: 100
+
+  - plc_id: AS-PLC-02
+    ads_net_id: "192.168.40.12.1.1"
+    tags:
+      - name: torque_nm
+        ads_symbol: "MAIN.Torque"
+        data_type: Double
+        unit: Nm
+        sample_rate_ms: 50
+      - name: torque_angle_deg
+        ads_symbol: "MAIN.TorqueAngle"
+        data_type: Double
+        unit: deg
+        sample_rate_ms: 50
+      - name: torque_result
+        ads_symbol: "MAIN.TorqueResult"
+        data_type: String
+        sample_rate_ms: 50
+      - name: fastener_count
+        ads_symbol: "MAIN.FastenerCount"
+        data_type: Int32
+        sample_rate_ms: 100
+      - name: robot_force_n
+        ads_symbol: "MAIN.RobotForce"
+        data_type: Double
+        unit: N
+        sample_rate_ms: 100
+      - name: station_cycle_time_s
+        ads_symbol: "MAIN.CycleTime"
+        data_type: Double
+        unit: s
+        sample_rate_ms: 1000
+      - name: vin_scan
+        ads_symbol: "MAIN.VinScan"
+        data_type: String
+        sample_rate_ms: 100

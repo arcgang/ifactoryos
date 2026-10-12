@@ -1,0 +1,74 @@
+---
+# Paint shop — Beckhoff ADS tag catalogue and sample rates.
+# PLCs: paint booths, prep stages 1–14, e-coat, climate control.
+
+shop: paint
+
+plc_group:
+  - plc_id: PT-PLC-01
+    ads_net_id: "192.168.30.11.1.1"
+    tags:
+      - name: booth_temperature_c
+        ads_symbol: "MAIN.BoothTemp"
+        data_type: Double
+        unit: degC
+        sample_rate_ms: 1000
+      - name: booth_humidity_pct
+        ads_symbol: "MAIN.BoothHumidity"
+        data_type: Double
+        unit: pct
+        sample_rate_ms: 1000
+      - name: paint_flow_rate_lpm
+        ads_symbol: "MAIN.PaintFlowRate"
+        data_type: Double
+        unit: L/min
+        sample_rate_ms: 500
+      - name: atomiser_speed_rpm
+        ads_symbol: "MAIN.AtomiserSpeed"
+        data_type: Double
+        unit: rpm
+        sample_rate_ms: 200
+      - name: ecoat_voltage_v
+        ads_symbol: "MAIN.EcoatVoltage"
+        data_type: Double
+        unit: V
+        sample_rate_ms: 500
+      - name: phosphate_concentration_g_l
+        ads_symbol: "MAIN.PhosphateConc"
+        data_type: Double
+        unit: g/L
+        sample_rate_ms: 2000
+
+  - plc_id: PT-PLC-02
+    ads_net_id: "192.168.30.12.1.1"
+    tags:
+      - name: booth_temperature_c
+        ads_symbol: "MAIN.BoothTemp"
+        data_type: Double
+        unit: degC
+        sample_rate_ms: 1000
+      - name: booth_humidity_pct
+        ads_symbol: "MAIN.BoothHumidity"
+        data_type: Double
+        unit: pct
+        sample_rate_ms: 1000
+      - name: paint_flow_rate_lpm
+        ads_symbol: "MAIN.PaintFlowRate"
+        data_type: Double
+        unit: L/min
+        sample_rate_ms: 500
+      - name: atomiser_speed_rpm
+        ads_symbol: "MAIN.AtomiserSpeed"
+        data_type: Double
+        unit: rpm
+        sample_rate_ms: 200
+      - name: ecoat_voltage_v
+        ads_symbol: "MAIN.EcoatVoltage"
+        data_type: Double
+        unit: V
+        sample_rate_ms: 500
+      - name: phosphate_concentration_g_l
+        ads_symbol: "MAIN.PhosphateConc"
+        data_type: Double
+        unit: g/L
+        sample_rate_ms: 2000

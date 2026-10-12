@@ -1,0 +1,20 @@
+groups:
+  - name: sequence-optimizer.constraint-consumer-dlq
+    rules:
+      - alert: ConstraintConsumerDLQDepthNonZero
+        expr: >
+          kafka_topic_partition_current_offset{topic="uns.munich.i4.dlq.planning-cockpit-constraint-consumer"}
+          - kafka_topic_partition_oldest_offset{topic="uns.munich.i4.dlq.planning-cockpit-constraint-consumer"}
+          > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: sequence-optimizer
+          topic: uns.munich.i4.dlq.planning-cockpit-constraint-consumer
+        annotations:
+          summary: "Constraint consumer DLQ has unconsumed messages"
+          description: >
+            The dead-letter queue for the planning-cockpit-constraint-consumer group
+            (topic: uns.munich.i4.dlq.planning-cockpit-constraint-consumer) has
+            {{ $value }} unconsumed message(s). Investigate poison messages in the
+            sequence-optimizer consumer logs.

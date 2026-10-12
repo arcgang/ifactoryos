@@ -97,5 +97,23 @@
     "generic": "Ein Fehler ist aufgetreten. Bitte Seite neu laden.",
     "not_found": "Seite nicht gefunden.",
     "unauthorized": "Nicht autorisiert. Bitte erneut anmelden."
+  },
+  "rbac": {
+    "forbidden_heading": "HTTP 403 Verboten",
+    "forbidden_title": "Verboten — Unzureichende Rollenberechtigungen",
+    "forbidden_desc": "Ihr Konto hat keinen Zugriff auf Line Command. Wenden Sie sich an Ihren IT-Administrator, um die korrekte Rollenzuweisung zu beantragen.",
+    "meta_resource": "Angefordertes Ziel",
+    "meta_status": "HTTP-Status",
+    "meta_user": "Benutzerprinzipal",
+    "meta_role": "Zugewiesene Rolle",
+    "meta_scope": "Erforderlicher Berechtigungsbereich",
+    "audit_logged": "Audit-Ereignis protokolliert. Unbefugter Zugriffsversuch im Factory OS Audit-Trail erfasst.",
+    "return_button": "← Zurück zur autorisierten Konsole",
+    "access_restricted_toast": "Zugriff auf AR Workbench beschränkt",
+    "toast_dismiss_label": "Benachrichtigung schließen",
+    "loading": "Zugriff wird überprüft…",
+    "nav_ar_workbench": "AR Workbench",
+    "nav_command_center_locked": "Leitstand (eingeschränkt)",
+    "nav_handover_locked": "Übergabe-Builder (eingeschränkt)"
   }
 }

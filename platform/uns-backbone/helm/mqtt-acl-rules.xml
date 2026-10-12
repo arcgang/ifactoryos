@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HiveMQ Enterprise Security Extension — MQTT ACL rules
+  Component: cmp:uns-backbone  |  Realises: US-027 · BR-10
+
+  IDENTITY MODEL
+  ──────────────
+  requireClientCert: true  +  useIdentityAsUsername: true (hivemq-values.yaml) means
+  each MQTT client's username is its SPIFFE SVID URI SAN, e.g.:
+    spiffe://munich.bmw/edge-gateways/inbound/01
+
+  ACL MATRIX (SC-002, edge-gateway slice)
+  ────────────────────────────────────────
+  Each edge gateway (primary and standby) is authorised to PUBLISH ONLY to the
+  Sparkplug B DDATA topic whose zone matches its own SVID path segment:
+
+    spiffe://munich.bmw/edge-gateways/{shop}/{index}
+      → PUBLISH allowed: spBv1.0/munich-i4/DDATA/{shop}/#
+      → PUBLISH denied:  all other topics
+      → SUBSCRIBE:       denied to all topics (no subscription allowed)
+
+  Cross-gateway publish is explicitly denied: a gateway for "inbound" cannot
+  publish to spBv1.0/munich-i4/DDATA/body/# or any other shop.
+
+  The HiveMQ Enterprise Security Extension evaluates rules top-to-bottom and
+  applies the first matching rule. The final DENY_ALL rule at the bottom ensures
+  any unmapped identity is rejected.
+-->
+<hivemq-enterprise-security-extension>
+
+  <!-- =========================================================
+       AUTHENTICATION
+       Accept any client that presents a valid SPIFFE SVID cert
+       signed by the spiffe://munich.bmw CA bundle. The TLS
+       listener enforces requireClientCert=true, so any client
+       reaching this auth stage has already passed TLS handshake.
+       ========================================================= -->
+  <authentication>
+    <allow-all/>
+  </authentication>
+
+  <!-- =========================================================
+       AUTHORISATION RULES
+       ========================================================= -->
+  <authorisation>
+
+    <!-- -------------------------------------------------------
+         INBOUND shop — edge-gateways/inbound/01 and /02
+         ------------------------------------------------------- -->
+    <rule>
+      <id>inbound-01-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/inbound/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/inbound/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>inbound-02-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/inbound/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/inbound/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         BODY shop — edge-gateways/body/01 and /02
+         ------------------------------------------------------- -->
+    <rule>
+      <id>body-01-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/body/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/body/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>body-02-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/body/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/body/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         PAINT shop — edge-gateways/paint/01 and /02
+         ------------------------------------------------------- -->
+    <rule>
+      <id>paint-01-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/paint/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/paint/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>paint-02-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/paint/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/paint/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         ASSEMBLY shop — edge-gateways/assembly/01 and /02
+         ------------------------------------------------------- -->
+    <rule>
+      <id>assembly-01-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/assembly/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/assembly/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>assembly-02-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/assembly/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/assembly/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         QUALITY shop — edge-gateways/quality/01 and /02
+         ------------------------------------------------------- -->
+    <rule>
+      <id>quality-01-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/quality/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/quality/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>quality-02-publish-ddata</id>
+      <clientIdentifier/>
+      <username>spiffe://munich.bmw/edge-gateways/quality/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/DDATA/quality/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         NBIRTH / STATE — each gateway may also publish lifecycle
+         messages on its own shop namespace only.
+         ------------------------------------------------------- -->
+    <rule>
+      <id>inbound-01-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/inbound/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/inbound/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>inbound-02-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/inbound/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/inbound/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>body-01-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/body/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/body/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>body-02-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/body/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/body/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>paint-01-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/paint/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/paint/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>paint-02-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/paint/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/paint/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>assembly-01-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/assembly/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/assembly/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>assembly-02-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/assembly/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/assembly/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>quality-01-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/quality/01</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/quality/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+    <rule>
+      <id>quality-02-publish-nbirth</id>
+      <username>spiffe://munich.bmw/edge-gateways/quality/02</username>
+      <action>PUBLISH</action>
+      <topic-filter>spBv1.0/munich-i4/NBIRTH/quality/#</topic-filter>
+      <permission>ALLOW</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         SUBSCRIBE — denied for all edge gateway identities.
+         Edge gateways are publish-only producers; they must not
+         receive MQTT messages from the broker.
+         ------------------------------------------------------- -->
+    <rule>
+      <id>deny-all-subscribe-edge-inbound</id>
+      <username>spiffe://munich.bmw/edge-gateways/inbound/01</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-inbound-02</id>
+      <username>spiffe://munich.bmw/edge-gateways/inbound/02</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-body-01</id>
+      <username>spiffe://munich.bmw/edge-gateways/body/01</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-body-02</id>
+      <username>spiffe://munich.bmw/edge-gateways/body/02</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-paint-01</id>
+      <username>spiffe://munich.bmw/edge-gateways/paint/01</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-paint-02</id>
+      <username>spiffe://munich.bmw/edge-gateways/paint/02</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-assembly-01</id>
+      <username>spiffe://munich.bmw/edge-gateways/assembly/01</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-assembly-02</id>
+      <username>spiffe://munich.bmw/edge-gateways/assembly/02</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-quality-01</id>
+      <username>spiffe://munich.bmw/edge-gateways/quality/01</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+    <rule>
+      <id>deny-all-subscribe-edge-quality-02</id>
+      <username>spiffe://munich.bmw/edge-gateways/quality/02</username>
+      <action>SUBSCRIBE</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+
+    <!-- -------------------------------------------------------
+         DENY ALL — catch-all for any unmatched identity or action.
+         Any gateway attempting cross-zone publish (e.g. inbound/01
+         publishing to DDATA/body/#) reaches this rule and is denied.
+         ------------------------------------------------------- -->
+    <rule>
+      <id>deny-all</id>
+      <action>ALL</action>
+      <topic-filter>#</topic-filter>
+      <permission>DENY</permission>
+    </rule>
+
+  </authorisation>
+
+</hivemq-enterprise-security-extension>

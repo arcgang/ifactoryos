@@ -30,6 +30,9 @@ module "uns_backbone" {
 module "edge_gateways" {
   source      = "./edge-gateways"
   environment = var.environment
+
+  # SPIRE server address for SVID registration — consumed from spiffe_spire output
+  spire_server_address = module.spiffe_spire.spire_server_address
 }
 
 module "vin_digital_thread" {

@@ -122,6 +122,27 @@
     "streamDegraded": "UNS stream degraded",
     "tilesRegionLabel": "Constraint tiles"
   },
+  "constraintAlert": {
+    "panelLabel": "Constraint breach alerts",
+    "panelTitle": "Active Constraint Alerts",
+    "thresholdBreached": "threshold breached",
+    "currentValue": "Current value",
+    "threshold": "Threshold",
+    "detectedAt": "Detected at",
+    "affectedVins": "Affected VINs",
+    "affectedVinsLabel": "Affected VINs list",
+    "more": "more",
+    "dismiss": "Dismiss",
+    "resequenceButton": "Re-sequence Affected VINs",
+    "resequencing": "Running targeted re-sequence…",
+    "targetedResequenceTitle": "Targeted Re-sequence",
+    "alertRef": "Alert",
+    "scenarioLabLabel": "Scenario Lab — targeted re-sequence",
+    "targetedSequenceTableLabel": "Targeted VIN sequence",
+    "publishResequence": "Publish Re-sequence to OpCenter",
+    "publishing": "Publishing…",
+    "publishConfirmation": "Re-sequence published — attributed to planning-cockpit in audit log"
+  },
   "sequenceBuilder": {
     "subtitle": "50-run Monte Carlo SequenceOptimizer against live constraints",
     "runCardLabel": "Run configuration",

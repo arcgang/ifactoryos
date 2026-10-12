@@ -122,6 +122,27 @@
     "streamDegraded": "UNS-Stream beeinträchtigt",
     "tilesRegionLabel": "Constraint-Kacheln"
   },
+  "constraintAlert": {
+    "panelLabel": "Constraint-Schwellenwert-Alarme",
+    "panelTitle": "Aktive Constraint-Alarme",
+    "thresholdBreached": "Schwellenwert überschritten",
+    "currentValue": "Aktueller Wert",
+    "threshold": "Schwellenwert",
+    "detectedAt": "Erkannt um",
+    "affectedVins": "Betroffene VINs",
+    "affectedVinsLabel": "Liste betroffener VINs",
+    "more": "weitere",
+    "dismiss": "Verwerfen",
+    "resequenceButton": "Betroffene VINs neu sequenzieren",
+    "resequencing": "Gezielte Neusequenzierung läuft …",
+    "targetedResequenceTitle": "Gezielte Neusequenzierung",
+    "alertRef": "Alarm",
+    "scenarioLabLabel": "Szenarienlabor — gezielte Neusequenzierung",
+    "targetedSequenceTableLabel": "Gezielte VIN-Sequenz",
+    "publishResequence": "Neusequenzierung an OpCenter veröffentlichen",
+    "publishing": "Wird veröffentlicht …",
+    "publishConfirmation": "Neusequenzierung veröffentlicht — im Audit-Protokoll planning-cockpit zugeordnet"
+  },
   "sequenceBuilder": {
     "subtitle": "50-Lauf Monte-Carlo-SequenzOptimizer gegen Live-Constraints",
     "runCardLabel": "Laufkonfiguration",

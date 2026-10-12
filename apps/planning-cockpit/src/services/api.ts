@@ -1,5 +1,11 @@
 import type { ConstraintThreshold, ThresholdListResponse } from "../types/constraints";
 import type { OptimizeRequest, OptimizeResponse } from "../types/optimizer";
+import type {
+  AlertListResponse,
+  ConstraintAlertRecord,
+  ResequenceRequest,
+  PublishSequenceRequest,
+} from "../types/alerts";
 
 const TOKEN_KEY = "ifos_planning_cockpit_token";
 
@@ -72,4 +78,28 @@ export async function postOptimize(body: OptimizeRequest): Promise<OptimizeRespo
 
 export async function getOptimizeRun(runId: string): Promise<OptimizeResponse> {
   return request<OptimizeResponse>(`/optimize/${encodeURIComponent(runId)}`);
+}
+
+export async function listActiveAlerts(): Promise<AlertListResponse> {
+  return request<AlertListResponse>("/alerts?status=active&limit=50");
+}
+
+export async function acknowledgeAlert(alertId: string): Promise<ConstraintAlertRecord> {
+  return request<ConstraintAlertRecord>(`/alerts/${encodeURIComponent(alertId)}/acknowledge`, {
+    method: "PATCH",
+  });
+}
+
+export async function postResequence(body: ResequenceRequest): Promise<OptimizeResponse> {
+  return request<OptimizeResponse>("/resequence", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function publishSequence(body: PublishSequenceRequest): Promise<void> {
+  return request<void>("/sequence/publish", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }

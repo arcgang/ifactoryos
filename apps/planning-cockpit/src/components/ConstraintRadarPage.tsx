@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConstraintThreshold, ConstraintType } from "../types/constraints";
-import { listConstraintThresholds, getConstraintStreamUrl } from "../services/api";
+import type { ConstraintAlertRecord } from "../types/alerts";
+import { listConstraintThresholds, getConstraintStreamUrl, listActiveAlerts } from "../services/api";
 import { useConstraintStream } from "../hooks/useConstraintStream";
 import { ConstraintTile } from "./ConstraintTile";
 import { ThresholdConfigPanel } from "./ThresholdConfigPanel";
+import { ConstraintAlertPanel } from "./ConstraintAlertPanel";
+
+const ALERT_POLL_INTERVAL_MS = 30_000;
 
 const TILE_CONSTRAINT_TYPES: ConstraintType[] = [
   "paint_capacity",
@@ -64,6 +68,9 @@ export function ConstraintRadarPage() {
   const [showConfig, setShowConfig] = useState(false);
   const adoptionFiredRef = useRef(false);
 
+  const [alerts, setAlerts] = useState<ConstraintAlertRecord[]>([]);
+  const alertPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const streamUrl = getConstraintStreamUrl();
   const { tiles, streamError, setWarningLevels } = useConstraintStream(streamUrl);
 
@@ -94,6 +101,36 @@ export function ConstraintRadarPage() {
       cancelled = true;
     };
   }, [setWarningLevels]);
+
+  // Poll for active constraint alerts every ≤30 s
+  useEffect(() => {
+    let cancelled = false;
+
+    function fetchAlerts() {
+      listActiveAlerts()
+        .then((resp) => {
+          if (!cancelled) setAlerts(resp.data);
+        })
+        .catch(() => {
+          // best-effort — don't surface poll errors, keep existing alerts
+        });
+    }
+
+    fetchAlerts();
+    alertPollRef.current = setInterval(fetchAlerts, ALERT_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (alertPollRef.current !== null) {
+        clearInterval(alertPollRef.current);
+        alertPollRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleAlertDismissed = useCallback((alertId: string) => {
+    setAlerts((prev) => prev.filter((a) => a.alertId !== alertId));
+  }, []);
 
   // Emit OTel adoption event within 1 second of page load
   useEffect(() => {
@@ -193,6 +230,11 @@ export function ConstraintRadarPage() {
           </div>
         </div>
       )}
+
+      <ConstraintAlertPanel
+        alerts={alerts}
+        onAlertDismissed={handleAlertDismissed}
+      />
 
       {!loading && !loadError && (
         <section aria-label={t("constraintRadar.tilesRegionLabel")}>

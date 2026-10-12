@@ -1,0 +1,49 @@
+---
+# Shared configuration for all 10 edge gateways.
+
+# ---- MQTT broker (uns-backbone output: hivemq_mqtt_endpoint) ----
+mqtt_broker_host: uns-hivemq.hivemq.svc.cluster.local
+mqtt_broker_port: 8883
+mqtt_namespace: spBv1.0
+mqtt_group_id: Munich
+mqtt_qos: 1
+# 60-second local buffer for connectivity-loss resilience
+mqtt_buffer_seconds: 60
+mqtt_reconnect_delay_ms: 1000
+mqtt_reconnect_max_delay_ms: 30000
+
+# ---- SPIFFE/SPIRE mTLS ----
+# The SPIRE agent on the gateway host injects SVIDs into these paths.
+# SVID rotation is handled by the agent; the edge runtime picks up the
+# renewed cert/key without restart (inotify watch on the socket).
+spire_agent_socket: /run/spire/agent.sock
+svid_cert_path: /run/spire/svid/svid.pem
+svid_key_path: /run/spire/svid/svid_key.pem
+spire_bundle_path: /run/spire/bundle/bundle.pem
+# TLS 1.3 only — matches HiveMQ listener configuration
+tls_version: TLSv1.3
+tls_cipher_suites:
+  - TLS_AES_256_GCM_SHA384
+  - TLS_CHACHA20_POLY1305_SHA256
+
+# ---- Beckhoff ADS/ADS-UDP ----
+# ADS UDP port (default 48898) for low-latency process data reads.
+ads_port: 48898
+# Maximum age of a polled tag value before it is re-published (change-of-value guard)
+ads_cov_threshold_pct: 0.1
+
+# ---- Sparkplug B ----
+sparkplug_version: spBv1.0
+# Birth and death certificates are published on connect/reconnect per Sparkplug B spec.
+sparkplug_publish_birth_on_connect: true
+sparkplug_publish_death_on_disconnect: true
+
+# ---- SIMATIC Edge Runtime ----
+simatic_edge_runtime_version: "3.1.0"
+simatic_edge_config_dir: /etc/simatic-edge
+simatic_edge_data_dir: /var/lib/simatic-edge
+simatic_edge_log_dir: /var/log/simatic-edge
+simatic_edge_service: simatic-edge-runtime
+
+# ---- Schema Registry (for birth-certificate pre-validation) ----
+schema_registry_url: https://uns-schema-registry.confluent.svc.cluster.local:8081

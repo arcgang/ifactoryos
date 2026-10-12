@@ -1,0 +1,82 @@
+---
+# Body shop — Beckhoff ADS tag catalogue and sample rates.
+# PLCs: body welding robots (2 PLCs covering spot-weld stations).
+
+shop: body
+
+plc_group:
+  - plc_id: BD-PLC-01
+    ads_net_id: "192.168.20.11.1.1"
+    tags:
+      - name: weld_current_a
+        ads_symbol: "MAIN.WeldCurrent"
+        data_type: Double
+        unit: A
+        sample_rate_ms: 50
+      - name: weld_voltage_v
+        ads_symbol: "MAIN.WeldVoltage"
+        data_type: Double
+        unit: V
+        sample_rate_ms: 50
+      - name: weld_time_ms
+        ads_symbol: "MAIN.WeldTime"
+        data_type: Int32
+        unit: ms
+        sample_rate_ms: 50
+      - name: electrode_force_kn
+        ads_symbol: "MAIN.ElectrodeForce"
+        data_type: Double
+        unit: kN
+        sample_rate_ms: 100
+      - name: weld_spot_count
+        ads_symbol: "MAIN.WeldSpotCount"
+        data_type: Int64
+        sample_rate_ms: 1000
+      - name: robot_position_x_mm
+        ads_symbol: "MAIN.RobotPosX"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: robot_position_y_mm
+        ads_symbol: "MAIN.RobotPosY"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+
+  - plc_id: BD-PLC-02
+    ads_net_id: "192.168.20.12.1.1"
+    tags:
+      - name: weld_current_a
+        ads_symbol: "MAIN.WeldCurrent"
+        data_type: Double
+        unit: A
+        sample_rate_ms: 50
+      - name: weld_voltage_v
+        ads_symbol: "MAIN.WeldVoltage"
+        data_type: Double
+        unit: V
+        sample_rate_ms: 50
+      - name: weld_time_ms
+        ads_symbol: "MAIN.WeldTime"
+        data_type: Int32
+        unit: ms
+        sample_rate_ms: 50
+      - name: electrode_force_kn
+        ads_symbol: "MAIN.ElectrodeForce"
+        data_type: Double
+        unit: kN
+        sample_rate_ms: 100
+      - name: weld_spot_count
+        ads_symbol: "MAIN.WeldSpotCount"
+        data_type: Int64
+        sample_rate_ms: 1000
+      - name: robot_position_x_mm
+        ads_symbol: "MAIN.RobotPosX"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200
+      - name: robot_position_y_mm
+        ads_symbol: "MAIN.RobotPosY"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 200

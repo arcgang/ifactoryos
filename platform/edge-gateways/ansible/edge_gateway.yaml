@@ -1,0 +1,108 @@
+---
+# Ansible playbook — configure all 10 Siemens SIMATIC edge gateways.
+#
+# What this playbook does:
+#   1. Validates that the SPIRE agent socket is present (fails fast if SPIRE is not running).
+#   2. Deploys the SIMATIC Edge Runtime configuration (Sparkplug B, ADS sources, MQTT target).
+#   3. Configures the SPIRE-managed SVID watcher so TLS cert rotation does not interrupt streaming.
+#   4. Enables the 60-second local buffer (store-and-forward on connectivity loss).
+#   5. Starts the SIMATIC Edge Runtime service and confirms it is publishing.
+#
+# Run:
+#   ansible-playbook -i inventory.yaml edge_gateway.yaml
+#   # or for a single shop:
+#   ansible-playbook -i inventory.yaml edge_gateway.yaml --limit inbound
+
+- name: Configure Siemens SIMATIC edge gateways
+  hosts: all
+  gather_facts: true
+  vars:
+    node_id: "{{ inventory_hostname }}"
+
+  pre_tasks:
+    - name: Assert SPIRE agent socket exists
+      ansible.builtin.stat:
+        path: "{{ spire_agent_socket }}"
+      register: _spire_socket
+      failed_when: not _spire_socket.stat.exists
+      changed_when: false
+
+    - name: Assert SVID certificate is present
+      ansible.builtin.stat:
+        path: "{{ svid_cert_path }}"
+      register: _svid_cert
+      failed_when: not _svid_cert.stat.exists
+      changed_when: false
+
+  tasks:
+    - name: Ensure configuration directory exists
+      ansible.builtin.file:
+        path: "{{ simatic_edge_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Ensure data directory exists (local buffer store)
+      ansible.builtin.file:
+        path: "{{ simatic_edge_data_dir }}/buffer"
+        state: directory
+        owner: simatic
+        group: simatic
+        mode: "0750"
+
+    - name: Deploy gateway configuration
+      ansible.builtin.template:
+        src: templates/gateway-config.xml.j2
+        dest: "{{ simatic_edge_config_dir }}/gateway-config.xml"
+        owner: root
+        group: simatic
+        mode: "0640"
+        validate: "xmllint --noout %s"
+      notify: Restart SIMATIC Edge Runtime
+
+    - name: Deploy SVID watcher unit drop-in
+      ansible.builtin.template:
+        src: templates/svid-watcher.service.j2
+        dest: /etc/systemd/system/svid-watcher.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart svid-watcher
+
+    - name: Enable and start SIMATIC Edge Runtime
+      ansible.builtin.systemd:
+        name: "{{ simatic_edge_service }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable and start SVID watcher
+      ansible.builtin.systemd:
+        name: svid-watcher
+        enabled: true
+        state: started
+
+    - name: Wait for gateway to publish first DDATA message
+      ansible.builtin.wait_for:
+        path: "{{ simatic_edge_log_dir }}/runtime.log"
+        search_regex: "DDATA published"
+        timeout: 30
+      changed_when: false
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart SIMATIC Edge Runtime
+      ansible.builtin.systemd:
+        name: "{{ simatic_edge_service }}"
+        state: restarted
+
+    - name: Restart svid-watcher
+      ansible.builtin.systemd:
+        name: svid-watcher
+        state: restarted

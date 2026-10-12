@@ -1,0 +1,60 @@
+---
+# Inbound shop — Beckhoff ADS tag catalogue and sample rates.
+# PLCs: inbound press lines (2 PLCs, 14 stations each).
+
+shop: inbound
+
+plc_group:
+  - plc_id: IB-PLC-01
+    ads_net_id: "192.168.10.11.1.1"
+    tags:
+      - name: press_force_kn
+        ads_symbol: "MAIN.PressForce"
+        data_type: Double
+        unit: kN
+        sample_rate_ms: 100
+      - name: press_position_mm
+        ads_symbol: "MAIN.PressPosition"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 100
+      - name: conveyor_speed_mps
+        ads_symbol: "MAIN.ConveyorSpeed"
+        data_type: Double
+        unit: m/s
+        sample_rate_ms: 500
+      - name: part_present
+        ads_symbol: "MAIN.PartPresent"
+        data_type: Boolean
+        sample_rate_ms: 50
+      - name: cycle_count
+        ads_symbol: "MAIN.CycleCount"
+        data_type: Int64
+        sample_rate_ms: 1000
+
+  - plc_id: IB-PLC-02
+    ads_net_id: "192.168.10.12.1.1"
+    tags:
+      - name: press_force_kn
+        ads_symbol: "MAIN.PressForce"
+        data_type: Double
+        unit: kN
+        sample_rate_ms: 100
+      - name: press_position_mm
+        ads_symbol: "MAIN.PressPosition"
+        data_type: Double
+        unit: mm
+        sample_rate_ms: 100
+      - name: conveyor_speed_mps
+        ads_symbol: "MAIN.ConveyorSpeed"
+        data_type: Double
+        unit: m/s
+        sample_rate_ms: 500
+      - name: part_present
+        ads_symbol: "MAIN.PartPresent"
+        data_type: Boolean
+        sample_rate_ms: 50
+      - name: cycle_count
+        ads_symbol: "MAIN.CycleCount"
+        data_type: Int64
+        sample_rate_ms: 1000

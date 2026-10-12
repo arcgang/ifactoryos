@@ -1,0 +1,445 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "datasource", "id": "loki", "name": "Loki", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "datasource", "uid": "grafana" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "datasource", "uid": "grafana" },
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "limit": 100,
+        "name": "failure_declared",
+        "showIn": 0,
+        "tags": ["failure_declared", "dr-drill"],
+        "type": "tags"
+      },
+      {
+        "datasource": { "type": "datasource", "uid": "grafana" },
+        "enable": true,
+        "hide": false,
+        "iconColor": "green",
+        "limit": 100,
+        "name": "service_confirmed",
+        "showIn": 0,
+        "tags": ["service_confirmed", "dr-drill"],
+        "type": "tags"
+      }
+    ]
+  },
+  "description": "DR T10 SLO — RTO ≤4 h and RPO ≤15 min verification dashboard (US-025, BR-16)",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "icon": "external link",
+      "title": "UNS Runbooks",
+      "tooltip": "iFactoryOS DR runbooks",
+      "type": "link",
+      "url": "https://wiki.ifos.munich.internal/runbooks/dr"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["dr", "rto", "rpo", "slo", "us-025"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Loki Datasource",
+        "multi": false,
+        "name": "loki_datasource",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": false, "text": "true", "value": "true" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "DR Drill",
+        "multi": false,
+        "name": "drill",
+        "options": [
+          { "selected": true, "text": "true", "value": "true" },
+          { "selected": false, "text": "false", "value": "false" }
+        ],
+        "query": "true,false",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DR T10 SLO — RTO & RPO",
+  "uid": "dr-t10-slo-001",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 10,
+      "title": "Recovery Time Objective (RTO ≤ 4 h)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Elapsed minutes from failure_declared annotation to service_confirmed annotation. Threshold line at 240 min (4 h). Sourced from Grafana annotation timestamps via the dr:rto_minutes recording rule.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Minutes",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "line+area" }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 240 }
+            ]
+          },
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 11,
+      "options": {
+        "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "dr:rto_minutes",
+          "legendFormat": "Actual RTO (minutes)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(240)",
+          "legendFormat": "RTO Target (4 h)",
+          "refId": "B",
+          "hide": false
+        }
+      ],
+      "title": "RTO — Time from Failure Declaration to Service Confirmation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Current RTO in minutes. Green = within 4-hour target, red = breached.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [
+            { "options": { "match": "null", "result": { "text": "No drill active" } }, "type": "special" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 180 },
+              { "color": "red", "value": 240 }
+            ]
+          },
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["last"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "dr:rto_minutes",
+          "legendFormat": "RTO",
+          "refId": "A"
+        }
+      ],
+      "title": "Current RTO (minutes)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 20,
+      "title": "Recovery Point Objective (RPO ≤ 15 min)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Delta in minutes between last_uns_message_timestamp_before_failure and first_uns_message_timestamp_after_recovery. Threshold line at 15 min. Alert badge shown when delta > 15 min. Data lag ≤ 60 s (NFR-11).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Minutes",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "line+area" }
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "alert": {
+        "alertRuleTags": {},
+        "conditions": [
+          {
+            "evaluator": { "params": [15], "type": "gt" },
+            "operator": { "type": "and" },
+            "query": { "params": ["A", "5m", "now"] },
+            "reducer": { "params": [], "type": "last" },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "keep_state",
+        "for": "5m",
+        "frequency": "1m",
+        "handler": 1,
+        "name": "DRRPOBreached alert",
+        "noDataState": "no_data",
+        "notifications": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 21,
+      "options": {
+        "legend": { "calcs": ["last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "dr:rpo_minutes",
+          "legendFormat": "Actual RPO (minutes)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(15)",
+          "legendFormat": "RPO Target (15 min)",
+          "refId": "B",
+          "hide": false
+        }
+      ],
+      "title": "RPO — Last UNS Message Before Failure vs First After Recovery",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "RPO in minutes: delta between last UNS Kafka consumer offset commit before failure and first after recovery. Red when > 15 min (DRRPOBreached).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "mappings": [
+            { "options": { "match": "null", "result": { "text": "No drill active" } }, "type": "special" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 22,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["last"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "dr:rpo_minutes",
+          "legendFormat": "RPO",
+          "refId": "A"
+        }
+      ],
+      "title": "Current RPO (minutes)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 30,
+      "title": "UNS Message Timestamp Markers",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Unix timestamp of the last UNS DDATA Kafka message produced before the declared failure. Set via the dr-annotate.sh script at failure_declared time. Compared with first_uns_message_timestamp_after_recovery to compute RPO.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "mappings": [
+            { "options": { "match": "null", "result": { "text": "Not set" } }, "type": "special" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "dateTimeAsIso"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 19 },
+      "id": 31,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["last"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "dr:last_uns_message_timestamp_before_failure_seconds",
+          "legendFormat": "Last UNS message before failure",
+          "refId": "A"
+        }
+      ],
+      "title": "Last UNS Message Timestamp Before Failure",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Unix timestamp of the first UNS DDATA Kafka message produced after service recovery is confirmed. Set via the dr-annotate.sh script at service_confirmed time. Used as the RPO upper bound.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "mappings": [
+            { "options": { "match": "null", "result": { "text": "Not set" } }, "type": "special" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "dateTimeAsIso"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 19 },
+      "id": 32,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["last"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "dr:first_uns_message_timestamp_after_recovery_seconds",
+          "legendFormat": "First UNS message after recovery",
+          "refId": "A"
+        }
+      ],
+      "title": "First UNS Message Timestamp After Recovery",
+      "type": "stat"
+    }
+  ],
+  "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d", "90d", "6M", "1y", "2y", "5y"],
+  "retention": "13M"
+}

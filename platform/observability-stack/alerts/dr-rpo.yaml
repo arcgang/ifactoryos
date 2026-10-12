@@ -1,0 +1,123 @@
+groups:
+  - name: dr.rpo
+    interval: 30s
+    rules:
+      # -----------------------------------------------------------------------
+      # Recording rules — DR timestamp markers and derived SLO values
+      #
+      # dr:last_uns_message_timestamp_before_failure_seconds and
+      # dr:first_uns_message_timestamp_after_recovery_seconds are written by
+      # the dr-annotate.sh script via the Prometheus pushgateway at
+      # failure_declared and service_confirmed time respectively.
+      #
+      # dr:rpo_minutes = delta between those two markers expressed in minutes.
+      # dr:rto_minutes = delta between failure_declared and service_confirmed
+      #                  annotation timestamps, expressed in minutes.
+      # -----------------------------------------------------------------------
+
+      # RPO in minutes: difference between the first UNS message timestamp after
+      # recovery and the last one before failure. A value > 15 means data older
+      # than 15 minutes may not be recoverable — RPO breached.
+      - record: dr:rpo_minutes
+        expr: |
+          (
+            dr:first_uns_message_timestamp_after_recovery_seconds
+            - dr:last_uns_message_timestamp_before_failure_seconds
+          ) / 60
+
+      # RTO in minutes: difference between service_confirmed and failure_declared
+      # timestamps. Written by dr-annotate.sh through the pushgateway.
+      - record: dr:rto_minutes
+        expr: |
+          (
+            dr:service_confirmed_timestamp_seconds
+            - dr:failure_declared_timestamp_seconds
+          ) / 60
+
+      # -----------------------------------------------------------------------
+      # Alert: DRRPOBreached
+      #
+      # Fires when the age of recoverable data (RPO) exceeds 15 minutes during
+      # a declared DR event (label drill=true on the pushgateway metrics).
+      # The alert is suppressed outside of declared drills via the drill label.
+      # -----------------------------------------------------------------------
+      - alert: DRRPOBreached
+        expr: |
+          (
+            dr:first_uns_message_timestamp_after_recovery_seconds{drill="true"}
+            - dr:last_uns_message_timestamp_before_failure_seconds{drill="true"}
+          ) / 60 > 15
+        for: 0m
+        labels:
+          severity: critical
+          team: platform-lead
+          slo: dr-rpo
+          drill: "true"
+          data_region: eu-de-west-central
+        annotations:
+          summary: "DR RPO breached — recoverable data gap exceeds 15 minutes"
+          description: >
+            The delta between the last UNS message timestamp before failure and
+            the first UNS message timestamp after recovery is {{ $value | printf "%.2f" }} minutes,
+            exceeding the 15-minute RPO target (US-025, BR-16).
+            Verify Velero backup schedule, Kafka MirrorMaker 2 replication lag,
+            and TimescaleDB WAL archival to Azure Germany North.
+          runbook_url: "https://wiki.ifos.munich.internal/runbooks/dr-rpo-breached"
+
+      # -----------------------------------------------------------------------
+      # Alert: DRRTOBreached
+      #
+      # Fires when time elapsed since failure declaration exceeds 4 hours (240 min)
+      # and service has not yet been confirmed. Labelled drill=true to ensure it
+      # only fires during declared DR exercises.
+      # -----------------------------------------------------------------------
+      - alert: DRRTOBreached
+        expr: |
+          dr:rto_minutes{drill="true"} > 240
+        for: 0m
+        labels:
+          severity: critical
+          team: platform-lead
+          slo: dr-rto
+          drill: "true"
+          data_region: eu-de-west-central
+        annotations:
+          summary: "DR RTO breached — service recovery exceeded 4-hour target"
+          description: >
+            Time elapsed since failure declaration is {{ $value | printf "%.1f" }} minutes,
+            exceeding the 4-hour (240-minute) RTO target (US-025).
+            Escalate to Platform Lead and invoke the DR runbook escalation path.
+          runbook_url: "https://wiki.ifos.munich.internal/runbooks/dr-rto-breached"
+
+      # -----------------------------------------------------------------------
+      # Alert: DRUNSKafkaOffsetStaleDuringDrill
+      #
+      # During a declared drill (drill=true), fires when the age of the most
+      # recent UNS Kafka consumer offset commit exceeds 15 minutes. This is the
+      # leading indicator of RPO risk — a stale offset means no confirmed
+      # consumer progress and therefore uncertain recovery point.
+      # -----------------------------------------------------------------------
+      - alert: DRUNSKafkaOffsetStaleDuringDrill
+        expr: |
+          (
+            time()
+            - kafka_consumergroup_last_commit_timestamp_seconds{
+                topic=~"bmw\\.munich\\.uns\\.ddata\\..+\\.v1",
+                drill="true"
+              }
+          ) / 60 > 15
+        for: 1m
+        labels:
+          severity: warning
+          team: platform-lead
+          slo: dr-rpo
+          drill: "true"
+          data_region: eu-de-west-central
+        annotations:
+          summary: "UNS Kafka consumer offset stale during DR drill (>15 min)"
+          description: >
+            Consumer group {{ $labels.consumergroup }} on topic {{ $labels.topic }}
+            has not committed an offset for {{ $value | printf "%.1f" }} minutes during
+            the declared DR drill. This indicates the recovery point may already exceed
+            the 15-minute RPO target. Check MirrorMaker 2 replication and consumer health.
+          runbook_url: "https://wiki.ifos.munich.internal/runbooks/dr-kafka-offset-stale"

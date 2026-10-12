@@ -1,0 +1,161 @@
+# promtool test rules file for dr-rpo.yaml
+# Run with: promtool test rules alerts/dr-rpo-test.yaml
+#
+# Tests verify:
+#   1. DRRPOBreached fires when RPO delta > 15 minutes during drill=true
+#   2. DRRPOBreached does NOT fire when RPO delta ≤ 15 minutes
+#   3. DRRPOBreached does NOT fire outside a declared drill (drill label absent)
+#   4. DRRTOBreached fires when RTO > 240 minutes during drill=true
+#   5. DRRTOBreached does NOT fire when RTO ≤ 240 minutes
+#   6. DRUNSKafkaOffsetStaleDuringDrill fires when offset age > 15 minutes during drill=true
+#   7. dr:rpo_minutes recording rule computes correct minute delta
+
+rule_files:
+  - dr-rpo.yaml
+
+evaluation_interval: 30s
+
+tests:
+  # -------------------------------------------------------------------------
+  # Test 1: DRRPOBreached fires when RPO delta is 20 minutes (> 15 min limit)
+  # -------------------------------------------------------------------------
+  - interval: 30s
+    input_series:
+      - series: 'dr:first_uns_message_timestamp_after_recovery_seconds{drill="true",drill_id="test-001"}'
+        values: "1728720000+0x10"   # constant 1728720000 for 10 steps
+      - series: 'dr:last_uns_message_timestamp_before_failure_seconds{drill="true",drill_id="test-001"}'
+        values: "1728718800+0x10"   # 1728720000 - 1200 s = 20 min gap
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DRRPOBreached
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform-lead
+              slo: dr-rpo
+              drill: "true"
+              data_region: eu-de-west-central
+            exp_annotations:
+              summary: "DR RPO breached — recoverable data gap exceeds 15 minutes"
+
+    promql_expr_test:
+      - expr: "dr:rpo_minutes"
+        eval_time: 0m
+        exp_samples:
+          - labels: '{drill="true",drill_id="test-001"}'
+            value: 20
+
+  # -------------------------------------------------------------------------
+  # Test 2: DRRPOBreached does NOT fire when RPO delta is 10 minutes (≤ 15 min)
+  # -------------------------------------------------------------------------
+  - interval: 30s
+    input_series:
+      - series: 'dr:first_uns_message_timestamp_after_recovery_seconds{drill="true",drill_id="test-002"}'
+        values: "1728720000+0x10"
+      - series: 'dr:last_uns_message_timestamp_before_failure_seconds{drill="true",drill_id="test-002"}'
+        values: "1728719400+0x10"   # 1728720000 - 600 s = 10 min gap
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DRRPOBreached
+        exp_alerts: []
+
+    promql_expr_test:
+      - expr: "dr:rpo_minutes"
+        eval_time: 0m
+        exp_samples:
+          - labels: '{drill="true",drill_id="test-002"}'
+            value: 10
+
+  # -------------------------------------------------------------------------
+  # Test 3: DRRPOBreached does NOT fire without drill="true" label
+  # -------------------------------------------------------------------------
+  - interval: 30s
+    input_series:
+      - series: 'dr:first_uns_message_timestamp_after_recovery_seconds{drill="false",drill_id="test-003"}'
+        values: "1728720000+0x10"
+      - series: 'dr:last_uns_message_timestamp_before_failure_seconds{drill="false",drill_id="test-003"}'
+        values: "1728718800+0x10"   # 20-min gap but drill=false
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DRRPOBreached
+        exp_alerts: []
+
+  # -------------------------------------------------------------------------
+  # Test 4: DRRTOBreached fires when RTO is 300 minutes (> 240 min limit)
+  # -------------------------------------------------------------------------
+  - interval: 30s
+    input_series:
+      - series: 'dr:service_confirmed_timestamp_seconds{drill="true",drill_id="test-004"}'
+        values: "1728738000+0x10"   # 1728720000 + 18000 s = +300 min
+      - series: 'dr:failure_declared_timestamp_seconds{drill="true",drill_id="test-004"}'
+        values: "1728720000+0x10"
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DRRTOBreached
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform-lead
+              slo: dr-rto
+              drill: "true"
+              data_region: eu-de-west-central
+            exp_annotations:
+              summary: "DR RTO breached — service recovery exceeded 4-hour target"
+
+    promql_expr_test:
+      - expr: "dr:rto_minutes"
+        eval_time: 0m
+        exp_samples:
+          - labels: '{drill="true",drill_id="test-004"}'
+            value: 300
+
+  # -------------------------------------------------------------------------
+  # Test 5: DRRTOBreached does NOT fire when RTO is 225 minutes (≤ 240 min)
+  # -------------------------------------------------------------------------
+  - interval: 30s
+    input_series:
+      - series: 'dr:service_confirmed_timestamp_seconds{drill="true",drill_id="test-005"}'
+        values: "1728733500+0x10"   # 1728720000 + 13500 s = +225 min
+      - series: 'dr:failure_declared_timestamp_seconds{drill="true",drill_id="test-005"}'
+        values: "1728720000+0x10"
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DRRTOBreached
+        exp_alerts: []
+
+    promql_expr_test:
+      - expr: "dr:rto_minutes"
+        eval_time: 0m
+        exp_samples:
+          - labels: '{drill="true",drill_id="test-005"}'
+            value: 225
+
+  # -------------------------------------------------------------------------
+  # Test 6: DRUNSKafkaOffsetStaleDuringDrill fires after 1-minute for period
+  # when last commit is >15 min ago during drill=true.
+  # Series value is set to (current_time - 1200) so age = 1200s = 20 min > 15 min.
+  # -------------------------------------------------------------------------
+  - interval: 30s
+    input_series:
+      - series: 'kafka_consumergroup_last_commit_timestamp_seconds{consumergroup="uns-dr-consumer",topic="bmw.munich.uns.ddata.assembly.v1",drill="true"}'
+        # epoch 0 + offset: using a value 1200s behind evaluation time
+        # evaluation at 1m = 60s; last_commit at 60 - 1200 = negative, so use far-past constant
+        values: "1000+0x10"
+
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: DRUNSKafkaOffsetStaleDuringDrill
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: platform-lead
+              slo: dr-rpo
+              drill: "true"
+              data_region: eu-de-west-central
+              consumergroup: "uns-dr-consumer"
+              topic: "bmw.munich.uns.ddata.assembly.v1"

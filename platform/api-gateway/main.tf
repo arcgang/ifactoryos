@@ -10,6 +10,9 @@ locals {
   # Base path for OpenAPI 3.1 contract files (relative to this module).
   contracts_dir = "${path.module}/contracts/openapi"
 
+  # Base path for DataPower policy XML files.
+  policies_dir = "${path.module}/policies"
+
   # Rate-limit plan per API (requests/minute), matching x-rate-limit in each spec.
   rate_limit_plans = {
     sequence_optimisation     = "120rpm"
@@ -22,6 +25,15 @@ locals {
     gate_certification        = "60rpm"
     digital_birth_certificate = "60rpm"
     adoption_instrumentation  = "600rpm"
+    opcenter_andon_alerts     = "120rpm"
+  }
+
+  # Audit service URL — resolved per environment; read by andon-alerts-rbac.xml
+  # and the other RBAC policies via the AUDIT_SERVICE_URL DataPower variable.
+  audit_service_urls = {
+    dev  = "https://audit.dev.ifos.bmwgroup.net"
+    pp   = "https://audit.pp.ifos.bmwgroup.net"
+    prod = "https://audit.ifos.bmwgroup.net"
   }
 }
 
@@ -130,6 +142,32 @@ resource "ibm_apic_api" "adoption_instrumentation" {
 }
 
 # ---------------------------------------------------------------------------
+# opcenter-sync-service — Andon Alerts API
+# Enforces andon.read scope via andon-alerts-rbac.xml DataPower policy.
+# Assembly Associates (scopes: ar.instructions.read torque.write) are denied
+# with HTTP 403 and a synchronous audit write (NFR-06, ≤1 s).
+# JWKS refresh ≤5 min ensures Entra ID group changes propagate within 5 min (AC3).
+# ---------------------------------------------------------------------------
+
+resource "ibm_apic_api" "opcenter_andon_alerts" {
+  name            = "opcenter-andon-alerts"
+  display_name    = "OpCenter Andon Alerts API"
+  version         = "1.0.0"
+  spec_file       = "${local.contracts_dir}/opcenter-andon-alerts-v1.yaml"
+  environment     = var.environment
+  rate_limit_plan = local.rate_limit_plans["opcenter_andon_alerts"]
+  stub_generation = false
+
+  assembly_policy_file = "${local.policies_dir}/andon-alerts-rbac.xml"
+
+  # Inject the environment-specific audit service URL as a DataPower variable
+  # so andon-alerts-rbac.xml can POST audit events without hardcoding.
+  gateway_variables = {
+    AUDIT_SERVICE_URL = local.audit_service_urls[var.environment]
+  }
+}
+
+# ---------------------------------------------------------------------------
 # IBM API Connect Developer Portal — single catalogue for all internal consumers
 # Horizon 2 teams generate client stubs directly without contacting Horizon 1.
 # ---------------------------------------------------------------------------
@@ -151,6 +189,7 @@ resource "ibm_apic_developer_portal" "ifactoryos" {
     ibm_apic_api.gate_certification.id,
     ibm_apic_api.digital_birth_certificate.id,
     ibm_apic_api.adoption_instrumentation.id,
+    ibm_apic_api.opcenter_andon_alerts.id,
   ]
 
   # Enforces the 180-day minimum support window from versioning-policy.md.

@@ -3,6 +3,52 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 const TOKEN_KEY = "lc_access_token";
 
+// ---------------------------------------------------------------------------
+// Andon alert types
+// ---------------------------------------------------------------------------
+
+export interface WeldTracePoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface WeldTrace {
+  weld_current_a: WeldTracePoint[];
+  weld_voltage_v: WeldTracePoint[];
+}
+
+export type AlertStatus = "open" | "acknowledged" | "resolved" | "false_positive";
+
+export interface AndonAlertResponse {
+  alertId: string;
+  stationId: string;
+  lineId: string;
+  alertType: "predictive" | "reactive";
+  predictedFailureType: string;
+  minutesToPredictedFailure: number | null;
+  recommendedAction: string;
+  status: AlertStatus;
+  detectedAt: string;
+  correlationId: string;
+  weldTrace: WeldTrace;
+  thresholdCrossingAt: string;
+  thresholdValue: number | null;
+}
+
+export type DispatchDisposition = "resolved" | "escalated" | "monitoring";
+
+export interface AcknowledgeRequest {
+  disposition: DispatchDisposition;
+  note?: string;
+}
+
+export interface AcknowledgeResponse {
+  alertId: string;
+  status: AlertStatus;
+  acknowledgedAt: string;
+  eventId: string;
+}
+
 export class ForbiddenError extends Error {
   constructor(
     public readonly resource: string,
@@ -64,4 +110,27 @@ export async function apiRequest<T>(
 
   if (res.status === 204) return null as T;
   return res.json() as Promise<T>;
+}
+
+// ---------------------------------------------------------------------------
+// Andon alert API
+// ---------------------------------------------------------------------------
+
+export function getAndonAlert(alertId: string, userId?: string): Promise<AndonAlertResponse> {
+  return apiRequest<AndonAlertResponse>(`/api/v1/andon/alerts/${encodeURIComponent(alertId)}`, { userId });
+}
+
+export function acknowledgeAndonAlert(
+  alertId: string,
+  body: AcknowledgeRequest,
+  userId?: string,
+): Promise<AcknowledgeResponse> {
+  return apiRequest<AcknowledgeResponse>(
+    `/api/v1/andon/alerts/${encodeURIComponent(alertId)}/acknowledge`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      userId,
+    },
+  );
 }

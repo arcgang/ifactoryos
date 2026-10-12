@@ -84,6 +84,15 @@
         }
       },
       "description": "Torque out-of-tolerance alert event — consumed by line-command (console) to turn AR overlay red and alert Shift Lead."
+    },
+    "lineCommand.maintenanceDispatch": {
+      "address": "factory.munich.line-command.maintenance-dispatch.v1",
+      "messages": {
+        "MaintenanceDispatchEvent": {
+          "$ref": "#/components/messages/MaintenanceDispatchEvent"
+        }
+      },
+      "description": "Maintenance dispatch events published by line-command-api when a Shift Lead dispatches maintenance from Station Detail (US-008)."
     }
   },
   "components": {
@@ -450,6 +459,61 @@
         },
         "contentType": "application/json"
       },
+      "MaintenanceDispatchEvent": {
+        "name": "MaintenanceDispatchEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "eventType",
+            "userId",
+            "stationId",
+            "alertId",
+            "lineId",
+            "timestamp",
+            "source"
+          ],
+          "properties": {
+            "eventId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Client-generated unique event ID (PRIMARY KEY for dedup)"
+            },
+            "eventType": {
+              "type": "string",
+              "const": "maintenance_dispatch"
+            },
+            "userId": {
+              "type": "string",
+              "description": "BMW Entra ID OBO JWT subject of the dispatching Shift Lead"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "alertId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "lineId": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time",
+              "description": "ISO-8601 UTC timestamp of dispatch action"
+            },
+            "disposition": {
+              "type": "string",
+              "enum": ["resolved", "escalated", "monitoring"]
+            },
+            "source": {
+              "type": "string",
+              "const": "line-command"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
       "TorqueOutOfToleranceEvent": {
         "name": "TorqueOutOfToleranceEvent",
         "payload": {
@@ -587,6 +651,18 @@
       "messages": [
         {
           "$ref": "#/channels/lineCommand.handover.submitted/messages/HandoverSubmittedEvent"
+        }
+      ]
+    },
+    "publishMaintenanceDispatchEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.maintenanceDispatch"
+      },
+      "summary": "Publish maintenance dispatch event when Shift Lead dispatches from Station Detail",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.maintenanceDispatch/messages/MaintenanceDispatchEvent"
         }
       ]
     },

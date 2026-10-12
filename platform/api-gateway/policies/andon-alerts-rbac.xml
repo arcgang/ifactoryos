@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DataPower GatewayScript / Assembly policy — IBM-SEC-001 / IBM-INT-001 compliant.
+
+  Enforces scope-based RBAC for GET /andon/alerts:
+    ALLOW  — token carries scope "andon.read"  (GRP-IFOS-SHIFTLEADS-MUC, GRP-IFOS-PLATFORM-ADMIN)
+    DENY   — any other authenticated token     (including GRP-IFOS-ASSOCIATES-MUC)
+             → HTTP 403 + synchronous audit event POST /api/v1/audit/event within 1 s (NFR-06)
+
+  JWT validation (signature + expiry + issuer) is performed by the upstream
+  jwt-validate.xml policy that runs before this one in the DataPower assembly.
+  JWKS are refreshed on a ≤5-minute TTL configured in jwt-validate.xml so that
+  a group membership change in BMW Entra ID takes effect within 5 minutes
+  without a gateway restart (AC3 / US-022).
+
+  Prerequisite context variables set by jwt-validate.xml:
+    jwt.claims.sub   — caller subject (user or service principal object ID)
+    jwt.claims.scp   — space-delimited OAuth 2.0 scopes string
+    jwt.claims.oid   — Entra ID object ID (used as userId in audit events)
+-->
+<assembly xmlns="http://www.ibm.com/xmlns/prod/datapower/apic/assembly/3.0"
+          name="andon-alerts-rbac"
+          version="1.0.0">
+
+  <description>
+    Scope-based RBAC for GET /andon/alerts.
+    Requires andon.read scope; denies all other roles with 403 + immutable audit write.
+  </description>
+
+  <execute>
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Step 1: Extract scope claim set by the upstream JWT validate policy -->
+    <!-- ------------------------------------------------------------------ -->
+    <gatewayscript>
+      <title>extract-scope</title>
+      <source><![CDATA[
+        var scopeStr = context.getVar('jwt.claims.scp') || '';
+        var scopes   = scopeStr.split(' ').filter(function(s) { return s.length > 0; });
+        context.setVar('extracted.scopes', scopes);
+      ]]></source>
+    </gatewayscript>
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Step 2: Evaluate whether caller holds the required andon.read scope -->
+    <!-- ------------------------------------------------------------------ -->
+    <gatewayscript>
+      <title>evaluate-andon-read</title>
+      <source><![CDATA[
+        var scopes  = context.getVar('extracted.scopes') || [];
+        var allowed = scopes.indexOf('andon.read') !== -1;
+        context.setVar('rbac.allowed', allowed);
+      ]]></source>
+    </gatewayscript>
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Step 3: If denied — write audit event and return 403               -->
+    <!-- Step 3a: Build and dispatch audit payload                           -->
+    <!-- ------------------------------------------------------------------ -->
+    <if>
+      <condition>!rbac.allowed</condition>
+
+      <execute>
+
+        <!-- Build the audit event body per the immutable-audit-log SDK contract -->
+        <gatewayscript>
+          <title>build-audit-payload</title>
+          <source><![CDATA[
+            var correlationId = context.getVar('message.headers.X-Correlation-ID')
+                              || context.getVar('system.request.id')
+                              || '';
+            var userId   = context.getVar('jwt.claims.oid') || context.getVar('jwt.claims.sub') || 'unknown';
+            var resource = '/andon/alerts';
+            var role     = (context.getVar('extracted.scopes') || []).join(' ') || 'none';
+            var now      = new Date().toISOString();
+
+            var payload = {
+              action:         'unauthorized_access_attempt',
+              userId:         userId,
+              resource:       resource,
+              role:           role,
+              console:        'line-command',
+              timestamp:      now,
+              correlation_id: correlationId
+            };
+
+            context.setVar('audit.payload',        JSON.stringify(payload));
+            context.setVar('audit.correlationId',  correlationId);
+          ]]></source>
+        </gatewayscript>
+
+        <!--
+          Invoke the immutable-audit-log ingest endpoint synchronously.
+          Timeout is 1 000 ms per NFR-06 (audit write must complete within 1 s of rejection).
+          The upstream jwt-validate.xml injects the OBO token for service-to-service mTLS;
+          the audit service URL is resolved via the AUDIT_SERVICE_URL DataPower variable
+          set in main.tf (environment-specific).
+        -->
+        <invoke>
+          <title>write-audit-event</title>
+          <target-url>$(AUDIT_SERVICE_URL)/api/v1/audit/event</target-url>
+          <verb>POST</verb>
+          <timeout>1000</timeout>
+          <input-message>audit.payload</input-message>
+          <http-headers>
+            <header name="Content-Type">application/json</header>
+            <header name="X-Correlation-ID">$(audit.correlationId)</header>
+          </http-headers>
+          <!-- Errors from the audit write are swallowed to prevent audit failure
+               from masking the authoritative 403 to the caller.  The invoke error
+               is captured in the DataPower error log for the operations team. -->
+          <on-error>continue</on-error>
+        </invoke>
+
+        <!-- Return 403 Forbidden with the standard error envelope -->
+        <gatewayscript>
+          <title>return-403</title>
+          <source><![CDATA[
+            var correlationId = context.getVar('audit.correlationId') || '';
+            var body = JSON.stringify({
+              code:           'RBAC_FORBIDDEN',
+              message:        'Insufficient scope: andon.read is required to access GET /andon/alerts',
+              correlation_id: correlationId
+            });
+            context.setVar('message.status.code',   403);
+            context.setVar('message.status.reason', 'Forbidden');
+            context.setVar('message.headers.Content-Type', 'application/json');
+            context.setVar('message.body', body);
+          ]]></source>
+        </gatewayscript>
+
+        <set-variable>
+          <title>halt-pipeline</title>
+          <name>dp.halt</name>
+          <value>true</value>
+        </set-variable>
+
+      </execute>
+    </if>
+
+    <!-- Step 4: Allowed — forward request to the opcenter-sync-service upstream -->
+    <!-- (assembly continues normally; DataPower routes to the backend target URL) -->
+
+  </execute>
+
+</assembly>

@@ -1,0 +1,396 @@
+asyncapi: "2.6.0"
+
+info:
+  title: "iFactoryOS UNS Backbone"
+  version: "1.0.0"
+  description: |
+    AsyncAPI contract for the Unified Namespace backbone (cmp:uns-backbone).
+    All channels are Kafka topics on the on-premises Confluent cluster.
+    Sparkplug B DDATA payloads are bridged from HiveMQ and validated against
+    this registry (FULL_TRANSITIVE Avro compatibility).
+
+    Schema violations route to the dead-letter channel (uns.munich.dlq) and
+    trigger a SchemaViolation Alertmanager alert within 60 seconds.
+
+    Data residency: EU Germany West Central (on-premises Munich).
+    Classification: confidential.
+
+    Consumed interfaces for:
+      - cmp:edge-gateways (Task 1) — MQTT Sparkplug B publishers
+      - cmp:observability-stack (Task 2) — Prometheus / Grafana consumers
+
+servers:
+  production:
+    url: "uns-kafka-bootstrap.confluent.svc.cluster.local:9092"
+    protocol: kafka-secure
+    description: "Confluent Kafka — on-premises Munich, TLS 1.3, SASL/SCRAM"
+    security:
+      - saslScram: []
+    bindings:
+      kafka:
+        schemaRegistryUrl: "https://uns-schema-registry.confluent.svc.cluster.local:8081"
+        schemaRegistryVendor: confluent
+
+defaultContentType: "application/avro"
+
+components:
+  securitySchemes:
+    saslScram:
+      type: scramSha512
+      description: "SASL/SCRAM-SHA-512 + TLS 1.3"
+
+  schemas:
+    SparkplugDdata:
+      type: object
+      description: |
+        Avro-serialised Sparkplug B DDATA payload as translated by the HiveMQ bridge.
+        The envelope wraps the original Protobuf payload bytes for schema-registry validation.
+      properties:
+        shop:
+          type: string
+          enum: [inbound, body, paint, assembly, quality]
+        edgeNodeId:
+          type: string
+        deviceId:
+          type: string
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/SparkplugMetric"
+        timestamp:
+          type: integer
+          format: int64
+          description: "Unix epoch milliseconds at source sensor"
+        seq:
+          type: integer
+          format: int64
+          description: "Sparkplug B sequence number"
+      required: [shop, edgeNodeId, deviceId, metrics, timestamp, seq]
+
+    SparkplugMetric:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          description: "Metric value — type varies by dataType"
+        dataType:
+          type: string
+          enum: [Int32, Int64, Float, Double, Boolean, String, Bytes]
+        timestamp:
+          type: integer
+          format: int64
+        alias:
+          type: integer
+          format: int64
+      required: [name, dataType, timestamp]
+
+    DlqEnvelope:
+      type: object
+      description: "Dead-letter envelope — schema-invalid or poison-pill messages"
+      properties:
+        originalTopic:
+          type: string
+          description: "Kafka topic the message was originally destined for"
+        originalMqttTopic:
+          type: string
+          description: "MQTT topic from which the bridge received the message"
+        tagName:
+          type: string
+          description: "Unregistered or invalid tag name"
+        rawPayload:
+          type: string
+          contentEncoding: base64
+          description: "Raw Avro/Protobuf payload bytes (base64-encoded)"
+        arrivalTimestamp:
+          type: string
+          format: date-time
+          description: "ISO-8601 timestamp when the message arrived at HiveMQ"
+        violationType:
+          type: string
+          enum: [unregistered_schema, schema_incompatible, malformed_payload]
+        shopNamespace:
+          type: string
+      required: [originalTopic, tagName, rawPayload, arrivalTimestamp, violationType]
+
+    AndonAlert:
+      type: object
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        shop:
+          type: string
+        stationId:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        message:
+          type: string
+        triggeredAt:
+          type: string
+          format: date-time
+      required: [alertId, shop, stationId, severity, triggeredAt]
+
+    OeeSnapshot:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+          format: uuid
+        shop:
+          type: string
+        shift:
+          type: string
+        oeePercent:
+          type: number
+          format: double
+        availabilityPct:
+          type: number
+          format: double
+        performancePct:
+          type: number
+          format: double
+        qualityPct:
+          type: number
+          format: double
+        snapshotAt:
+          type: string
+          format: date-time
+      required: [snapshotId, shop, shift, oeePercent, snapshotAt]
+
+channels:
+  # ── UNS DDATA (Sparkplug B bridge-translated) ─────────────────────────────
+
+  "bmw.munich.uns.ddata.inbound.v1":
+    description: "Sparkplug B DDATA from Inbound shop, bridged by HiveMQ"
+    subscribe:
+      operationId: consumeInboundDdata
+      message:
+        $ref: "#/components/messages/SparkplugDdata"
+    bindings:
+      kafka:
+        topic: "bmw.munich.uns.ddata.inbound.v1"
+        partitions: 12
+        replicas: 3
+        configs:
+          min.insync.replicas: "2"
+          retention.ms: "604800000"
+
+  "bmw.munich.uns.ddata.body.v1":
+    description: "Sparkplug B DDATA from Body shop, bridged by HiveMQ"
+    subscribe:
+      operationId: consumeBodyDdata
+      message:
+        $ref: "#/components/messages/SparkplugDdata"
+    bindings:
+      kafka:
+        topic: "bmw.munich.uns.ddata.body.v1"
+        partitions: 12
+        replicas: 3
+
+  "bmw.munich.uns.ddata.paint.v1":
+    description: "Sparkplug B DDATA from Paint shop, bridged by HiveMQ"
+    subscribe:
+      operationId: consumePaintDdata
+      message:
+        $ref: "#/components/messages/SparkplugDdata"
+    bindings:
+      kafka:
+        topic: "bmw.munich.uns.ddata.paint.v1"
+        partitions: 12
+        replicas: 3
+
+  "bmw.munich.uns.ddata.assembly.v1":
+    description: "Sparkplug B DDATA from Assembly shop, bridged by HiveMQ"
+    subscribe:
+      operationId: consumeAssemblyDdata
+      message:
+        $ref: "#/components/messages/SparkplugDdata"
+    bindings:
+      kafka:
+        topic: "bmw.munich.uns.ddata.assembly.v1"
+        partitions: 12
+        replicas: 3
+
+  "bmw.munich.uns.ddata.quality.v1":
+    description: "Sparkplug B DDATA from Quality shop, bridged by HiveMQ"
+    subscribe:
+      operationId: consumeQualityDdata
+      message:
+        $ref: "#/components/messages/SparkplugDdata"
+    bindings:
+      kafka:
+        topic: "bmw.munich.uns.ddata.quality.v1"
+        partitions: 12
+        replicas: 3
+
+  # ── Dead-letter ────────────────────────────────────────────────────────────
+
+  "uns.munich.dlq":
+    description: |
+      Dead-letter channel for schema-invalid and poison-pill Sparkplug B messages.
+      Each entry includes: original MQTT topic, tag name, raw payload bytes, arrival timestamp.
+      A SchemaViolation Alertmanager alert fires within 60 seconds of any message arrival.
+    subscribe:
+      operationId: consumeDlq
+      message:
+        $ref: "#/components/messages/DlqEnvelope"
+    bindings:
+      kafka:
+        topic: "uns.munich.dlq"
+        partitions: 6
+        replicas: 3
+        configs:
+          cleanup.policy: "compact,delete"
+          retention.ms: "2592000000"
+
+  # ── Line Command ───────────────────────────────────────────────────────────
+
+  "bmw.ifos.munich.uns.andon.alerts.v1":
+    description: "Andon alerts aggregated via UNS"
+    subscribe:
+      operationId: consumeAndonAlerts
+      message:
+        $ref: "#/components/messages/AndonAlert"
+    bindings:
+      kafka:
+        topic: "bmw.ifos.munich.uns.andon.alerts.v1"
+
+  "factory.munich.opcenter.andon.alert.v1":
+    description: "Andon alerts from Opcenter published by opcenter-sync-service"
+    subscribe:
+      operationId: consumeOpcenterAndonAlert
+      message:
+        $ref: "#/components/messages/AndonAlert"
+    bindings:
+      kafka:
+        topic: "factory.munich.opcenter.andon.alert.v1"
+
+  "factory.munich.opcenter.oee.snapshot.v1":
+    description: "OEE snapshots from Opcenter — per shop per shift"
+    subscribe:
+      operationId: consumeOpcenterOeeSnapshot
+      message:
+        $ref: "#/components/messages/OeeSnapshot"
+    bindings:
+      kafka:
+        topic: "factory.munich.opcenter.oee.snapshot.v1"
+
+  # ── Remaining UNS topics (schema references to be registered separately) ──
+
+  "bmw.munich.i4.sequence.optimized.v1":
+    description: "Optimised VIN sequence published by sequence-optimizer"
+    subscribe:
+      operationId: consumeSequenceOptimized
+      message:
+        name: SequenceOptimized
+        contentType: "application/avro"
+        schemaFormat: "application/vnd.apache.avro+json;version=1.9.0"
+    bindings:
+      kafka:
+        topic: "bmw.munich.i4.sequence.optimized.v1"
+
+  "bmw.munich.i4.uns.constraints.live.v1":
+    description: "Live constraint snapshot published to UNS for downstream consumers"
+    subscribe:
+      operationId: consumeConstraintsLive
+      message:
+        name: ConstraintsLive
+        contentType: "application/avro"
+    bindings:
+      kafka:
+        topic: "bmw.munich.i4.uns.constraints.live.v1"
+
+  "bmw.munich.paint.defect.events.v1":
+    description: "Paint defect events consumed by defect-genome"
+    subscribe:
+      operationId: consumePaintDefectEvents
+      message:
+        name: PaintDefectEvent
+        contentType: "application/avro"
+    bindings:
+      kafka:
+        topic: "bmw.munich.paint.defect.events.v1"
+
+  "bmw.munich.defectgenome.cluster.alerts.v1":
+    description: "DefectGenome cluster alerts consumed by quality-studio"
+    subscribe:
+      operationId: consumeDefectClusterAlerts
+      message:
+        name: DefectClusterAlert
+        contentType: "application/avro"
+    bindings:
+      kafka:
+        topic: "bmw.munich.defectgenome.cluster.alerts.v1"
+
+  "factory.munich.line-command.adoption.v1":
+    description: "Line command adoption events"
+    subscribe:
+      operationId: consumeLineCommandAdoption
+      message:
+        name: LineCommandAdoption
+        contentType: "application/avro"
+    bindings:
+      kafka:
+        topic: "factory.munich.line-command.adoption.v1"
+
+  "factory.munich.line-command.maintenance-dispatch.v1":
+    description: "Maintenance dispatch orders published by line-command-api"
+    subscribe:
+      operationId: consumeMaintenanceDispatch
+      message:
+        name: MaintenanceDispatch
+        contentType: "application/avro"
+    bindings:
+      kafka:
+        topic: "factory.munich.line-command.maintenance-dispatch.v1"
+
+  "factory.munich.uns.manufacturing.event.v1":
+    description: "Generic manufacturing events on the UNS"
+    subscribe:
+      operationId: consumeManufacturingEvent
+      message:
+        name: ManufacturingEvent
+        contentType: "application/avro"
+    bindings:
+      kafka:
+        topic: "factory.munich.uns.manufacturing.event.v1"
+
+components:
+  messages:
+    SparkplugDdata:
+      name: SparkplugDdata
+      title: "Sparkplug B DDATA"
+      contentType: "application/avro"
+      schemaFormat: "application/vnd.apache.avro+json;version=1.9.0"
+      payload:
+        $ref: "#/components/schemas/SparkplugDdata"
+      bindings:
+        kafka:
+          schemaIdLocation: header
+          schemaIdPayloadEncoding: confluent
+
+    DlqEnvelope:
+      name: DlqEnvelope
+      title: "Dead-letter envelope"
+      contentType: "application/json"
+      payload:
+        $ref: "#/components/schemas/DlqEnvelope"
+
+    AndonAlert:
+      name: AndonAlert
+      title: "Andon alert"
+      contentType: "application/avro"
+      schemaFormat: "application/vnd.apache.avro+json;version=1.9.0"
+      payload:
+        $ref: "#/components/schemas/AndonAlert"
+
+    OeeSnapshot:
+      name: OeeSnapshot
+      title: "OEE snapshot"
+      contentType: "application/avro"
+      schemaFormat: "application/vnd.apache.avro+json;version=1.9.0"
+      payload:
+        $ref: "#/components/schemas/OeeSnapshot"

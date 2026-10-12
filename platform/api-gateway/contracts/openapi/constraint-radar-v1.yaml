@@ -1,0 +1,377 @@
+openapi: 3.1.0
+info:
+  title: Constraint Radar API
+  version: 1.0.0
+  description: >
+    Live production constraint monitoring — paint capacity, body WIP, kitting readiness,
+    AGV delays, press overruns. Data residency: Azure Germany West Central (EU).
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/constraints
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/constraints
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "120/minute per client"
+
+paths:
+  /live:
+    get:
+      operationId: getLiveConstraints
+      summary: Get current live constraint snapshot from UNS
+      x-rate-limit: "120/minute per client"
+      responses:
+        "200":
+          description: Current constraint snapshot
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConstraintSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /thresholds:
+    get:
+      operationId: getConstraintThresholds
+      summary: Get configured alert thresholds for all constraint types
+      x-rate-limit: "60/minute per client"
+      responses:
+        "200":
+          description: Constraint threshold configuration
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThresholdsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /alert-config:
+    post:
+      operationId: updateAlertConfig
+      summary: Update alert threshold configuration for a constraint type
+      x-rate-limit: "10/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertConfigRequest"
+      responses:
+        "200":
+          description: Alert configuration updated
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertConfigResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+        prev_cursor:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    ConstraintSnapshot:
+      type: object
+      required:
+        - snapshotTimestamp
+        - paintCapacityUtilisation
+        - bodyWipQueueDepth
+        - kittingReadinessPct
+      properties:
+        snapshotTimestamp:
+          type: string
+          format: date-time
+        paintCapacityUtilisation:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        bodyWipQueueDepth:
+          type: integer
+          minimum: 0
+        kittingReadinessPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        maintenanceWindows:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaintenanceWindow"
+        unsLatencyMs:
+          type: integer
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConstraintAlert"
+
+    MaintenanceWindow:
+      type: object
+      required:
+        - windowId
+        - stationId
+        - startsAt
+        - endsAt
+      properties:
+        windowId:
+          type: string
+          format: uuid
+        stationId:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        description:
+          type: string
+
+    ConstraintAlert:
+      type: object
+      required:
+        - alertId
+        - constraintType
+        - currentValue
+        - thresholdValue
+        - affectedVins
+        - status
+        - detectedAt
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        constraintType:
+          type: string
+          enum:
+            - paint_capacity
+            - body_wip_queue
+            - kitting_readiness
+            - maintenance_window
+            - agv_delay
+            - press_die_overrun
+        currentValue:
+          type: number
+          format: double
+        thresholdValue:
+          type: number
+          format: double
+        affectedVins:
+          type: array
+          items:
+            type: string
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        status:
+          type: string
+          enum:
+            - active
+            - acknowledged
+            - resolved
+        detectedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        acknowledgedBy:
+          type:
+            - string
+            - "null"
+
+    AlertListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConstraintAlert"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    ThresholdsResponse:
+      type: object
+      required:
+        - thresholds
+      properties:
+        thresholds:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConstraintThreshold"
+
+    ConstraintThreshold:
+      type: object
+      required:
+        - constraintType
+        - warningThreshold
+        - criticalThreshold
+        - unit
+      properties:
+        constraintType:
+          type: string
+          enum:
+            - paint_capacity
+            - body_wip_queue
+            - kitting_readiness
+            - agv_delay
+            - press_die_overrun
+        warningThreshold:
+          type: number
+          format: double
+        criticalThreshold:
+          type: number
+          format: double
+        unit:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    AlertConfigRequest:
+      type: object
+      required:
+        - constraintType
+        - warningThreshold
+        - criticalThreshold
+      properties:
+        constraintType:
+          type: string
+          enum:
+            - paint_capacity
+            - body_wip_queue
+            - kitting_readiness
+            - agv_delay
+            - press_die_overrun
+        warningThreshold:
+          type: number
+          format: double
+        criticalThreshold:
+          type: number
+          format: double
+        reason:
+          type: string
+          maxLength: 1000
+
+    AlertConfigResponse:
+      type: object
+      required:
+        - constraintType
+        - updatedAt
+      properties:
+        constraintType:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time

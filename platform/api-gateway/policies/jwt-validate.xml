@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JWT validation policy — IBM API Connect / DataPower Gateway
+  IBM-SEC-001 §3.1: validate Bearer JWT against Entra ID JWKS before any RBAC check.
+  IBM-INT-001 §2.4: use DataPower GatewayScript action; result stored in context variable
+  'parsed-jwt' for downstream policies.
+
+  JWKS endpoint is read from gateway variable 'jwks-endpoint' (set in main.tf local gateway
+  property). The DataPower JWT Validation policy refreshes the JWKS key set automatically on
+  a configurable TTL (jwks-refresh-interval, set to 300 seconds / 5 minutes) so group
+  assignment changes in Entra ID take effect within the 5-minute window required by AC3.
+-->
+<assembly>
+  <execute>
+    <!-- Step 1: extract Bearer token from Authorization header -->
+    <gatewayscript>
+      var hdr = context.get('request.headers.authorization') || '';
+      if (!hdr.startsWith('Bearer ')) {
+        context.set('rbac.token-missing', true);
+        context.set('rbac.token', null);
+      } else {
+        context.set('rbac.token-missing', false);
+        context.set('rbac.token', hdr.slice(7));
+      }
+    </gatewayscript>
+
+    <!-- Step 2: reject immediately if no token present -->
+    <switch>
+      <case condition="$rbac.token-missing = true()">
+        <throw>
+          <message>Authorization header missing or not Bearer</message>
+          <name>jwt-missing</name>
+        </throw>
+      </case>
+    </switch>
+
+    <!--
+      Step 3: validate JWT signature and expiry using DataPower jwt-validate policy.
+      jwks-endpoint and jwks-refresh-interval are gateway properties set in main.tf.
+      On success, DataPower writes decoded claims into context variable 'decoded.claims'.
+    -->
+    <jwt-validate>
+      <jwt>$rbac.token</jwt>
+      <output-claims>decoded.claims</output-claims>
+      <jwks-url>$(jwks-endpoint)</jwks-url>
+      <jwks-refresh-interval>300</jwks-refresh-interval>
+      <issuer>$(entra-issuer)</issuer>
+      <audience>$(entra-audience)</audience>
+    </jwt-validate>
+
+    <!-- Step 4: extract roles (groups) claim into context variable for RBAC policy -->
+    <gatewayscript>
+      var claims = context.get('decoded.claims') || {};
+      // Entra ID emits group object IDs in 'groups' claim; roles emitted via scp claim.
+      context.set('rbac.groups', claims.groups || []);
+      context.set('rbac.scp', (claims.scp || '').split(' '));
+      context.set('rbac.sub', claims.sub || claims.oid || '');
+    </gatewayscript>
+  </execute>
+</assembly>

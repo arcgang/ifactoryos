@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: OpCenter Andon Alerts API
+  version: 1.0.0
+  description: >
+    Andon alert feed from Siemens OpCenter 10.2 via the opcenter-sync-service.
+    Open predictive alerts are sorted by minutesToPredictedFailure ascending to
+    support the Shift Lead Command Center view.
+    Station-level only — no operator-identifiable data (GDPR/BetrVG §87).
+    Data residency: Azure Germany West Central (EU).
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/line-command
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/line-command
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "120/minute per client"
+
+# IBM-SEC-001: JWT validation + RBAC enforced by DataPower policy andon-alerts-rbac.xml.
+# Required scope: andon.read (GRP-IFOS-SHIFTLEADS-MUC, GRP-IFOS-PLATFORM-ADMIN).
+# Assembly Associates (GRP-IFOS-ASSOCIATES-MUC, scopes: ar.instructions.read torque.write)
+# are denied with HTTP 403 and an audit event written within 1 s per NFR-06.
+
+paths:
+  /andon/alerts:
+    get:
+      operationId: listAndonAlerts
+      summary: List Andon alerts received from OpCenter, sorted by minutesToPredictedFailure ascending
+      description: >
+        Returns paginated Andon alerts. Open predictive alerts are sorted by
+        minutesToPredictedFailure ascending to support the Shift Lead Command Center view.
+        Station-level only — no operator-identifiable data.
+      x-rate-limit: "120/minute per client"
+      x-ibm-rbac-required-scope: "andon.read"
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - acknowledged
+              - resolved
+              - false_positive
+        - name: lineId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: stationId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated Andon alerts
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlertListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT (Auth Code + PKCE). Required scope — andon.read.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  parameters:
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Authenticated but role lacks andon.read scope — 403 returned and audit event written
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+        - correlation_id
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code
+        message:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    AndonAlertListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AndonAlert"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    AndonAlert:
+      type: object
+      required:
+        - alertId
+        - stationId
+        - lineId
+        - alertType
+        - predictedFailureType
+        - minutesToPredictedFailure
+        - recommendedAction
+        - status
+        - detectedAt
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        stationId:
+          type: string
+          description: Station identifier (station-level, not operator-level per GDPR/BetrVG)
+        lineId:
+          type: string
+        alertType:
+          type: string
+          enum:
+            - predictive
+            - reactive
+          description: predictive = threshold-rule based from Beckhoff PLC trace; reactive = post-failure
+        predictedFailureType:
+          type: string
+          description: e.g., electrode_wear, press_die_overrun, agv_delay
+        minutesToPredictedFailure:
+          type:
+            - integer
+            - "null"
+          description: Countdown in minutes; null for reactive alerts
+        recommendedAction:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+            - false_positive
+        detectedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        resolvedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        opcenterEventId:
+          type:
+            - string
+            - "null"
+          description: Source event ID from OpCenter GraphQL subscription
+
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+          description: Opaque; null on the last page
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200

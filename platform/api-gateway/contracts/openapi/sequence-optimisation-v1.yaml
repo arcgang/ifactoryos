@@ -1,0 +1,540 @@
+openapi: 3.1.0
+info:
+  title: Sequence Optimisation API
+  version: 1.0.0
+  description: >
+    50-run Monte Carlo VIN sequence optimisation with heuristic fallback.
+    Data residency: Azure Germany West Central (EU). Classification: confidential.
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/sequence
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/sequence
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "120/minute per client"
+  burst: "20/second"
+
+paths:
+  /optimise:
+    post:
+      operationId: runOptimizer
+      summary: Trigger a 50-run Monte Carlo optimisation and return a ranked VIN sequence
+      description: >
+        Accepts a list of VINs and live constraint snapshot. Executes 50 Monte Carlo runs
+        via KServe. Returns ranked sequence within 45 s; falls back to rule-based heuristic
+        if timeout or model error occurs.
+      x-rate-limit: "20/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizeRequest"
+      responses:
+        "200":
+          description: Optimisation completed (Monte Carlo or heuristic fallback)
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+  /publish:
+    post:
+      operationId: publishSequence
+      summary: Publish an approved ranked sequence to OpCenter
+      x-rate-limit: "20/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "202":
+          description: Sequence accepted for publication
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /status:
+    get:
+      operationId: getOptimiserStatus
+      summary: Get the status of the latest or a specific optimisation run
+      x-rate-limit: "120/minute per client"
+      parameters:
+        - name: runId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Specific run ID; omit for latest
+        - name: weekIso
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+      responses:
+        "200":
+          description: Run status
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /history:
+    get:
+      operationId: listOptimisationHistory
+      summary: List optimisation run history (cursor-paginated)
+      x-rate-limit: "60/minute per client"
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+        - name: weekIso
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+      responses:
+        "200":
+          description: Paginated optimisation history
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimisationHistoryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT. Audience must be api://ifactoryos.
+
+  headers:
+    Deprecation:
+      description: >
+        RFC 8594 Deprecation header. Present when this API version is deprecated.
+        Value is the deprecation timestamp in IMF-fixdate format.
+      schema:
+        type: string
+    Sunset:
+      description: >
+        RFC 8594 Sunset header. Present when this API version is deprecated.
+        Value is the planned decommission date in IMF-fixdate format.
+      schema:
+        type: string
+
+  parameters:
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Opaque pagination cursor from a previous response
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+      description: Maximum items to return
+
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Conflict — duplicate idempotency key
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: Constraint model validation failure (e.g. unknown option code)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    GatewayTimeout:
+      description: Optimisation timed out; heuristic fallback was not available
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+          description: RFC 7807 problem type URI
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+          description: Opaque; null on the last page
+        prev_cursor:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    OptimizeRequest:
+      type: object
+      required:
+        - weekIso
+        - vins
+        - constraintSnapshot
+      properties:
+        weekIso:
+          type: string
+          pattern: '^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$'
+        vins:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/VinInput"
+        constraintSnapshot:
+          $ref: "#/components/schemas/ConstraintSnapshot"
+        monteCarloRuns:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 50
+        idempotencyKey:
+          type: string
+          format: uuid
+          description: Client-supplied idempotency key; same key returns cached result within 10 minutes
+        my26ConfigVersion:
+          type: string
+          format: uuid
+          description: MY26 config version UUID if applicable
+
+    OptimizeResponse:
+      type: object
+      required:
+        - runId
+        - weekIso
+        - resultType
+        - rankedSequence
+        - completedAt
+        - durationMs
+        - confidenceScore
+        - my26ConfigVersion
+      properties:
+        runId:
+          type: string
+          format: uuid
+        weekIso:
+          type: string
+        resultType:
+          type: string
+          enum:
+            - monte_carlo
+            - heuristic_fallback
+          description: Indicates whether the result is from Monte Carlo optimisation or the rule-based heuristic fallback
+        rankedSequence:
+          type: array
+          items:
+            $ref: "#/components/schemas/RankedVin"
+        completedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        confidenceScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        my26ConfigVersion:
+          type:
+            - string
+            - "null"
+          format: uuid
+        constraintSnapshotTimestamp:
+          type: string
+          format: date-time
+
+    PublishRequest:
+      type: object
+      required:
+        - runId
+      properties:
+        runId:
+          type: string
+          format: uuid
+        overrideReason:
+          type: string
+          maxLength: 1000
+
+    PublishResponse:
+      type: object
+      required:
+        - runId
+        - publishedAt
+        - opcenterJobId
+      properties:
+        runId:
+          type: string
+          format: uuid
+        publishedAt:
+          type: string
+          format: date-time
+        opcenterJobId:
+          type: string
+
+    RunStatusResponse:
+      type: object
+      required:
+        - runId
+        - status
+        - weekIso
+        - createdAt
+      properties:
+        runId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - completed
+            - failed
+            - timed_out
+        weekIso:
+          type: string
+        resultType:
+          type: string
+          enum:
+            - monte_carlo
+            - heuristic_fallback
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    OptimisationHistoryResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunStatusResponse"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    VinInput:
+      type: object
+      required:
+        - vin
+      properties:
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        modelYear:
+          type: string
+          enum:
+            - MY25
+            - MY26
+        paintCode:
+          type: string
+        optionCodes:
+          type: array
+          items:
+            type: string
+        vipPriority:
+          type: boolean
+          default: false
+        regulatoryHold:
+          type: boolean
+          default: false
+
+    RankedVin:
+      type: object
+      required:
+        - vin
+        - position
+        - constraintScore
+      properties:
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        position:
+          type: integer
+          minimum: 1
+        constraintScore:
+          type: number
+          format: double
+        vipPriority:
+          type: boolean
+        regulatoryHold:
+          type: boolean
+
+    ConstraintSnapshot:
+      type: object
+      required:
+        - snapshotTimestamp
+        - paintCapacityUtilisation
+        - bodyWipQueueDepth
+        - kittingReadinessPct
+      properties:
+        snapshotTimestamp:
+          type: string
+          format: date-time
+        paintCapacityUtilisation:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        bodyWipQueueDepth:
+          type: integer
+          minimum: 0
+        kittingReadinessPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        maintenanceWindows:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaintenanceWindow"
+        unsLatencyMs:
+          type: integer
+          description: UNS p99 latency at snapshot time in ms
+      description: Live constraint values fetched from UNS at the time of the optimisation request
+
+    MaintenanceWindow:
+      type: object
+      required:
+        - windowId
+        - stationId
+        - startsAt
+        - endsAt
+      properties:
+        windowId:
+          type: string
+          format: uuid
+        stationId:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        description:
+          type: string

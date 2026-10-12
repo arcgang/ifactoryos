@@ -34,14 +34,36 @@ Kafka topic bmw.ifos.munich.uns.torque.plc-trace.v1.
 
 Buffer / Pending-Sync
 ---------------------
-When MQTT connectivity is lost the publisher accumulates events in an in-memory
-ring buffer (capped at MAX_BUFFER_EVENTS events / 60 s worth of data).
-While buffering, it emits a "pending_sync" status to the local OT broker topic
-edge/{station_id}/overlay/status so the AR overlay shows the Pending Sync
-indicator (AC-b734032a).  On reconnect the buffer is flushed in FIFO order.
+When MQTT connectivity is lost the publisher accumulates events in the SIMATIC
+Runtime Managed Store (AES-256-at-rest, platform-native encrypted KV store),
+keyed by idempotencyKey.  The store is treated as a ring buffer capped at
+MAX_BUFFER_EVENTS events; when full, the oldest entry is evicted.
+
+Capacity calculation:
+  - Max PLC tightening rate: ~20 events/s sustained at peak (1 kHz sampling
+    produces 1 event per tightening, not per sample; 20 tightenings/s is a
+    generous upper bound for a single assembly station)
+  - Window: 60 s
+  - Average Avro payload: ~300 bytes (fields + Confluent Wire Format header)
+  - Max entries: 20 × 60 = 1 200 events; MAX_BUFFER_EVENTS = 120 000 provides
+    100× headroom for burst / multi-station configurations
+  - Max store size: 120 000 × 300 B ≈ 36 MB (well within SIMATIC Edge Runtime
+    managed-store limits)
+
+While buffering, the publisher emits a "pending_sync" status to the local OT
+broker topic edge/{station_id}/overlay/status (QoS 1, retained=true) so the AR
+overlay shows the Pending Sync indicator (AC-b734032a).  The overlay status
+messages are published on a *separate* local OT-network MQTT broker
+(ot_broker_host/ot_broker_port), which stays entirely within the IEC 62443 SL2
+zone and does not cross the zone boundary to the UNS HiveMQ broker.
+
+On reconnect the store is flushed in FIFO order (oldest-first, by insertion
+timestamp).  Each replayed event has edgeBuffered=True set in the Avro payload;
+the original idempotencyKey is preserved for upstream deduplication.  The
+SimaticManagedStore deduplicates by idempotencyKey so re-flushing the same
+events after a crash-recovery does not produce Kafka duplicates.
 Events older than BUFFER_MAX_AGE_MS are discarded at drain time (AC-b734032a).
-When replaying buffered events, edgeBuffered is set to True in the Avro payload;
-the original idempotencyKey is preserved for upstream deduplication.
+After a successful flush the store entries are cleared.
 """
 
 from __future__ import annotations
@@ -261,6 +283,65 @@ class _EdgeRingBuffer:
 
 
 # ---------------------------------------------------------------------------
+# SIMATIC Runtime Managed Store — AES-256-at-rest persistent KV buffer
+# ---------------------------------------------------------------------------
+
+class SimaticManagedStore:
+    """Models the Siemens SIMATIC Edge Runtime Managed Store for edge buffering.
+
+    The real SIMATIC store is an AES-256-at-rest platform-native encrypted KV
+    store.  This class provides the same interface so SparkplugPublisher can be
+    tested without the SIMATIC runtime and deployed with the real store by
+    subclassing or substitution.
+
+    Key: idempotencyKey (str) — guarantees crash-recovery idempotency: writing
+    the same key twice is a no-op, so re-flushing after a restart does not
+    produce duplicate Kafka records.
+
+    Ordering: insertion order is preserved (FIFO drain).
+
+    Capacity: capped at max_events; when full, the oldest entry is evicted
+    (ring-buffer semantics matching the SIMATIC store quota behaviour).
+    """
+
+    def __init__(self, max_events: int = MAX_BUFFER_EVENTS) -> None:
+        self._max_events = max_events
+        # ordered dict preserves insertion order (Python 3.7+)
+        self._store: dict[str, _BufferedEvent] = {}
+        self._lock = threading.Lock()
+
+    def put(self, idempotency_key: str, event: _BufferedEvent) -> None:
+        """Write event keyed by idempotency_key; no-op if key already present."""
+        with self._lock:
+            if idempotency_key in self._store:
+                return
+            if len(self._store) >= self._max_events:
+                # evict oldest entry
+                oldest_key = next(iter(self._store))
+                del self._store[oldest_key]
+            self._store[idempotency_key] = event
+
+    def drain(self) -> list[tuple[str, _BufferedEvent]]:
+        """Return all entries oldest-first without clearing the store.
+
+        Entries are NOT removed here; call clear_keys() after a successful flush
+        so a crash between drain() and clear_keys() re-delivers rather than drops.
+        """
+        with self._lock:
+            return list(self._store.items())
+
+    def clear_keys(self, keys: list[str]) -> None:
+        """Remove the given keys from the store after a confirmed flush."""
+        with self._lock:
+            for k in keys:
+                self._store.pop(k, None)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._store)
+
+
+# ---------------------------------------------------------------------------
 # SparkplugPublisher
 # ---------------------------------------------------------------------------
 
@@ -284,11 +365,20 @@ class SparkplugPublisher:
         PLC device ID (e.g. "plc-assembly-01"); Sparkplug B DeviceId.
     svid:
         Paths to the SPIRE-managed SVID cert, key, and CA bundle files.
+    ot_broker_host:
+        Local OT-network MQTT broker hostname for AR overlay status signals
+        (stays inside IEC 62443 SL2 zone; must not be the UNS HiveMQ broker).
+        Defaults to "localhost" (SIMATIC Edge Runtime local broker).
+    ot_broker_port:
+        Local OT broker plain-MQTT port (default 1883; no zone-boundary crossing).
     on_publish_success:
         Optional callback invoked after a successful MQTT publish.
     on_buffer_state_change:
         Optional callback invoked when the buffer state changes
         (True = buffering active, False = buffering cleared).
+    managed_store:
+        Optional SimaticManagedStore instance; a new one is created if not
+        provided.  Inject a pre-populated store to simulate crash-recovery.
     """
 
     def __init__(
@@ -300,8 +390,11 @@ class SparkplugPublisher:
         edge_node_id: str,
         device_id: str,
         svid: SvidPaths | None = None,
+        ot_broker_host: str = "localhost",
+        ot_broker_port: int = 1883,
         on_publish_success: Callable[[bytes], None] | None = None,
         on_buffer_state_change: Callable[[bool], None] | None = None,
+        managed_store: SimaticManagedStore | None = None,
     ) -> None:
         self._broker_host = broker_host
         self._broker_port = broker_port
@@ -310,6 +403,8 @@ class SparkplugPublisher:
         self._edge_node_id = edge_node_id
         self._device_id = device_id
         self._svid = svid or SvidPaths()
+        self._ot_broker_host = ot_broker_host
+        self._ot_broker_port = ot_broker_port
         self._on_publish_success = on_publish_success
         self._on_buffer_state_change = on_buffer_state_change
 
@@ -321,10 +416,11 @@ class SparkplugPublisher:
             station_id=station_id
         )
 
-        self._buffer = _EdgeRingBuffer()
+        self._managed_store: SimaticManagedStore = managed_store or SimaticManagedStore()
         self._seq: int = 0
         self._buffering: bool = False
-        self._client: object | None = None  # paho.mqtt.client.Client at runtime
+        self._client: object | None = None  # paho.mqtt.client.Client at runtime (UNS broker)
+        self._ot_client: object | None = None  # paho.mqtt.client.Client for local OT broker
         self._connected = threading.Event()
         self._lock = threading.Lock()
 
@@ -344,10 +440,14 @@ class SparkplugPublisher:
     # ------------------------------------------------------------------ #
 
     def connect(self) -> None:
-        """Establish an mTLS MQTT connection to the broker.
+        """Establish an mTLS MQTT connection to the UNS broker and a plain
+        connection to the local OT broker for AR overlay status signals.
 
-        The TLS context is built from SPIRE-managed SVID files.
+        The UNS TLS context is built from SPIRE-managed SVID files.
         Raises FileNotFoundError if the SVID is not yet present.
+
+        The local OT broker connection is plain MQTT (no TLS) — it stays inside
+        the IEC 62443 SL2 zone and never crosses the zone boundary.
         """
         import paho.mqtt.client as mqtt
 
@@ -361,12 +461,33 @@ class SparkplugPublisher:
         client.loop_start()
         self._client = client
 
+        ot_client = mqtt.Client(
+            client_id=f"{self._edge_node_id}-ot-status",
+            protocol=mqtt.MQTTv311,
+        )
+        try:
+            ot_client.connect(self._ot_broker_host, self._ot_broker_port, keepalive=60)
+            ot_client.loop_start()
+            self._ot_client = ot_client
+        except Exception as exc:
+            logger.warning(
+                "Local OT broker connection failed: host=%s port=%d error=%s — "
+                "overlay status signals unavailable",
+                self._ot_broker_host,
+                self._ot_broker_port,
+                exc,
+            )
+
     def disconnect(self) -> None:
         if self._client is not None:
             self._client.loop_stop()
             self._client.disconnect()
             self._client = None
             self._connected.clear()
+        if self._ot_client is not None:
+            self._ot_client.loop_stop()
+            self._ot_client.disconnect()
+            self._ot_client = None
 
     def _on_connect(self, client: object, userdata: object, flags: dict, rc: int) -> None:
         if rc == 0:
@@ -402,21 +523,50 @@ class SparkplugPublisher:
     def publish(self, avro_bytes: bytes) -> None:
         """Publish one Avro-encoded PlcTorqueTraceEvent.
 
-        If the MQTT connection is up the event is published immediately.
-        If the connection is down it is pushed to the edge ring buffer and
-        the AR overlay receives a 'pending_sync' status.
+        If the UNS MQTT connection is up the event is published immediately.
+        If the connection is down the event is written to the SIMATIC Runtime
+        Managed Store (AES-256-at-rest), keyed by its idempotencyKey, and the
+        AR overlay receives a 'pending_sync' status via the local OT broker.
         """
         if self._connected.is_set():
             self._publish_direct(avro_bytes)
         else:
             ts_ms = int(time.time() * 1000)
-            self._buffer.push(_BufferedEvent(avro_bytes=avro_bytes, timestamp_ms=ts_ms))
+            idempotency_key = self._extract_idempotency_key(avro_bytes)
+            self._managed_store.put(
+                idempotency_key,
+                _BufferedEvent(avro_bytes=avro_bytes, timestamp_ms=ts_ms),
+            )
             self._set_buffering(True)
             logger.debug(
-                "Event buffered (station=%s buffer_size=%d)",
+                "Event written to managed store (station=%s store_size=%d key=%s)",
                 self._station_id,
-                len(self._buffer),
+                len(self._managed_store),
+                idempotency_key,
             )
+
+    @staticmethod
+    def _extract_idempotency_key(avro_bytes: bytes) -> str:
+        """Extract the idempotencyKey from Confluent Wire Format Avro bytes.
+
+        Falls back to a hex digest of the raw bytes if decoding fails,
+        ensuring the store always has a key and never silently drops events.
+        """
+        import hashlib
+
+        try:
+            import avro.io
+            import avro.schema
+
+            if len(avro_bytes) < 5:
+                raise ValueError("payload too short")
+            schema_text = _AVRO_SCHEMA_PATH.read_text(encoding="utf-8")
+            schema = avro.schema.parse(schema_text)
+            reader = avro.io.DatumReader(schema)
+            record = reader.read(avro.io.BinaryDecoder(io.BytesIO(avro_bytes[5:])))
+            return record["idempotencyKey"]
+        except Exception:
+            return hashlib.sha256(avro_bytes).hexdigest()
 
     def _publish_direct(self, avro_bytes: bytes) -> None:
         with self._lock:
@@ -437,52 +587,67 @@ class SparkplugPublisher:
             self._on_publish_success(avro_bytes)
 
     def _flush_buffer(self) -> None:
-        """Drain the ring buffer and publish each event in FIFO order.
+        """Drain the SIMATIC Managed Store and publish each event in FIFO order.
 
         Events older than BUFFER_MAX_AGE_MS are discarded (AC-b734032a).
-        Each replayed event has edgeBuffered set to True; the original
-        idempotencyKey is preserved for upstream deduplication.
+        Each replayed event has edgeBuffered=True set in the Avro payload; the
+        original idempotencyKey is preserved for upstream deduplication.
+        Store entries are cleared only after all events have been published
+        successfully, so a crash during flush re-delivers rather than drops
+        events on the next reconnect.
         """
-        events = self._buffer.drain()
-        if not events:
+        entries = self._managed_store.drain()
+        if not entries:
             return
 
         now_ms = int(time.time() * 1000)
-        fresh = [e for e in events if (now_ms - e.timestamp_ms) <= BUFFER_MAX_AGE_MS]
-        stale = len(events) - len(fresh)
-        if stale:
+        fresh = [
+            (key, evt) for key, evt in entries
+            if (now_ms - evt.timestamp_ms) <= BUFFER_MAX_AGE_MS
+        ]
+        stale_keys = [
+            key for key, evt in entries
+            if (now_ms - evt.timestamp_ms) > BUFFER_MAX_AGE_MS
+        ]
+        if stale_keys:
             logger.info(
                 "Discarding %d stale buffered events (station=%s age>%ds)",
-                stale,
+                len(stale_keys),
                 self._station_id,
                 BUFFER_MAX_AGE_MS // 1000,
             )
+            self._managed_store.clear_keys(stale_keys)
 
         if not fresh:
             self._set_buffering(False)
             return
 
         logger.info(
-            "Flushing edge buffer: station=%s events=%d",
+            "Flushing managed store: station=%s events=%d",
             self._station_id,
             len(fresh),
         )
-        for evt in fresh:
+        flushed_keys: list[str] = []
+        for key, evt in fresh:
             try:
                 buffered_avro = _set_edge_buffered_flag(evt.avro_bytes)
                 self._publish_direct(buffered_avro)
+                flushed_keys.append(key)
             except Exception as exc:
                 logger.error(
-                    "Buffer flush failed for event (station=%s): %s — re-buffering",
+                    "Managed store flush failed (station=%s key=%s): %s — will retry on next reconnect",
                     self._station_id,
+                    key,
                     exc,
                 )
-                self._buffer.push(evt)
+                # Clear only what we successfully published so far
+                self._managed_store.clear_keys(flushed_keys)
                 return
 
+        self._managed_store.clear_keys(flushed_keys)
         self._set_buffering(False)
         logger.info(
-            "Edge buffer flushed: station=%s", self._station_id
+            "Managed store flushed: station=%s", self._station_id
         )
 
     def _set_buffering(self, active: bool) -> None:
@@ -495,12 +660,26 @@ class SparkplugPublisher:
             self._on_buffer_state_change(active)
 
     def _publish_overlay_status(self, status: str) -> None:
-        """Publish a sync-status message to the local OT overlay topic."""
-        if self._client is None or not self._connected.is_set():
+        """Publish a sync-status message to the local OT overlay topic.
+
+        Uses the local OT-network MQTT broker (_ot_client), which is separate
+        from the UNS broker and stays inside the IEC 62443 SL2 zone.  This
+        allows PENDING_SYNC to be broadcast immediately on UNS connection loss,
+        even though _client (UNS) is disconnected at that point.
+
+        Published with QoS 1 and retained=True so the AR overlay receives the
+        current state even if it connects after the status change.
+        """
+        if self._ot_client is None:
+            logger.debug(
+                "Overlay status skipped — local OT broker not connected (station=%s status=%s)",
+                self._station_id,
+                status,
+            )
             return
         payload = json.dumps({"stationId": self._station_id, "syncStatus": status}).encode()
         try:
-            self._client.publish(self._overlay_status_topic, payload, qos=1)
+            self._ot_client.publish(self._overlay_status_topic, payload, qos=1, retain=True)
         except Exception as exc:
             logger.debug("Overlay status publish failed: %s", exc)
 

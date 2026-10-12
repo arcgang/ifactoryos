@@ -23,7 +23,8 @@ All tests run without a live HiveMQ or Confluent Kafka cluster.
     library) identical to the one generated in test_mtls_spiffe.py, writing it
     to a temp directory, then calling read_spiffe_id_from_svid().
 
-(c) exercises the _EdgeRingBuffer and overlay-status callback without live MQTT.
+(c) exercises the SimaticManagedStore, _EdgeRingBuffer, overlay-status callback, and
+    idempotency logic without live MQTT.
 
 Run:
     pytest platform/edge-gateways/tests/test_sparkplug_publisher.py -v
@@ -65,6 +66,7 @@ from mqtt_publisher.sparkplug_publisher import (
     _EdgeRingBuffer,
     _BufferedEvent,
     _set_edge_buffered_flag,
+    SimaticManagedStore,
     SparkplugPublisher,
     SvidPaths,
     load_svid_ssl_context,
@@ -539,6 +541,7 @@ class TestPublisherBufferOnDisconnect:
     """Publisher enters buffer mode when MQTT is down; overlay status is notified."""
 
     def test_publish_buffered_when_not_connected(self) -> None:
+        store = SimaticManagedStore()
         publisher = SparkplugPublisher(
             broker_host="127.0.0.1",
             broker_port=9999,
@@ -546,13 +549,14 @@ class TestPublisherBufferOnDisconnect:
             shop=_SHOP,
             edge_node_id=_EDGE_NODE_ID,
             device_id="plc-test-01",
+            managed_store=store,
         )
         # Do not call connect() — publisher is not connected
         avro_bytes = _make_avro_bytes()
         publisher.publish(avro_bytes)
-        assert len(publisher._buffer) == 1, (
-            f"Event must be buffered when publisher is not connected; "
-            f"buffer size={len(publisher._buffer)}"
+        assert len(store) == 1, (
+            f"Event must be written to managed store when publisher is not connected; "
+            f"store size={len(store)}"
         )
 
     def test_buffer_state_change_callback_fires_on_disconnect(self) -> None:
@@ -719,6 +723,7 @@ class TestEdgeBufferedFlagOnFlush:
         )
 
         received_payloads: list[bytes] = []
+        store = SimaticManagedStore()
 
         encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
         event = AdsTighteningEvent(
@@ -741,12 +746,13 @@ class TestEdgeBufferedFlagOnFlush:
             shop=_SHOP,
             edge_node_id=_EDGE_NODE_ID,
             device_id="plc-test-01",
+            managed_store=store,
             on_publish_success=received_payloads.append,
         )
 
         # Buffer the event (not connected)
         publisher.publish(avro_bytes)
-        assert len(publisher._buffer) == 1, "Event must be in buffer before flush"
+        assert len(store) == 1, "Event must be in managed store before flush"
 
         # Simulate reconnect: inject a mock client and call _flush_buffer directly
         mock_client = MagicMock()
@@ -771,7 +777,7 @@ class TestEdgeBufferedFlagOnFlush:
             f"idempotencyKey must be unchanged after buffer flush; "
             f"expected {original_key!r}, got {decoded['idempotencyKey']!r}"
         )
-        assert len(publisher._buffer) == 0, "Buffer must be empty after successful flush"
+        assert len(store) == 0, "Managed store must be empty after successful flush"
 
 
 # ---------------------------------------------------------------------------
@@ -793,6 +799,7 @@ class TestStaleEventDiscard:
 
         received_payloads: list[bytes] = []
         encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+        store = SimaticManagedStore()
 
         fresh_event = AdsTighteningEvent(
             station_id=_STATION_ID, vin=_VIN,
@@ -804,8 +811,10 @@ class TestStaleEventDiscard:
             torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
             plc_seq=2, timestamp_ms=_TIMESTAMP_MS, result="OK",
         )
-        fresh_avro = encoder.encode(build_plc_trace_event(fresh_event))
-        stale_avro = encoder.encode(build_plc_trace_event(stale_event))
+        fresh_trace = build_plc_trace_event(fresh_event)
+        stale_trace = build_plc_trace_event(stale_event)
+        fresh_avro = encoder.encode(fresh_trace)
+        stale_avro = encoder.encode(stale_trace)
 
         publisher = SparkplugPublisher(
             broker_host="127.0.0.1",
@@ -814,14 +823,16 @@ class TestStaleEventDiscard:
             shop=_SHOP,
             edge_node_id=_EDGE_NODE_ID,
             device_id="plc-test-01",
+            managed_store=store,
             on_publish_success=received_payloads.append,
         )
 
         now_ms = int(time.time() * 1000)
         stale_ts = now_ms - (BUFFER_MAX_AGE_MS + 5_000)  # 65 s ago — definitely stale
 
-        publisher._buffer.push(_BufferedEvent(avro_bytes=stale_avro, timestamp_ms=stale_ts))
-        publisher._buffer.push(_BufferedEvent(avro_bytes=fresh_avro, timestamp_ms=now_ms))
+        # Inject directly into the managed store with synthetic timestamps
+        store.put(stale_trace.idempotency_key, _BufferedEvent(avro_bytes=stale_avro, timestamp_ms=stale_ts))
+        store.put(fresh_trace.idempotency_key, _BufferedEvent(avro_bytes=fresh_avro, timestamp_ms=now_ms))
 
         mock_client = MagicMock()
         mock_info = MagicMock()
@@ -843,4 +854,485 @@ class TestStaleEventDiscard:
     def test_buffer_max_age_ms_constant_is_60_seconds(self) -> None:
         assert BUFFER_MAX_AGE_MS == 60_000, (
             f"BUFFER_MAX_AGE_MS must be 60 000 ms (60 s); got {BUFFER_MAX_AGE_MS!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (a) UNS outage: 5 events written to SIMATIC Managed Store (AC-b734032a)
+# ---------------------------------------------------------------------------
+
+class TestSimaticManagedStoreOnOutage:
+    """
+    Given a UNS MQTT broker outage,
+    when 5 tightening events are injected via publish(),
+    then all 5 are written to the SIMATIC Runtime Managed Store.
+    """
+
+    def test_five_events_written_to_managed_store_on_outage(self) -> None:
+        store = SimaticManagedStore()
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+        )
+        # Publisher is not connected — simulates UNS outage
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+        for seq in range(1, 6):
+            event = AdsTighteningEvent(
+                station_id=_STATION_ID,
+                vin=_VIN,
+                torque_nm=_TORQUE_NM,
+                angle_deg=_ANGLE_DEG,
+                plc_seq=seq,
+                timestamp_ms=_TIMESTAMP_MS + seq,
+                result="OK",
+            )
+            avro_bytes = encoder.encode(build_plc_trace_event(event))
+            publisher.publish(avro_bytes)
+
+        assert len(store) == 5, (
+            f"All 5 tightening events must be written to the managed store during outage; "
+            f"got {len(store)}"
+        )
+
+    def test_managed_store_keyed_by_idempotency_key(self) -> None:
+        """Each entry must be stored under its idempotencyKey (not an integer index)."""
+        store = SimaticManagedStore()
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+        )
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID,
+            vin=_VIN,
+            torque_nm=_TORQUE_NM,
+            angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ,
+            timestamp_ms=_TIMESTAMP_MS,
+            result="OK",
+        )
+        trace = build_plc_trace_event(event)
+        avro_bytes = encoder.encode(trace)
+        publisher.publish(avro_bytes)
+
+        entries = store.drain()
+        assert len(entries) == 1, "Exactly 1 entry must be in the store"
+        stored_key, _ = entries[0]
+        assert stored_key == trace.idempotency_key, (
+            f"Store key must be the event idempotencyKey {trace.idempotency_key!r}; "
+            f"got {stored_key!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (b) Flush on reconnect: all 5 events with edgeBuffered=True within 60s
+# ---------------------------------------------------------------------------
+
+class TestFlushOnReconnect:
+    """
+    Given 5 events written to the SIMATIC store during outage,
+    when the UNS broker reconnects,
+    then all 5 are flushed oldest-first with edgeBuffered=True,
+    and the flush completes within 60 seconds of reconnect detection.
+    """
+
+    def test_five_events_flushed_oldest_first_with_edge_buffered_true(self) -> None:
+        store = SimaticManagedStore()
+        received_payloads: list[bytes] = []
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+            on_publish_success=received_payloads.append,
+        )
+
+        # Inject 5 events during outage (publisher not connected)
+        expected_keys = []
+        for seq in range(1, 6):
+            event = AdsTighteningEvent(
+                station_id=_STATION_ID,
+                vin=_VIN,
+                torque_nm=_TORQUE_NM,
+                angle_deg=_ANGLE_DEG,
+                plc_seq=seq,
+                timestamp_ms=_TIMESTAMP_MS + seq,
+                result="OK",
+            )
+            trace = build_plc_trace_event(event)
+            expected_keys.append(trace.idempotency_key)
+            publisher.publish(encoder.encode(trace))
+
+        assert len(store) == 5, "Pre-condition: all 5 events must be in the store"
+
+        # Simulate reconnect: inject mock UNS client and trigger flush
+        mock_client = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_client.publish.return_value = mock_info
+        publisher._client = mock_client
+        publisher._connected.set()
+
+        t_reconnect = time.monotonic()
+        publisher._flush_buffer()
+        flush_elapsed = time.monotonic() - t_reconnect
+
+        assert len(received_payloads) == 5, (
+            f"All 5 buffered events must be flushed on reconnect; "
+            f"got {len(received_payloads)}"
+        )
+        assert flush_elapsed < 60.0, (
+            f"Flush must complete within 60 seconds of reconnect; "
+            f"took {flush_elapsed:.3f}s"
+        )
+
+        # All flushed events must have edgeBuffered=True
+        for i, payload in enumerate(received_payloads):
+            decoded = encoder.decode(payload)
+            assert decoded["edgeBuffered"] is True, (
+                f"Flushed event {i} must have edgeBuffered=True; got {decoded['edgeBuffered']!r}"
+            )
+
+        # Verify FIFO order by idempotencyKey (seq 1 through 5)
+        flushed_keys = [encoder.decode(p)["idempotencyKey"] for p in received_payloads]
+        assert flushed_keys == expected_keys, (
+            f"Events must be flushed in insertion (FIFO) order; "
+            f"expected {expected_keys!r}, got {flushed_keys!r}"
+        )
+
+    def test_store_cleared_after_successful_flush(self) -> None:
+        """After a successful flush the managed store must be empty."""
+        store = SimaticManagedStore()
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+        )
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID, vin=_VIN,
+            torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ, timestamp_ms=_TIMESTAMP_MS, result="OK",
+        )
+        publisher.publish(encoder.encode(build_plc_trace_event(event)))
+        assert len(store) == 1, "Pre-condition: event must be in store before flush"
+
+        mock_client = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_client.publish.return_value = mock_info
+        publisher._client = mock_client
+        publisher._connected.set()
+
+        publisher._flush_buffer()
+
+        assert len(store) == 0, (
+            "Managed store must be empty after a successful flush; "
+            f"got {len(store)} entries remaining"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (c) PENDING_SYNC broadcast within 500ms of UNS connection loss
+# ---------------------------------------------------------------------------
+
+class TestPendingSyncBroadcast:
+    """
+    Given the publisher has a local OT broker client,
+    when the UNS MQTT broker disconnects,
+    then a PENDING_SYNC status message must be broadcast on
+    edge/{stationId}/overlay/status within 500ms of connection loss.
+    """
+
+    def test_pending_sync_published_to_ot_broker_on_disconnect(self) -> None:
+        ot_publishes: list[dict] = []
+
+        def capture_publish(topic: str, payload: bytes, **kwargs: object) -> MagicMock:
+            ot_publishes.append({"topic": topic, "payload": json.loads(payload)})
+            info = MagicMock()
+            return info
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+        )
+        mock_ot = MagicMock()
+        mock_ot.publish.side_effect = capture_publish
+        publisher._ot_client = mock_ot
+
+        t_disconnect = time.monotonic()
+        # Simulate UNS broker disconnect
+        publisher._on_disconnect(client=None, userdata=None, rc=7)
+        elapsed = time.monotonic() - t_disconnect
+
+        assert elapsed < 0.5, (
+            f"PENDING_SYNC must be broadcast within 500ms of connection loss; "
+            f"took {elapsed:.3f}s"
+        )
+        pending_calls = [
+            p for p in ot_publishes
+            if p["payload"].get("syncStatus") == "pending_sync"
+        ]
+        assert len(pending_calls) == 1, (
+            f"Exactly one PENDING_SYNC message must be broadcast; got {ot_publishes!r}"
+        )
+        assert pending_calls[0]["topic"] == f"edge/{_STATION_ID}/overlay/status", (
+            f"PENDING_SYNC must be on topic edge/{{stationId}}/overlay/status; "
+            f"got {pending_calls[0]['topic']!r}"
+        )
+
+    def test_pending_sync_uses_qos1_retain(self) -> None:
+        """overlay status publishes must use QoS 1 and retained=True."""
+        captured_kwargs: list[dict] = []
+
+        def capture_publish(topic: str, payload: bytes, **kwargs: object) -> MagicMock:
+            captured_kwargs.append(kwargs)
+            return MagicMock()
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+        )
+        mock_ot = MagicMock()
+        mock_ot.publish.side_effect = capture_publish
+        publisher._ot_client = mock_ot
+
+        publisher._on_disconnect(client=None, userdata=None, rc=7)
+
+        assert captured_kwargs, "publish must have been called"
+        call_kwargs = captured_kwargs[0]
+        assert call_kwargs.get("qos") == 1, (
+            f"Overlay status publish must use QoS 1; got qos={call_kwargs.get('qos')!r}"
+        )
+        assert call_kwargs.get("retain") is True, (
+            f"Overlay status publish must be retained=True; got retain={call_kwargs.get('retain')!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (d) Sync-cleared broadcast after flush completion
+# ---------------------------------------------------------------------------
+
+class TestSyncClearedBroadcast:
+    """
+    Given buffered events are flushed after reconnect,
+    when flush completes,
+    then a sync-cleared ('synced') status message must be broadcast on
+    edge/{stationId}/overlay/status via the local OT broker.
+    """
+
+    def test_synced_published_to_ot_broker_after_flush(self) -> None:
+        ot_publishes: list[dict] = []
+
+        def capture_publish(topic: str, payload: bytes, **kwargs: object) -> MagicMock:
+            ot_publishes.append({"topic": topic, "payload": json.loads(payload)})
+            return MagicMock()
+
+        store = SimaticManagedStore()
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+        )
+        mock_ot = MagicMock()
+        mock_ot.publish.side_effect = capture_publish
+        publisher._ot_client = mock_ot
+
+        # Trigger buffering (PENDING_SYNC)
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID, vin=_VIN,
+            torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ, timestamp_ms=_TIMESTAMP_MS, result="OK",
+        )
+        publisher.publish(encoder.encode(build_plc_trace_event(event)))
+
+        # Simulate reconnect and flush
+        mock_uns = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_uns.publish.return_value = mock_info
+        publisher._client = mock_uns
+        publisher._connected.set()
+
+        publisher._flush_buffer()
+
+        synced_calls = [
+            p for p in ot_publishes
+            if p["payload"].get("syncStatus") == "synced"
+        ]
+        assert len(synced_calls) == 1, (
+            f"Exactly one 'synced' message must be broadcast after flush; "
+            f"got {ot_publishes!r}"
+        )
+        assert synced_calls[0]["topic"] == f"edge/{_STATION_ID}/overlay/status", (
+            f"sync-cleared must publish to edge/{{stationId}}/overlay/status; "
+            f"got {synced_calls[0]['topic']!r}"
+        )
+
+    def test_pending_sync_then_synced_sequence(self) -> None:
+        """The OT broker must receive pending_sync then synced — in that order."""
+        ot_statuses: list[str] = []
+
+        def capture_publish(topic: str, payload: bytes, **kwargs: object) -> MagicMock:
+            ot_statuses.append(json.loads(payload)["syncStatus"])
+            return MagicMock()
+
+        store = SimaticManagedStore()
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+        )
+        mock_ot = MagicMock()
+        mock_ot.publish.side_effect = capture_publish
+        publisher._ot_client = mock_ot
+
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID, vin=_VIN,
+            torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ, timestamp_ms=_TIMESTAMP_MS, result="OK",
+        )
+        publisher.publish(encoder.encode(build_plc_trace_event(event)))
+
+        mock_uns = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_uns.publish.return_value = mock_info
+        publisher._client = mock_uns
+        publisher._connected.set()
+        publisher._flush_buffer()
+
+        assert ot_statuses == ["pending_sync", "synced"], (
+            f"OT broker must receive pending_sync then synced in that order; "
+            f"got {ot_statuses!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (e) Idempotency: double-flush does not produce duplicate Kafka publishes
+# ---------------------------------------------------------------------------
+
+class TestManagedStoreIdempotency:
+    """
+    Given the same buffered events are presented to the managed store twice
+    (simulating crash-recovery where the store survived but the flush did not),
+    when the flush runs a second time,
+    then no duplicate events are published to Kafka (idempotencyKey dedup).
+    """
+
+    def test_duplicate_put_same_key_is_no_op(self) -> None:
+        """SimaticManagedStore.put with an existing key must not add a duplicate."""
+        store = SimaticManagedStore()
+        event = _BufferedEvent(avro_bytes=b"payload-1", timestamp_ms=_TIMESTAMP_MS)
+        store.put("key-abc", event)
+        store.put("key-abc", _BufferedEvent(avro_bytes=b"payload-2", timestamp_ms=_TIMESTAMP_MS + 1))
+
+        assert len(store) == 1, (
+            "Managed store must contain exactly 1 entry after two puts with the same key; "
+            f"got {len(store)}"
+        )
+        entries = store.drain()
+        assert entries[0][1].avro_bytes == b"payload-1", (
+            "First-written payload must be preserved; second put must be discarded"
+        )
+
+    def test_double_flush_does_not_republish(self) -> None:
+        """
+        Simulates crash-recovery: store survives, flush runs twice.
+        The second flush must publish 0 events because the store was cleared
+        by the first successful flush.
+        """
+        store = SimaticManagedStore()
+        received_payloads: list[bytes] = []
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            managed_store=store,
+            on_publish_success=received_payloads.append,
+        )
+
+        for seq in range(1, 6):
+            event = AdsTighteningEvent(
+                station_id=_STATION_ID, vin=_VIN,
+                torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
+                plc_seq=seq, timestamp_ms=_TIMESTAMP_MS + seq, result="OK",
+            )
+            publisher.publish(encoder.encode(build_plc_trace_event(event)))
+
+        assert len(store) == 5, "Pre-condition: 5 events in store"
+
+        mock_client = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_client.publish.return_value = mock_info
+        publisher._client = mock_client
+        publisher._connected.set()
+
+        # First flush — must publish all 5
+        publisher._flush_buffer()
+        assert len(received_payloads) == 5, (
+            f"First flush must publish all 5 events; got {len(received_payloads)}"
+        )
+        assert len(store) == 0, "Store must be empty after first flush"
+
+        # Second flush — simulates crash-recovery reconnect; must publish 0
+        publisher._flush_buffer()
+        assert len(received_payloads) == 5, (
+            f"Second flush must not produce additional publishes (idempotency); "
+            f"total publishes after second flush: {len(received_payloads)}"
+        )
+
+    def test_new_store_instance_starts_empty(self) -> None:
+        """Two SimaticManagedStore instances must not share state."""
+        store_a = SimaticManagedStore()
+        store_a.put("key-1", _BufferedEvent(avro_bytes=b"a", timestamp_ms=_TIMESTAMP_MS))
+        store_b = SimaticManagedStore()
+        assert len(store_b) == 0, (
+            "A new SimaticManagedStore instance must start empty — no shared module state"
         )

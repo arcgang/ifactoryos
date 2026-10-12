@@ -1,0 +1,392 @@
+openapi: 3.1.0
+info:
+  title: AR Work Instruction API
+  version: 1.0.0
+  description: >
+    HoloLens 2 and iPad AR holographic work instruction overlays for assembly associates.
+    Includes torque logging and cache prefetch. Data residency: Azure Germany West Central (EU).
+    Must respond within 5 s at p95 (AC-00bc6b07).
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/ar
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/ar
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "300/minute per client"
+
+paths:
+  /instructions/{vin}:
+    get:
+      operationId: getArInstructions
+      summary: Retrieve VIN-specific AR holographic work instruction overlay
+      description: >
+        Returns the full work instruction payload for the given VIN including option codes,
+        torque specifications, step sequence, variant delta indicators, and a fallback PDF QR
+        code URL. Must respond within 5 s at p95 to satisfy AC-00bc6b07.
+      x-rate-limit: "300/minute per client"
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          description: 17-character Vehicle Identification Number
+        - name: stationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Station identifier (e.g. MARRIAGE-01, FINAL-02)
+        - name: deviceType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - HoloLens2
+              - iPad
+          description: AR device type for overlay rendering
+      responses:
+        "200":
+          description: VIN-specific AR instruction overlay
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArInstructionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "504":
+          description: Upstream digital thread or instruction store did not respond within timeout; fallback payload included
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArInstructionFallbackResponse"
+  /torque-log:
+    post:
+      operationId: submitTorqueLog
+      summary: Submit a torque measurement log entry for a fastener point
+      description: Station-level torque telemetry. No operator-identifiable data stored.
+      x-rate-limit: "600/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TorqueLogRequest"
+      responses:
+        "201":
+          description: Torque log entry accepted
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorqueLogResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /cache/prefetch:
+    get:
+      operationId: prefetchArCache
+      summary: Prefetch AR instruction cache for upcoming VINs on a station
+      description: >
+        Triggers background cache warm-up for a list of VINs expected at a station.
+        Used by the planning cockpit to reduce p95 latency at shift start.
+      x-rate-limit: "10/minute per client"
+      parameters:
+        - name: stationId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: vins
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+              pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+            maxItems: 50
+          style: form
+          explode: false
+      responses:
+        "202":
+          description: Prefetch accepted
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrefetchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT. Requires assembly-associate or shift-lead role.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid VIN or missing required query parameters
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Caller does not have the assembly-associate or shift-lead role
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: VIN not found in digital thread
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: Torque value out of specification range
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    ArInstructionResponse:
+      type: object
+      required:
+        - vin
+        - stationId
+        - optionCodes
+        - variantCode
+        - isRareVariant
+        - steps
+        - instructionVersion
+        - fetchedAt
+      properties:
+        vin:
+          type: string
+        stationId:
+          type: string
+        optionCodes:
+          type: array
+          items:
+            type: string
+        variantCode:
+          type: string
+        isRareVariant:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArInstructionStep"
+        instructionVersion:
+          type: string
+        fetchedAt:
+          type: string
+          format: date-time
+        fallbackPdfQrUrl:
+          type: string
+          format: uri
+          description: QR code URL for fallback PDF; always populated
+
+    ArInstructionFallbackResponse:
+      type: object
+      required:
+        - vin
+        - stationId
+        - fallbackPdfQrUrl
+        - failureLoggedAt
+        - correlationId
+      properties:
+        vin:
+          type: string
+        stationId:
+          type: string
+        fallbackPdfQrUrl:
+          type: string
+          format: uri
+        failureLoggedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+
+    ArInstructionStep:
+      type: object
+      required:
+        - stepNumber
+        - description
+        - torqueSpecNm
+        - torqueToleranceNm
+        - fastenerPointId
+      properties:
+        stepNumber:
+          type: integer
+        description:
+          type: string
+        torqueSpecNm:
+          type: number
+          format: double
+        torqueToleranceNm:
+          type: number
+          format: double
+        fastenerPointId:
+          type: string
+        isVariantDelta:
+          type: boolean
+          description: True if this step differs from standard i4 configuration
+        variantDeltaNote:
+          type: string
+          description: Human-readable description of what differs for this variant
+        holographicAssetUrl:
+          type: string
+          format: uri
+
+    TorqueLogRequest:
+      type: object
+      required:
+        - vin
+        - stationId
+        - fastenerPointId
+        - measuredTorqueNm
+        - stepNumber
+        - deviceType
+      properties:
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        stationId:
+          type: string
+        fastenerPointId:
+          type: string
+        measuredTorqueNm:
+          type: number
+          format: double
+        specTorqueNm:
+          type: number
+          format: double
+        toleranceNm:
+          type: number
+          format: double
+        stepNumber:
+          type: integer
+        instructionVersion:
+          type: string
+        deviceType:
+          type: string
+          enum:
+            - HoloLens2
+            - iPad
+
+    TorqueLogResponse:
+      type: object
+      required:
+        - logId
+        - isWithinTolerance
+        - recordedAt
+      properties:
+        logId:
+          type: string
+          format: uuid
+        isWithinTolerance:
+          type: boolean
+        recordedAt:
+          type: string
+          format: date-time
+
+    PrefetchResponse:
+      type: object
+      required:
+        - acceptedVins
+        - rejectedVins
+        - estimatedReadyAt
+      properties:
+        acceptedVins:
+          type: array
+          items:
+            type: string
+        rejectedVins:
+          type: array
+          items:
+            type: string
+        estimatedReadyAt:
+          type: string
+          format: date-time

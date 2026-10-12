@@ -1,0 +1,4 @@
+# Never commit private keys or local .env files
+*.key.pem
+.env
+pki/

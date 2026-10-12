@@ -1,0 +1,114 @@
+{
+  "app": {
+    "title": "Quality Studio",
+    "appName": "BMW Factory OS"
+  },
+  "nav": {
+    "manufacturing": "Fertigung",
+    "arWorkbench": "AR Workbench",
+    "defectDashboard": "Defekt-Dashboard",
+    "processReplay": "Prozess-Replay",
+    "quality": "Qualität",
+    "gateCommand": "Gate Command",
+    "certificateStudio": "Zertifikat Studio",
+    "settings": "Einstellungen"
+  },
+  "topbar": {
+    "arWorkbench": "Quality Studio · AR Workbench",
+    "languageLabel": "Sprache: Deutsch"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": "Sprache",
+    "languageSelect": "Anzeigesprache auswählen",
+    "save": "Speichern",
+    "saved": "Gespeichert"
+  },
+  "language": {
+    "de-DE": "Deutsch",
+    "en-GB": "Englisch"
+  },
+  "arWorkbench": {
+    "title": "AR Workbench",
+    "vin": "VIN",
+    "station": "Station",
+    "step": "Schritt",
+    "stepOf": "Schritt {{current}} von {{total}}",
+    "instruction": "Anweisung",
+    "torqueSpec": "Anzugsmoment",
+    "complete": "Abschließen",
+    "next": "Weiter",
+    "prev": "Zurück"
+  },
+  "defectDashboard": {
+    "title": "Defekt-Dashboard",
+    "defectClass": "Defektklasse",
+    "runDefectGenome": "DefectGenome starten",
+    "rootCause": "Grundursache",
+    "probability": "Wahrscheinlichkeit",
+    "affectedVins": "Betroffene VINs",
+    "lowConfidenceBadge": "Geringe Konfidenz",
+    "createCorrectiveAction": "Korrekturmaßnahme erstellen",
+    "loading": "Wird geladen…",
+    "error": "Fehler beim Laden der Defektdaten. Erneut versuchen.",
+    "empty": "Keine Defekte gefunden.",
+    "retry": "Erneut versuchen"
+  },
+  "processReplay": {
+    "title": "Prozess-Replay",
+    "launch": "Prozess-Replay starten",
+    "stage": "Vorbereitungsstufe",
+    "dataUnavailable": "Daten nicht verfügbar",
+    "completeness": "Vollständigkeit",
+    "loading": "Replay wird geladen…",
+    "error": "Fehler beim Laden des Replays. Erneut versuchen.",
+    "empty": "Kein Replay verfügbar."
+  },
+  "gateCommand": {
+    "title": "Gate Command",
+    "healthScore": "Gesundheitsscore",
+    "gate": "Gate",
+    "pass": "Bestanden",
+    "conditionalPass": "Bedingtes Bestehen",
+    "fail": "Nicht bestanden",
+    "pending": "Ausstehend",
+    "certify": "Zertifizieren",
+    "certifyDisabledTooltip": "Zertifizierung nicht möglich – ausstehende Gate-Ergebnisse: {{gates}}",
+    "manualOverride": "Manuelle Überschreibung",
+    "overrideJustification": "Begründung eingeben",
+    "awaitingSupervisor": "Wartet auf Genehmigung des Vorgesetzten",
+    "loading": "Gate-Ergebnisse werden geladen…",
+    "error": "Fehler beim Laden der Gate-Ergebnisse. Erneut versuchen.",
+    "empty": "Keine Gate-Ergebnisse vorhanden."
+  },
+  "certificateStudio": {
+    "title": "Zertifikat Studio",
+    "digitalBirthCertificate": "Digitaler Geburtschein",
+    "exportShiftSummary": "Schichtübersicht exportieren",
+    "fabricHash": "Fabric-Transaktions-Hash",
+    "issuedAt": "Ausgestellt am",
+    "loading": "Zertifikat wird geladen…",
+    "error": "Fehler beim Laden des Zertifikats. Erneut versuchen.",
+    "empty": "Kein Zertifikat vorhanden."
+  },
+  "alerts": {
+    "translationPending": "Übersetzung ausstehend",
+    "defectCluster": {
+      "title": "DefectGenome-Cluster-Alarm",
+      "body": "Cluster {{clusterId}}: {{count}} betroffene VINs · Grundursache: {{rootCause}} · Konfidenz {{confidence}} %",
+      "viewReplay": "Prozess-Replay öffnen",
+      "acknowledge": "Bestätigen"
+    },
+    "gateAnomaly": {
+      "title": "Gate-Anomalie erkannt",
+      "body": "VIN {{vin}} – Gate {{gate}}: Messwert {{actual}} außerhalb Toleranz [{{low}}–{{high}}]",
+      "acknowledge": "Bestätigen"
+    }
+  },
+  "errors": {
+    "unauthorized": "Nicht autorisiert. Bitte erneut anmelden.",
+    "networkError": "Netzwerkfehler. Verbindung prüfen.",
+    "serverError": "Serverfehler. Support kontaktieren.",
+    "sessionExpired": "Sitzung abgelaufen. Bitte anmelden."
+  }
+}

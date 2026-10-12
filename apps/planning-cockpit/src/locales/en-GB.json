@@ -1,0 +1,117 @@
+{
+  "nav": {
+    "planning": "Planning",
+    "sequenceBuilder": "Sequence Builder",
+    "constraintRadar": "Constraint Radar",
+    "scenarioLab": "Scenario Lab",
+    "reports": "Reports",
+    "changeLog": "Change Log",
+    "settings": "Settings",
+    "publishCenter": "Publish Centre",
+    "overrideLog": "Override Log",
+    "my26ConfigWizard": "MY26 Configuration Wizard"
+  },
+  "topbar": {
+    "appName": "Planning Cockpit",
+    "languageLabel": "Language: English"
+  },
+  "languageSwitcher": {
+    "label": "Language",
+    "deutsch": "Deutsch",
+    "english": "English",
+    "saved": "Language saved"
+  },
+  "alerts": {
+    "paintCapacityCritical": {
+      "title": "Paint capacity critical — Booth 3 restricted",
+      "body": "Booth 3 running at 61% capacity. Monday sequence contains 14 VINs with colour change Metallic → Uni. Restart optimisation runs to account for the bottleneck.",
+      "time": "Today · 05:41 · Source: Beckhoff PLC"
+    },
+    "sequenceLockBlocked": {
+      "title": "Sequence lock blocked — translation missing",
+      "body": "Work instruction WI-2041 is missing the English translation. Publication locked until both language versions are approved.",
+      "time": "Today · 05:38"
+    },
+    "translationPending": "Translation pending",
+    "confirm": "Confirm"
+  },
+  "sequence": {
+    "title": "Optimised Monday Sequence — CW 42",
+    "subtitle": "Source: SequenceOptimiser · 50 runs · Ranked by constraint score",
+    "preview": "Preview",
+    "publishToOpCenter": "Publish to OpCenter",
+    "columns": {
+      "position": "Pos.",
+      "vin": "VIN",
+      "model": "Model",
+      "color": "Colour",
+      "order": "Order",
+      "constraintScore": "Constraint Score",
+      "status": "Status"
+    },
+    "statuses": {
+      "ready": "Ready",
+      "overrideRequired": "Override required",
+      "maintenancePending": "Maintenance approval pending"
+    }
+  },
+  "stats": {
+    "activeVins": "Active VINs in sequence",
+    "changeRate": "Sequence change rate",
+    "changeRateDelta": "▼ Target < 15% achieved",
+    "lockDeadline": "Lock deadline",
+    "lockDeadlineDelta": "⏱ {{minutes}} minutes remaining",
+    "monteCarloRuns": "Monte Carlo runs",
+    "monteCarloCompleted": "Completed · 04:58",
+    "sinceYesterday": "▲ {{count}} since yesterday"
+  },
+  "errors": {
+    "loadFailed": "Load failed",
+    "retry": "Retry",
+    "noData": "No data available",
+    "unauthorized": "Unauthorised. Please sign in again.",
+    "requestFailed": "Request failed",
+    "constraintSnapshotStale": "Constraint snapshot is stale. Please refresh.",
+    "publishFailed": "Publish failed. Please try again.",
+    "optimizerRunFailed": "Optimiser run failed.",
+    "missingTranslation": "Translation pending"
+  },
+  "publishCenter": {
+    "title": "Publish Centre",
+    "gateBlocked": "Publication blocked",
+    "gateBlockedDesc": "The following requirements must be met before the sequence can be published:",
+    "gateReady": "Ready to publish",
+    "gateReadyDesc": "All requirements met. Sequence is ready to publish.",
+    "checkDeTranslation": "German translation present",
+    "checkEnTranslation": "English translation present",
+    "checkConstraintScore": "Constraint score ≥ 80",
+    "checkMaintenanceClear": "No open maintenance approvals",
+    "publish": "Publish",
+    "cancel": "Cancel"
+  },
+  "overrideLog": {
+    "title": "Override Log",
+    "columns": {
+      "timestamp": "Timestamp",
+      "vin": "VIN",
+      "reason": "Reason",
+      "approvedBy": "Approved by"
+    },
+    "empty": "No overrides recorded."
+  },
+  "my26": {
+    "title": "MY26 Configuration Wizard",
+    "step1": "Model selection",
+    "step2": "Constraint configuration",
+    "step3": "Review & confirm",
+    "next": "Next",
+    "back": "Back",
+    "finish": "Finish"
+  },
+  "workInstruction": {
+    "title": "Work Instruction",
+    "stepLabel": "Step {{number}}",
+    "torqueUnit": "Nm",
+    "translationPending": "Translation pending — content unavailable"
+  }
+}

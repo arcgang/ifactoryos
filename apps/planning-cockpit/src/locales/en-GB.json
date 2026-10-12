@@ -113,5 +113,13 @@
     "stepLabel": "Step {{number}}",
     "torqueUnit": "Nm",
     "translationPending": "Translation pending — content unavailable"
+  },
+  "constraintRadar": {
+    "subtitle": "Live constraint monitoring — UNS data, 60 s freshness guarantee",
+    "configureThresholds": "Configure Thresholds",
+    "refresh": "Refresh",
+    "loading": "Loading thresholds…",
+    "streamDegraded": "UNS stream degraded",
+    "tilesRegionLabel": "Constraint tiles"
   }
 }

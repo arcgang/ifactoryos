@@ -39,18 +39,23 @@ ring buffer (capped at MAX_BUFFER_EVENTS events / 60 s worth of data).
 While buffering, it emits a "pending_sync" status to the local OT broker topic
 edge/{station_id}/overlay/status so the AR overlay shows the Pending Sync
 indicator (AC-b734032a).  On reconnect the buffer is flushed in FIFO order.
+Events older than BUFFER_MAX_AGE_MS are discarded at drain time (AC-b734032a).
+When replaying buffered events, edgeBuffered is set to True in the Avro payload;
+the original idempotencyKey is preserved for upstream deduplication.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
 import ssl
+import struct
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -74,6 +79,9 @@ OVERLAY_STATUS_TOPIC_TEMPLATE = "edge/{station_id}/overlay/status"
 
 # Ring buffer — 60 s at 1 kHz with a generous headroom ceiling
 MAX_BUFFER_EVENTS = 120_000
+
+# Maximum age for buffered events; older events are discarded at drain time (AC-b734032a)
+BUFFER_MAX_AGE_MS = 60_000
 
 # Default SVID file paths (populated by svid-watcher.service; overridable via env)
 _DEFAULT_SVID_CERT_PATH = os.environ.get("SVID_CERT_PATH", "/run/spire/svid/svid.pem")
@@ -172,6 +180,43 @@ def _build_sparkplug_ddata_payload(avro_bytes: bytes, seq: int) -> bytes:
             }
         ],
     }).encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Avro Confluent Wire Format re-encoder — sets edgeBuffered=True on replay
+# ---------------------------------------------------------------------------
+
+_AVRO_SCHEMA_PATH = Path(__file__).parent.parent / "avro" / "PlcTorqueTraceEvent.avsc"
+
+
+def _set_edge_buffered_flag(avro_bytes: bytes) -> bytes:
+    """Return new Confluent Wire Format bytes with edgeBuffered set to True.
+
+    Decodes the 5-byte Confluent header, parses the Avro binary payload,
+    flips edgeBuffered to True, and re-encodes — preserving the original
+    idempotencyKey and all other fields (AC-b734032a).
+    """
+    import avro.io
+    import avro.schema
+
+    if len(avro_bytes) < 5:
+        raise ValueError(f"Avro payload too short to re-encode: {len(avro_bytes)} bytes")
+
+    magic, schema_id = struct.unpack(">bI", avro_bytes[:5])
+    if magic != 0:
+        raise ValueError(f"Unexpected Confluent Wire Format magic byte: {magic!r}")
+
+    schema_text = _AVRO_SCHEMA_PATH.read_text(encoding="utf-8")
+    schema = avro.schema.parse(schema_text)
+
+    reader = avro.io.DatumReader(schema)
+    record = reader.read(avro.io.BinaryDecoder(io.BytesIO(avro_bytes[5:])))
+    record["edgeBuffered"] = True
+
+    buf = io.BytesIO()
+    writer = avro.io.DatumWriter(schema)
+    writer.write(record, avro.io.BinaryEncoder(buf))
+    return struct.pack(">bI", 0, schema_id) + buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -392,19 +437,40 @@ class SparkplugPublisher:
             self._on_publish_success(avro_bytes)
 
     def _flush_buffer(self) -> None:
-        """Drain the ring buffer and publish each event in FIFO order."""
+        """Drain the ring buffer and publish each event in FIFO order.
+
+        Events older than BUFFER_MAX_AGE_MS are discarded (AC-b734032a).
+        Each replayed event has edgeBuffered set to True; the original
+        idempotencyKey is preserved for upstream deduplication.
+        """
         events = self._buffer.drain()
         if not events:
+            return
+
+        now_ms = int(time.time() * 1000)
+        fresh = [e for e in events if (now_ms - e.timestamp_ms) <= BUFFER_MAX_AGE_MS]
+        stale = len(events) - len(fresh)
+        if stale:
+            logger.info(
+                "Discarding %d stale buffered events (station=%s age>%ds)",
+                stale,
+                self._station_id,
+                BUFFER_MAX_AGE_MS // 1000,
+            )
+
+        if not fresh:
+            self._set_buffering(False)
             return
 
         logger.info(
             "Flushing edge buffer: station=%s events=%d",
             self._station_id,
-            len(events),
+            len(fresh),
         )
-        for evt in events:
+        for evt in fresh:
             try:
-                self._publish_direct(evt.avro_bytes)
+                buffered_avro = _set_edge_buffered_flag(evt.avro_bytes)
+                self._publish_direct(buffered_avro)
             except Exception as exc:
                 logger.error(
                     "Buffer flush failed for event (station=%s): %s — re-buffering",

@@ -64,12 +64,14 @@ from ads_reader.ads_torque_reader import (
 from mqtt_publisher.sparkplug_publisher import (
     _EdgeRingBuffer,
     _BufferedEvent,
+    _set_edge_buffered_flag,
     SparkplugPublisher,
     SvidPaths,
     load_svid_ssl_context,
     read_spiffe_id_from_svid,
     KAFKA_TORQUE_TOPIC,
     MAX_BUFFER_EVENTS,
+    BUFFER_MAX_AGE_MS,
 )
 
 # ---------------------------------------------------------------------------
@@ -619,4 +621,226 @@ class TestSparkplugDdataPayload:
     def test_kafka_topic_constant_matches_contract(self) -> None:
         assert KAFKA_TORQUE_TOPIC == "bmw.ifos.munich.uns.torque.plc-trace.v1", (
             f"KAFKA_TORQUE_TOPIC must match the contract topic name; got {KAFKA_TORQUE_TOPIC!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# edgeBuffered flag and idempotency key preservation on buffer flush
+# ---------------------------------------------------------------------------
+
+class TestEdgeBufferedFlagOnFlush:
+    """
+    Acceptance criteria (AC-b734032a):
+    - Real-time publishes must have edgeBuffered=False.
+    - Buffered events replayed after reconnect must have edgeBuffered=True.
+    - The original idempotencyKey must be unchanged in the replayed bytes.
+    """
+
+    def test_set_edge_buffered_flag_flips_field_to_true(self) -> None:
+        """_set_edge_buffered_flag must return Avro bytes with edgeBuffered=True."""
+        from ads_reader.ads_torque_reader import (
+            AdsTighteningEvent,
+            PlcTorqueTraceEncoder,
+            build_plc_trace_event,
+        )
+
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID,
+            vin=_VIN,
+            torque_nm=_TORQUE_NM,
+            angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ,
+            timestamp_ms=_TIMESTAMP_MS,
+            result="OK",
+            edge_buffered=False,
+        )
+        trace = build_plc_trace_event(event)
+        original_key = trace.idempotency_key
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+        original_bytes = encoder.encode(trace)
+
+        # Confirm edgeBuffered starts as False
+        original_decoded = encoder.decode(original_bytes)
+        assert original_decoded["edgeBuffered"] is False, (
+            "Freshly encoded event must have edgeBuffered=False"
+        )
+
+        replayed_bytes = _set_edge_buffered_flag(original_bytes)
+        replayed_decoded = encoder.decode(replayed_bytes)
+
+        assert replayed_decoded["edgeBuffered"] is True, (
+            "After _set_edge_buffered_flag, edgeBuffered must be True"
+        )
+        assert replayed_decoded["idempotencyKey"] == original_key, (
+            f"idempotencyKey must be preserved unchanged; "
+            f"expected {original_key!r}, got {replayed_decoded['idempotencyKey']!r}"
+        )
+
+    def test_set_edge_buffered_flag_preserves_all_other_fields(self) -> None:
+        """All fields except edgeBuffered must survive the re-encode unchanged."""
+        from ads_reader.ads_torque_reader import (
+            AdsTighteningEvent,
+            PlcTorqueTraceEncoder,
+            build_plc_trace_event,
+        )
+
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID,
+            vin=_VIN,
+            torque_nm=_TORQUE_NM,
+            angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ,
+            timestamp_ms=_TIMESTAMP_MS,
+            result="OK",
+        )
+        trace = build_plc_trace_event(event)
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+        original_bytes = encoder.encode(trace)
+        original = encoder.decode(original_bytes)
+
+        replayed_bytes = _set_edge_buffered_flag(original_bytes)
+        replayed = encoder.decode(replayed_bytes)
+
+        assert replayed["stationId"] == original["stationId"], "stationId must be unchanged"
+        assert replayed["vin"] == original["vin"], "vin must be unchanged"
+        assert replayed["torqueNm"] == original["torqueNm"], "torqueNm must be unchanged"
+        assert replayed["angleDeg"] == original["angleDeg"], "angleDeg must be unchanged"
+        assert replayed["timestampMs"] == original["timestampMs"], "timestampMs must be unchanged"
+        assert replayed["idempotencyKey"] == original["idempotencyKey"], (
+            "idempotencyKey must be preserved"
+        )
+
+    def test_buffer_flush_publishes_with_edge_buffered_true(self) -> None:
+        """On reconnect, buffer flush must deliver events with edgeBuffered=True."""
+        from ads_reader.ads_torque_reader import (
+            AdsTighteningEvent,
+            PlcTorqueTraceEncoder,
+            build_plc_trace_event,
+        )
+
+        received_payloads: list[bytes] = []
+
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+        event = AdsTighteningEvent(
+            station_id=_STATION_ID,
+            vin=_VIN,
+            torque_nm=_TORQUE_NM,
+            angle_deg=_ANGLE_DEG,
+            plc_seq=_PLC_SEQ,
+            timestamp_ms=_TIMESTAMP_MS,
+            result="OK",
+        )
+        trace = build_plc_trace_event(event)
+        original_key = trace.idempotency_key
+        avro_bytes = encoder.encode(trace)
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            on_publish_success=received_payloads.append,
+        )
+
+        # Buffer the event (not connected)
+        publisher.publish(avro_bytes)
+        assert len(publisher._buffer) == 1, "Event must be in buffer before flush"
+
+        # Simulate reconnect: inject a mock client and call _flush_buffer directly
+        mock_client = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_client.publish.return_value = mock_info
+        publisher._client = mock_client
+        publisher._connected.set()
+
+        publisher._flush_buffer()
+
+        assert len(received_payloads) == 1, (
+            "Exactly one event must be published from the buffer flush"
+        )
+        flushed_bytes = received_payloads[0]
+        decoded = encoder.decode(flushed_bytes)
+
+        assert decoded["edgeBuffered"] is True, (
+            f"Flushed event must have edgeBuffered=True; got {decoded['edgeBuffered']!r}"
+        )
+        assert decoded["idempotencyKey"] == original_key, (
+            f"idempotencyKey must be unchanged after buffer flush; "
+            f"expected {original_key!r}, got {decoded['idempotencyKey']!r}"
+        )
+        assert len(publisher._buffer) == 0, "Buffer must be empty after successful flush"
+
+
+# ---------------------------------------------------------------------------
+# Stale event discard — AC-b734032a 60-second window
+# ---------------------------------------------------------------------------
+
+class TestStaleEventDiscard:
+    """
+    Events older than BUFFER_MAX_AGE_MS must be discarded at drain time.
+    """
+
+    def test_stale_events_discarded_on_flush(self) -> None:
+        """Events with timestamp_ms older than 60 s must be dropped during flush."""
+        from ads_reader.ads_torque_reader import (
+            AdsTighteningEvent,
+            PlcTorqueTraceEncoder,
+            build_plc_trace_event,
+        )
+
+        received_payloads: list[bytes] = []
+        encoder = PlcTorqueTraceEncoder(schema_id=_TEST_SCHEMA_ID)
+
+        fresh_event = AdsTighteningEvent(
+            station_id=_STATION_ID, vin=_VIN,
+            torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
+            plc_seq=1, timestamp_ms=_TIMESTAMP_MS, result="OK",
+        )
+        stale_event = AdsTighteningEvent(
+            station_id=_STATION_ID, vin=_VIN,
+            torque_nm=_TORQUE_NM, angle_deg=_ANGLE_DEG,
+            plc_seq=2, timestamp_ms=_TIMESTAMP_MS, result="OK",
+        )
+        fresh_avro = encoder.encode(build_plc_trace_event(fresh_event))
+        stale_avro = encoder.encode(build_plc_trace_event(stale_event))
+
+        publisher = SparkplugPublisher(
+            broker_host="127.0.0.1",
+            broker_port=9999,
+            station_id=_STATION_ID,
+            shop=_SHOP,
+            edge_node_id=_EDGE_NODE_ID,
+            device_id="plc-test-01",
+            on_publish_success=received_payloads.append,
+        )
+
+        now_ms = int(time.time() * 1000)
+        stale_ts = now_ms - (BUFFER_MAX_AGE_MS + 5_000)  # 65 s ago — definitely stale
+
+        publisher._buffer.push(_BufferedEvent(avro_bytes=stale_avro, timestamp_ms=stale_ts))
+        publisher._buffer.push(_BufferedEvent(avro_bytes=fresh_avro, timestamp_ms=now_ms))
+
+        mock_client = MagicMock()
+        mock_info = MagicMock()
+        mock_info.wait_for_publish.return_value = None
+        mock_client.publish.return_value = mock_info
+        publisher._client = mock_client
+        publisher._connected.set()
+
+        publisher._flush_buffer()
+
+        assert len(received_payloads) == 1, (
+            f"Only the fresh event must be published; got {len(received_payloads)} publishes"
+        )
+        decoded = encoder.decode(received_payloads[0])
+        assert decoded["edgeBuffered"] is True, (
+            "The published fresh event must have edgeBuffered=True"
+        )
+
+    def test_buffer_max_age_ms_constant_is_60_seconds(self) -> None:
+        assert BUFFER_MAX_AGE_MS == 60_000, (
+            f"BUFFER_MAX_AGE_MS must be 60 000 ms (60 s); got {BUFFER_MAX_AGE_MS!r}"
         )

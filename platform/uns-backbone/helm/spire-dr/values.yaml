@@ -1,0 +1,119 @@
+# SPIRE server Helm values for Germany North DR region
+# Mirrors primary SPIFFE/SPIRE config; trust domain shared with primary
+# Realises: US-025 · BR-16
+
+global:
+  spire:
+    trustDomain: "ifos.bmwgroup.net"
+    clusterName: "ifos-dr-euno-aro"
+
+spire-server:
+  enabled: true
+  replicaCount: 3
+  image:
+    registry: ghcr.io
+    repository: spiffe/spire-server
+    tag: "1.9.4"
+    pullPolicy: IfNotPresent
+
+  nodeSelector: {}
+  tolerations: []
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  persistence:
+    enabled: true
+    storageClass: "managed-premium"
+    size: 10Gi
+
+  service:
+    type: ClusterIP
+    port: 8081
+
+  # SPIRE server config — CA signed by shared BMW root
+  jwtIssuer: "https://oidc.ifos.bmwgroup.net"
+
+  ca:
+    # Key type and TTL matching primary SPIRE deployment
+    keyType: "ec-p384"
+    keyTTL: "24h"
+    upstreamAuthority:
+      disk:
+        certFilePath: "/run/spire/certs/root-ca.crt"
+        keyFilePath: "/run/spire/certs/root-ca.key"
+
+  nodeAttestor:
+    k8sPsat:
+      enabled: true
+      serviceAccountAllowList:
+        - "spire:spire-agent"
+
+  workloadAttestor:
+    k8s:
+      enabled: true
+      skipKubeletVerification: false
+
+  # Federation with primary SPIRE server — allows SVIDs issued in DR to be
+  # validated by consumers that trust the primary bundle
+  federates:
+    - trustDomain: "ifos.bmwgroup.net"
+      bundleEndpointURL: "https://spire-server.spire.svc.cluster.local:8443"
+      bundleEndpointProfile:
+        type: "https_spiffe"
+        endpointSpiffeID: "spiffe://ifos.bmwgroup.net/spire/server"
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+
+spire-agent:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: spiffe/spire-agent
+    tag: "1.9.4"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: 128Mi
+    limits:
+      cpu: "200m"
+      memory: 256Mi
+
+  # Socket path consumed by workloads via hostPath volume
+  socketPath: "/run/spire/sockets/agent.sock"
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+spiffe-csi-driver:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: spiffe/spiffe-csi-driver
+    tag: "0.2.6"
+
+spiffe-oidc-discovery-provider:
+  enabled: true
+  config:
+    domains:
+      - "oidc.ifos.bmwgroup.net"

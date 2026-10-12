@@ -1,0 +1,138 @@
+# MirrorMaker 2 — West Europe → Germany North DR replication
+# Replicates all uns.munich.i4.* topics plus UNS DDATA topics and DLQ.
+# Replication lag target: <30 s steady-state
+# Consumer group offsets replicated: yes (enables RPO ≤15 min failover)
+# Network path: Azure ExpressRoute private peering (Global Reach) Munich → Germany North
+# Realises: US-025 · BR-16
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaMirrorMaker2
+metadata:
+  name: uns-mirrormaker2-dr
+  namespace: confluent
+  annotations:
+    data_residency: "eu-de"
+    dr_role: "replication-source"
+spec:
+  version: "3.7.0"
+  replicas: 3
+
+  connectCluster: "dr-kafka"
+
+  clusters:
+    # Source: primary West Europe Kafka cluster
+    - alias: "primary"
+      bootstrapServers: "uns-kafka-bootstrap.confluent.svc.cluster.local:9092"
+      tls:
+        trustedCertificates:
+          - secretName: kafka-tls
+            certificate: ca.crt
+      authentication:
+        type: scram-sha-512
+        username: mirrormaker-replication
+        passwordSecret:
+          secretName: mirrormaker-credentials
+          password: primary-password
+      config:
+        # Preserve original message timestamps
+        "producer.override.acks": "all"
+        "producer.override.compression.type": "lz4"
+        "ssl.endpoint.identification.algorithm": "https"
+
+    # Target: DR Germany North Kafka cluster
+    - alias: "dr-kafka"
+      bootstrapServers: "uns-kafka-dr-bootstrap.confluent.svc.cluster.local:9092"
+      tls:
+        trustedCertificates:
+          - secretName: kafka-dr-tls
+            certificate: ca.crt
+      authentication:
+        type: scram-sha-512
+        username: mirrormaker-replication
+        passwordSecret:
+          secretName: mirrormaker-credentials
+          password: dr-password
+      config:
+        "producer.override.acks": "all"
+        "producer.override.compression.type": "lz4"
+        "ssl.endpoint.identification.algorithm": "https"
+
+  mirrors:
+    - sourceCluster: "primary"
+      targetCluster: "dr-kafka"
+      sourceConnector:
+        tasksMax: 6
+        config:
+          # Replicate all uns.munich.i4.* topics, UNS DDATA topics, and DLQ
+          "topics": >-
+            bmw\.munich\.i4\..*,
+            bmw\.munich\.uns\.ddata\..*,
+            bmw\.ifos\.munich\.uns\..*,
+            uns\.munich\.dlq,
+            factory\.munich\..*,
+            bmw\.munich\.opcenter\..*,
+            bmw\.munich\.paint\..*,
+            bmw\.munich\.defectgenome\..*
+          "replication.factor": "3"
+          "offset-syncs.topic.replication.factor": "3"
+          # Preserve source message timestamp for RPO calculation
+          "producer.override.max.block.ms": "10000"
+          # Sync consumer group offsets so failover consumers resume from correct position
+          "sync.topic.acls.enabled": "true"
+          # Rewrite topic names to remove source alias prefix on DR cluster
+          "replication.policy.class": "org.apache.kafka.connect.mirror.IdentityReplicationPolicy"
+          # Lag heartbeat interval — drives <30 s steady-state lag
+          "refresh.topics.interval.seconds": "30"
+
+      heartbeatConnector:
+        config:
+          "heartbeats.topic.replication.factor": "3"
+
+      checkpointConnector:
+        tasksMax: 3
+        config:
+          # Checkpoint consumer group offsets every 10 s → RPO offset window ≤ 30 s
+          "checkpoints.topic.replication.factor": "3"
+          "sync.group.offsets.enabled": "true"
+          "sync.group.offsets.interval.seconds": "10"
+          "emit.checkpoints.interval.seconds": "10"
+          # Translate group offsets from primary to DR cluster coordinates
+          "groups": ".*"
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  logging:
+    type: inline
+    loggers:
+      connect.root.logger.level: "INFO"
+      log4j.logger.org.apache.kafka.connect.mirror: "DEBUG"
+
+  readinessProbe:
+    initialDelaySeconds: 30
+    timeoutSeconds: 10
+
+  livenessProbe:
+    initialDelaySeconds: 60
+    timeoutSeconds: 10
+
+  template:
+    pod:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: uns-mirrormaker2-dr
+                topologyKey: kubernetes.io/hostname

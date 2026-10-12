@@ -1,0 +1,45 @@
+# ArgoCD Application — Planning Cockpit on DR cluster
+# Synced to DR cluster (Germany North ARO) at 50% replica count
+# Realises: US-025 · BR-16
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: planning-cockpit-dr
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    dr_role: "secondary"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ifos-dr
+
+  source:
+    repoURL: https://github.com/bmwgroup/ifactoryos-gitops
+    targetRevision: HEAD
+    path: apps/planning-cockpit/overlays/dr
+
+  destination:
+    server: https://api.ifos-dr-euno.germanyNorth.aroapp.io:6443
+    namespace: ifos-planning-cockpit
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

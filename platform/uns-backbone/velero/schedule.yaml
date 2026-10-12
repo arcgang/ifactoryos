@@ -1,0 +1,118 @@
+# Velero daily backup schedule
+# Target: Azure Blob Storage GRS (geo-redundant) — primary: West Europe, replica: Germany North
+# Retention: 30 days
+# Covers: all namespaces hosting iFactoryOS workloads
+# Realises: US-025 · BR-16
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: ifos-daily-backup
+  namespace: velero
+  annotations:
+    dr_role: "backup"
+    data_residency: "eu-de"
+spec:
+  # 02:00 UTC daily — off-peak for BMW Munich plant (plant shift starts 06:00 CET)
+  schedule: "0 2 * * *"
+
+  template:
+    # Include cluster-scoped resources (PVs, StorageClasses, CRDs)
+    includeClusterResources: true
+
+    storageLocation: azure-grs
+
+    volumeSnapshotLocations:
+      - azure-germanyNorth
+
+    # All namespaces that host iFactoryOS workloads
+    includedNamespaces:
+      - confluent
+      - hivemq
+      - spire
+      - ifos-planning-cockpit
+      - ifos-line-command
+      - ifos-quality-studio
+      - ifos-ai-serving
+      - timescaledb
+      - postgresql-citus
+      - neo4j
+
+    # Exclude ephemeral / CI namespaces and the Velero namespace itself
+    excludedNamespaces:
+      - velero
+      - kube-system
+      - kube-public
+      - kube-node-lease
+
+    labelSelector:
+      matchExpressions:
+        - key: backup-exclude
+          operator: DoesNotExist
+
+    # CSI volume snapshots for PVCs (TimescaleDB WAL, Kafka storage)
+    snapshotVolumes: true
+    snapshotMoveData: true
+
+    # Default backup item action plugins
+    hooks:
+      resources:
+        # Quiesce TimescaleDB before snapshot
+        - name: timescaledb-quiesce
+          includedNamespaces:
+            - timescaledb
+          labelSelector:
+            matchLabels:
+              app: timescaledb
+          pre:
+            - exec:
+                container: timescaledb
+                command:
+                  - /bin/sh
+                  - -c
+                  - "psql -U postgres -c 'CHECKPOINT;'"
+                timeout: 30s
+          post:
+            - exec:
+                container: timescaledb
+                command:
+                  - /bin/sh
+                  - -c
+                  - "echo 'snapshot complete'"
+                timeout: 10s
+
+    ttl: 720h0m0s
+
+---
+# BackupStorageLocation — Azure Blob Storage GRS
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: azure-grs
+  namespace: velero
+  annotations:
+    data_residency: "eu-de"
+spec:
+  provider: velero.io/azure
+  objectStorage:
+    bucket: ifos-velero-backups
+    prefix: "daily"
+  config:
+    resourceGroup: glbl-pr-ifos-eude-rgp-backup
+    storageAccount: stifosvelero
+    # GRS replicates to paired region (Germany North) automatically
+    storageAccountKeyEnvVar: AZURE_STORAGE_ACCOUNT_ACCESS_KEY
+    subscriptionId: ""
+
+---
+# VolumeSnapshotLocation — Germany North for volume snapshots
+apiVersion: velero.io/v1
+kind: VolumeSnapshotLocation
+metadata:
+  name: azure-germanyNorth
+  namespace: velero
+spec:
+  provider: velero.io/azure
+  config:
+    resourceGroup: glbl-pr-ifos-euno-rgp
+    apitimeout: "5m"
+    incremental: "true"

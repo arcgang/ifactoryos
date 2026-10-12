@@ -1,0 +1,39 @@
+{
+  "type": "record",
+  "name": "ConstraintAlertEvent",
+  "namespace": "bmw.munich.i4.sequence",
+  "doc": "Published when a live constraint value crosses a configured warning threshold.",
+  "fields": [
+    {
+      "name": "constraintType",
+      "type": {
+        "type": "enum",
+        "name": "ConstraintType",
+        "symbols": [
+          "paint_capacity",
+          "body_wip_queue",
+          "kitting_readiness",
+          "maintenance_window",
+          "agv_delay",
+          "press_die_overrun"
+        ]
+      },
+      "doc": "The constraint dimension that breached its threshold."
+    },
+    {
+      "name": "currentValue",
+      "type": "double",
+      "doc": "The live value that triggered the alert."
+    },
+    {
+      "name": "warningLevel",
+      "type": "double",
+      "doc": "The configured warning threshold that was crossed."
+    },
+    {
+      "name": "detectedAt",
+      "type": "string",
+      "doc": "ISO-8601 UTC timestamp when the breach was detected."
+    }
+  ]
+}

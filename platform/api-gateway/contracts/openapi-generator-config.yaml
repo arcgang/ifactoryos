@@ -1,0 +1,31 @@
+# OpenAPI Generator configuration for iFactoryOS API contracts
+# Used by CI to validate and generate client stubs from every spec in contracts/openapi/
+# See: https://openapi-generator.tech/docs/configuration
+
+generatorName: python
+outputDir: /tmp/openapi-generated/python
+packageName: ifactoryos_client
+projectName: ifactoryos-client
+packageVersion: 1.0.0
+
+globalProperties:
+  skipValidateSpec: "false"
+
+additionalProperties:
+  generateSourceCodeOnly: "false"
+  library: urllib3
+  packageName: ifactoryos_client
+
+---
+# typescript-axios target (second example target)
+# Uncomment and use with --config flag when generating TypeScript stubs:
+#
+# generatorName: typescript-axios
+# outputDir: /tmp/openapi-generated/typescript-axios
+# packageName: ifactoryos-client
+# npmName: "@bmw/ifactoryos-client"
+# npmVersion: "1.0.0"
+# supportsES6: "true"
+# withSeparateModelsAndApi: "true"
+# modelPackage: "models"
+# apiPackage: "api"

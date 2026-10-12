@@ -1,0 +1,376 @@
+openapi: 3.1.0
+info:
+  title: Digital Birth Certificate API
+  version: 1.0.0
+  description: >
+    Issuance, retrieval, and shift-level export of Digital Birth Certificates (DBC).
+    Each certificate is anchored on Hyperledger Fabric for tamper-evidence.
+    Used by quality-studio to verify tamper-evidence (AC-c040ff38).
+    Data residency: Azure Germany West Central (EU). Classification: confidential.
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/certificate
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/certificate
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "60/minute per client"
+
+paths:
+  /issue:
+    post:
+      operationId: issueCertificate
+      summary: Issue a Digital Birth Certificate for a fully-passed VIN
+      x-rate-limit: "30/minute per client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueCertificateRequest"
+      responses:
+        "201":
+          description: Certificate issued and anchored on Fabric
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/FabricError"
+  /certificate/{vin}:
+    get:
+      operationId: getCertificateByVin
+      summary: Retrieve the Digital Birth Certificate for a VIN
+      x-rate-limit: "120/minute per client"
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          description: 17-character Vehicle Identification Number
+      responses:
+        "200":
+          description: Certificate record found
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/FabricError"
+  /export/shift:
+    get:
+      operationId: exportShiftCertificates
+      summary: Export all certificates issued in a shift (cursor-paginated)
+      x-rate-limit: "10/minute per client"
+      parameters:
+        - name: shiftId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the shift
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated certificate export for the shift
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateExportResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT. Requires CERTIFICATE_READER role for GET endpoints.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  parameters:
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Caller lacks CERTIFICATE_READER role
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Certificate not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Certificate already issued for this VIN
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    FabricError:
+      description: Fabric ledger query failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+        prev_cursor:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    GateResultSnapshot:
+      type: object
+      required:
+        - gateId
+        - stationResults
+      properties:
+        gateId:
+          type: string
+          description: Quality gate identifier (e.g., GATE-3)
+        stationResults:
+          type: array
+          items:
+            type: object
+            required:
+              - stationCode
+              - result
+            properties:
+              stationCode:
+                type: string
+                enum:
+                  - DIM
+                  - LEAK
+                  - ELEC
+                  - NVH
+                  - ADAS
+              result:
+                type: string
+                enum:
+                  - PASS
+                  - CONDITIONAL
+                  - FAIL
+              details:
+                type: string
+      description: Snapshot of all gate station results at time of certification
+
+    IssueCertificateRequest:
+      type: object
+      required:
+        - vin
+        - gateResultSnapshot
+        - healthScore
+        - validatorId
+      properties:
+        vin:
+          type: string
+          minLength: 17
+          maxLength: 17
+        gateResultSnapshot:
+          $ref: "#/components/schemas/GateResultSnapshot"
+        healthScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        validatorId:
+          type: string
+          format: uuid
+        shiftId:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+          format: uuid
+
+    CertificateRecord:
+      type: object
+      required:
+        - certificateId
+        - vin
+        - gateResultSnapshot
+        - healthScore
+        - validatorId
+        - issuedAt
+        - certificateHash
+        - fabricTransactionId
+        - fabricBlockNumber
+        - anchoredAt
+        - sourceSystem
+      properties:
+        certificateId:
+          type: string
+          format: uuid
+        vin:
+          type: string
+          minLength: 17
+          maxLength: 17
+        gateResultSnapshot:
+          $ref: "#/components/schemas/GateResultSnapshot"
+        healthScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        validatorId:
+          type: string
+          format: uuid
+        issuedAt:
+          type: string
+          format: date-time
+        certificateHash:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+        fabricTransactionId:
+          type: string
+        fabricBlockNumber:
+          type: integer
+          format: int64
+        anchoredAt:
+          type: string
+          format: date-time
+        sourceSystem:
+          type: string
+          enum:
+            - quality-studio
+            - legacy
+        shiftId:
+          type: string
+          format: uuid
+
+    CertificateExportResponse:
+      type: object
+      required:
+        - data
+        - page
+        - shiftId
+      properties:
+        shiftId:
+          type: string
+          format: uuid
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateRecord"
+        page:
+          $ref: "#/components/schemas/CursorPage"

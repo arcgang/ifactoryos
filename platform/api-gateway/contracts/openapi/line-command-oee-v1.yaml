@@ -1,0 +1,373 @@
+openapi: 3.1.0
+info:
+  title: Line Command OEE API
+  version: 1.0.0
+  description: >
+    OEE monitoring, weld-line telemetry, and Andon alert management for the Shift Lead
+    Command Center. Station-level only — no operator-identifiable data (GDPR/BetrVG).
+    Data residency: Azure Germany West Central (EU).
+  contact:
+    name: iFactoryOS Platform Team
+servers:
+  - url: https://api.ifactoryos.bmw.de/v1/oee
+    description: Production (Germany West Central)
+  - url: https://api-dev.ifactoryos.bmw.de/v1/oee
+    description: Development
+
+security:
+  - BearerAuth: []
+
+x-rate-limit:
+  default: "120/minute per client"
+
+paths:
+  /lines:
+    get:
+      operationId: listLines
+      summary: List all weld lines with current OEE metrics (cursor-paginated)
+      x-rate-limit: "120/minute per client"
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated weld-line list
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /lines/{id}/stations:
+    get:
+      operationId: listStations
+      summary: List stations for a weld line with current status (cursor-paginated)
+      x-rate-limit: "120/minute per client"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Weld line identifier
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated station list
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /andon/alerts:
+    get:
+      operationId: listAndonAlerts
+      summary: List Andon alerts received from OpCenter, sorted by minutesToPredictedFailure ascending
+      description: >
+        Returns paginated Andon alerts. Open predictive alerts are sorted by
+        minutesToPredictedFailure ascending to support the Shift Lead Command Center view.
+        Station-level only — no operator-identifiable data.
+      x-rate-limit: "120/minute per client"
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - open
+              - acknowledged
+              - resolved
+              - false_positive
+        - name: lineId
+          in: query
+          schema:
+            type: string
+        - name: stationId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated Andon alerts
+          headers:
+            Deprecation:
+              $ref: "#/components/headers/Deprecation"
+            Sunset:
+              $ref: "#/components/headers/Sunset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlertListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: BMW Entra ID OAuth 2.0 JWT.
+
+  headers:
+    Deprecation:
+      description: RFC 8594 Deprecation header. Present when this API version is deprecated.
+      schema:
+        type: string
+    Sunset:
+      description: RFC 8594 Sunset header. Present when this API version is deprecated.
+      schema:
+        type: string
+
+  parameters:
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - correlation_id
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+        instance:
+          type: string
+          format: uri
+
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+        prev_cursor:
+          type:
+            - string
+            - "null"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    AndonAlertListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AndonAlert"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    AndonAlert:
+      type: object
+      required:
+        - alertId
+        - stationId
+        - lineId
+        - alertType
+        - predictedFailureType
+        - minutesToPredictedFailure
+        - recommendedAction
+        - status
+        - detectedAt
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        stationId:
+          type: string
+          description: Station identifier (station-level, not operator-level per GDPR/BetrVG)
+        lineId:
+          type: string
+        alertType:
+          type: string
+          enum:
+            - predictive
+            - reactive
+          description: predictive = threshold-rule based from Beckhoff PLC trace; reactive = post-failure
+        predictedFailureType:
+          type: string
+          description: e.g., electrode_wear, press_die_overrun, agv_delay
+        minutesToPredictedFailure:
+          type:
+            - integer
+            - "null"
+          description: Countdown in minutes; null for reactive alerts
+        recommendedAction:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+            - false_positive
+        detectedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        resolvedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        opcenterEventId:
+          type:
+            - string
+            - "null"
+          description: Source event ID from OpCenter GraphQL subscription
+
+    LineListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeldLine"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    WeldLine:
+      type: object
+      required:
+        - lineId
+        - lineName
+        - oeeCurrentPct
+        - oee30DayAvgPct
+        - activeAlertCount
+      properties:
+        lineId:
+          type: string
+        lineName:
+          type: string
+        oeeCurrentPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        oee30DayAvgPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        activeAlertCount:
+          type: integer
+          minimum: 0
+
+    StationListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Station"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+
+    Station:
+      type: object
+      required:
+        - stationId
+        - stationCode
+        - status
+        - lineId
+      properties:
+        stationId:
+          type: string
+        stationCode:
+          type: string
+        lineId:
+          type: string
+        status:
+          type: string
+          enum:
+            - operational
+            - degraded
+            - offline
+            - maintenance
+        activeAlertCount:
+          type: integer
+          minimum: 0

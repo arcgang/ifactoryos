@@ -53,6 +53,10 @@ locals {
     "bmw.munich.opcenter.sequence.publish_failed",
     "bmw.munich.opcenter.sequence.published",
     "bmw.munich.paint.defect.events.v1",
+    # SC-002 topic names — differ from defectgenome.cluster.alerts.v1 above;
+    # both must exist so the existing consumer subscriptions and the SC-002 ACL
+    # matrix each resolve to a declared topic.
+    "bmw.munich.defect.cluster.alert.v1",
     "factory.munich.line-command.adoption.v1",
     "factory.munich.line-command.ar-session.v1",
     "factory.munich.line-command.expert-call.v1",

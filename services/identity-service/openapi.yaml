@@ -1,0 +1,189 @@
+openapi: "3.1.0"
+info:
+  title: identity-service
+  version: "0.1.0"
+  description: |
+    Internal pseudonymisation and GDPR Article 17 deletion service.
+    Internal-only — no IBM API Connect exposure.  Protected by mTLS SPIFFE/SPIRE SVIDs.
+
+    ## Claim mapping (BMW Entra ID → analytics/audit user_id)
+
+    BMW Entra ID issues JWTs containing the user's `oid` (object ID) claim.
+    Before any write to the immutable audit log or Neo4j VIN Digital Thread,
+    callers **must** resolve the raw employee ID to a `pseudonymous_token` via
+    `GET /internal/identity/pseudonymise`.
+
+    The resolved `pseudonymous_token` UUID is then used as:
+    - `user_id` in every immutable audit log event (audit_client.write_event)
+    - `operator_id` in Neo4j VIN Digital Thread nodes
+
+    Raw 8-digit numeric employee IDs are rejected by the audit_client SDK
+    (`EmployeeIdRejected`) and must never appear in exported datasets or
+    analytics reports (NFR: pii-anonymisation-station-level-works-council).
+
+    Entra ID token claim flow:
+      1. User authenticates → Entra ID issues JWT with `oid` and `groups` claims
+      2. API gateway forwards `oid` to calling service
+      3. Service calls GET /internal/identity/pseudonymise?employee_id=<oid>
+      4. Service uses returned `pseudonymous_token` as `user_id` in all downstream writes
+
+servers:
+  - url: "http://identity-service.ifos-identity.svc.cluster.local:8080"
+    description: "ARO ClusterIP — internal only"
+
+paths:
+  /internal/identity/pseudonymise:
+    get:
+      operationId: pseudonymiseEmployee
+      summary: Return or create a pseudonymous token for an employee ID
+      tags: [Identity]
+      parameters:
+        - name: employee_id
+          in: query
+          required: true
+          description: 8-digit numeric BMW employee ID
+          schema:
+            type: string
+            pattern: "^\\d{8}$"
+            example: "12345678"
+      responses:
+        "200":
+          description: Pseudonymous token (existing or newly generated)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PseudonymiseResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /internal/identity/deletion-request:
+    post:
+      operationId: requestDeletion
+      summary: GDPR Article 17 deletion request — tombstones the identity row
+      tags: [Identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeletionRequestBody"
+      responses:
+        "202":
+          description: Deletion request accepted; scrubber will null PII within 30 days
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletionRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Liveness probe
+      tags: [Observability]
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: "0.1.0"
+
+components:
+  schemas:
+    PseudonymiseResponse:
+      type: object
+      required: [pseudonymous_token, created]
+      properties:
+        pseudonymous_token:
+          type: string
+          format: uuid
+          description: Stable UUID for this employee; used as user_id in all audit and VIN writes
+          example: "aaaaaaaa-0000-4000-8000-000000000001"
+        created:
+          type: boolean
+          description: True when a new token was generated; False when an existing one was returned
+
+    DeletionRequestBody:
+      type: object
+      required: [employee_id, name, requested_at]
+      properties:
+        employee_id:
+          type: string
+          pattern: "^\\d{8}$"
+          description: 8-digit numeric BMW employee ID
+          example: "87654321"
+        name:
+          type: string
+          description: Employee display name (stored for audit trail, nulled by scrubber)
+          example: "Max Mustermann"
+        requested_at:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC timestamp of the deletion request
+          example: "2026-10-12T10:00:00Z"
+
+    DeletionRequestResponse:
+      type: object
+      required: [action, pseudonymous_token, requested_at, correlation_id]
+      properties:
+        action:
+          type: string
+          enum: [IDENTITY_DELETION_REQUESTED]
+        pseudonymous_token:
+          type: string
+          format: uuid
+        requested_at:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          format: uuid
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlation_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

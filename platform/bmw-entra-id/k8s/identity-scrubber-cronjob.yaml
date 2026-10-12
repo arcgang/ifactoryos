@@ -1,0 +1,65 @@
+# identity-scrubber — Kubernetes CronJob for GDPR Article 17 pseudonymisation completion
+#
+# Runs daily at 02:00 UTC.  Selects all rows where tombstoned_at IS NOT NULL and
+# tombstoned_at <= NOW(), then NULLs employee_id and name while leaving
+# pseudonymous_token unchanged so all VIN-linked operational records remain
+# queryable by token.
+#
+# This completes pseudonymisation within 30 days of the deletion request as
+# required by GDPR Article 17 (US-028 / BR-13).
+#
+# Scrubber logs each completed row to the immutable audit log via the
+# identity-service audit endpoint (action = IDENTITY_PSEUDONYMISED).
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: identity-scrubber
+  namespace: ifos-identity
+  labels:
+    app: identity-scrubber
+    component: cmp:bmw-entra-id
+spec:
+  # Daily at 02:00 UTC — well within the 30-day GDPR Article 17 deadline
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: identity-scrubber
+          annotations:
+            vault.hashicorp.com/agent-inject: "true"
+            vault.hashicorp.com/role: "identity-service"
+            vault.hashicorp.com/agent-inject-secret-db: "secret/data/identity-service/db"
+            vault.hashicorp.com/agent-inject-template-db: |
+              {{- with secret "secret/data/identity-service/db" -}}
+              IDENTITY_DB_URL={{ .Data.data.url }}
+              {{- end }}
+            vault.hashicorp.com/agent-inject-secret-audit: "secret/data/identity-service/audit"
+            vault.hashicorp.com/agent-inject-template-audit: |
+              {{- with secret "secret/data/identity-service/audit" -}}
+              AUDIT_STORAGE_ACCOUNT={{ .Data.data.storage_account }}
+              AUDIT_CONTAINER_NAME={{ .Data.data.container_name }}
+              {{- end }}
+        spec:
+          serviceAccountName: identity-service
+          restartPolicy: OnFailure
+          containers:
+            - name: scrubber
+              image: ifos-registry.azurecr.io/identity-service:latest
+              command:
+                - python
+                - -m
+                - app.scrubber
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "128Mi"

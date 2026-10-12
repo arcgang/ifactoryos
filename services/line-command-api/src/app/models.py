@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import AnyUrl, BaseModel, Field
@@ -51,3 +51,56 @@ class ErrorResponse(BaseModel):
     message: str
     correlation_id: str
     details: list[dict[str, Any]] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Andon alert models
+# ---------------------------------------------------------------------------
+
+class WeldTracePoint(BaseModel):
+    timestamp: datetime
+    value: float
+
+
+class WeldTrace(BaseModel):
+    weld_current_a: list[WeldTracePoint]
+    weld_voltage_v: list[WeldTracePoint]
+
+
+AlertStatusEnum = Literal["open", "acknowledged", "resolved", "false_positive"]
+AlertTypeEnum = Literal["predictive", "reactive"]
+
+
+class AndonAlert(BaseModel):
+    alertId: UUID
+    opcenterEventId: str | None = None
+    stationId: str
+    lineId: str
+    alertType: AlertTypeEnum
+    predictedFailureType: str
+    minutesToPredictedFailure: int | None = None
+    recommendedAction: str
+    status: AlertStatusEnum
+    detectedAt: datetime
+    receivedAt: datetime
+    acknowledgedAt: datetime | None = None
+    resolvedAt: datetime | None = None
+    correlationId: UUID
+    weldTrace: WeldTrace
+    thresholdCrossingAt: datetime
+    thresholdValue: float | None = None
+
+
+DispositionEnum = Literal["resolved", "escalated", "monitoring"]
+
+
+class AlertAcknowledgeRequest(BaseModel):
+    disposition: DispositionEnum
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class AlertAcknowledgeResponse(BaseModel):
+    alertId: UUID
+    status: AlertStatusEnum
+    acknowledgedAt: datetime
+    eventId: UUID

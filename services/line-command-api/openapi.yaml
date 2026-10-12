@@ -6,6 +6,114 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /andon/alerts/{alertId}:
+    get:
+      tags:
+        - Andon Alerts
+      summary: Get a specific Andon alert by ID
+      operationId: getAndonAlert
+      description: >
+        Returns the Andon alert detail including weld current/voltage traces for
+        the 60-minute window ending now, and threshold crossing metadata so the
+        frontend can render the crossing highlight on the trace.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          description: UUID of the Andon alert
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Andon alert detail with weld trace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlert"
+        "401":
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /andon/alerts/{alertId}/acknowledge:
+    post:
+      tags:
+        - Andon Alerts
+      summary: Acknowledge an Andon alert (shift-lead only)
+      operationId: acknowledgeAndonAlert
+      description: >
+        Transitions the alert status from open to acknowledged, fires an
+        immutable audit write, and publishes MaintenanceDispatchEvent and
+        AdoptionEvent to Kafka. Requires shift-lead role.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          description: UUID of the Andon alert
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertAcknowledgeRequest"
+      responses:
+        "200":
+          description: Alert acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertAcknowledgeResponse"
+        "401":
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller does not have the shift-lead role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Alert is already in a terminal state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /ar/instructions/{vin}:
     get:
       tags:
@@ -175,6 +283,145 @@ components:
           type: string
           format: date-time
         correlationId:
+          type: string
+          format: uuid
+    WeldTracePoint:
+      type: object
+      required:
+        - timestamp
+        - value
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+          format: double
+    WeldTrace:
+      type: object
+      required:
+        - weld_current_a
+        - weld_voltage_v
+      properties:
+        weld_current_a:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeldTracePoint"
+          description: Weld current trace (amperes) over the last 60 minutes
+        weld_voltage_v:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeldTracePoint"
+          description: Weld voltage trace (volts) over the last 60 minutes
+    AndonAlert:
+      type: object
+      required:
+        - alertId
+        - stationId
+        - lineId
+        - alertType
+        - predictedFailureType
+        - recommendedAction
+        - status
+        - detectedAt
+        - receivedAt
+        - correlationId
+        - weldTrace
+        - thresholdCrossingAt
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        opcenterEventId:
+          type: string
+          nullable: true
+        stationId:
+          type: string
+        lineId:
+          type: string
+        alertType:
+          type: string
+          enum:
+            - predictive
+            - reactive
+        predictedFailureType:
+          type: string
+        minutesToPredictedFailure:
+          type: integer
+          nullable: true
+        recommendedAction:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+            - false_positive
+        detectedAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        correlationId:
+          type: string
+          format: uuid
+        weldTrace:
+          $ref: "#/components/schemas/WeldTrace"
+        thresholdCrossingAt:
+          type: string
+          format: date-time
+          description: Timestamp at which the alert threshold was crossed
+        thresholdValue:
+          type: number
+          format: double
+          nullable: true
+    AlertAcknowledgeRequest:
+      type: object
+      required:
+        - disposition
+      properties:
+        disposition:
+          type: string
+          enum:
+            - resolved
+            - escalated
+            - monitoring
+        note:
+          type: string
+          maxLength: 1000
+          nullable: true
+    AlertAcknowledgeResponse:
+      type: object
+      required:
+        - alertId
+        - status
+        - acknowledgedAt
+        - eventId
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+            - false_positive
+        acknowledgedAt:
+          type: string
+          format: date-time
+        eventId:
           type: string
           format: uuid
     Error:

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.health import Health, health
 from app.routers.ar_instructions import router as ar_router
+from app.routers.andon_alerts import router as andon_router
 
 
 def _error_body(code: str, message: str, details: list[Any] | None = None) -> dict[str, Any]:
@@ -32,10 +33,11 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    from app.db import close_pool
+    from app.db import close_pool, close_ts_pool
     from app.kafka_producer import stop_producer
 
     await close_pool()
+    await close_ts_pool()
     await stop_producer()
 
 
@@ -49,6 +51,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(ar_router)
+    app.include_router(andon_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])
     def health_check() -> Health:

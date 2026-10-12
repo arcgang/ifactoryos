@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # PostgreSQL (Citus)
     citus_url: str = "postgresql://postgres:local@localhost:5434/app"
 
+    # TimescaleDB — weld trace telemetry (uns_telemetry hypertable)
+    timescaledb_url: str = "postgresql://postgres:local@localhost:5433/tsdb"
+
     # vin-digital-thread-api upstream
     vdt_base_url: str = "http://localhost:8001"
     vdt_timeout_seconds: float = 10.0

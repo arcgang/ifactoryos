@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.health import Health, health
 from app.routers.ar_instructions import router as ar_router
+from app.routers.torque import router as torque_router
 
 
 def _error_body(code: str, message: str, details: list[Any] | None = None) -> dict[str, Any]:
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(ar_router)
+    app.include_router(torque_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])
     def health_check() -> Health:

@@ -84,21 +84,28 @@ def score_vin_heuristic(
     prev_paint_code: str | None,
     constraint_snapshot: ConstraintSnapshot,
     vin_index: int,
+    paint_overrides: dict[str, int] | None = None,
 ) -> float:
     """Deterministic constraint score per the settled formula.
 
     S = (regulatoryHold ? 0 : 1000)
       + (vipPriority ? 500 : 0)
-      - (paintCodeChangeover ? 200 : 0)
+      - (paintCodeChangeover ? changeover_penalty : 0)
       - max(0, kittingReadinessPct < 80 ? (80 - kittingReadinessPct) * 5 : 0)
       - (maintenanceWindowOverlap ? 300 : 0)
       - (bodyWipQueueDepth > 0.9 * capacity ? 100 : 0)
+
+    paint_overrides maps paintCode → changeoverPenaltyMinutes (MY26 config overrides).
     """
     s: float = _REGULATORY_NORMAL_BASE if not vin_input.regulatoryHold else _REGULATORY_BASE
     if vin_input.vipPriority:
         s += _VIP_BONUS
     if _paint_code_changed(prev_paint_code, vin_input.paintCode):
-        s -= _PAINT_CHANGE_PENALTY
+        if paint_overrides and vin_input.paintCode in paint_overrides:
+            penalty = float(paint_overrides[vin_input.paintCode])
+        else:
+            penalty = float(_PAINT_CHANGE_PENALTY)
+        s -= penalty
     kitting = constraint_snapshot.kittingReadinessPct
     if kitting < _KITTING_THRESHOLD:
         s -= (_KITTING_THRESHOLD - kitting) * _KITTING_PENALTY_FACTOR
@@ -112,12 +119,13 @@ def score_vin_heuristic(
 def apply_heuristic(
     vins: list[VinInput],
     constraint_snapshot: ConstraintSnapshot,
+    paint_overrides: dict[str, int] | None = None,
 ) -> list[RankedVin]:
     """Apply deterministic heuristic; regulatory-hold VINs go to the end."""
     scored: list[tuple[float, int, VinInput]] = []
     prev_paint: str | None = None
     for idx, vin_input in enumerate(vins):
-        s = score_vin_heuristic(vin_input, prev_paint, constraint_snapshot, idx)
+        s = score_vin_heuristic(vin_input, prev_paint, constraint_snapshot, idx, paint_overrides)
         scored.append((s, idx, vin_input))
         prev_paint = vin_input.paintCode
 
@@ -426,6 +434,7 @@ async def run_optimize(
     pool: asyncpg.Pool,
     kserve_client: KServeClient,
     user_id: str = "unknown",
+    my26_overrides: dict | None = None,
 ) -> OptimizeResponse:
     """Run optimisation (Monte Carlo or heuristic fallback) and persist the result."""
     from app.config import get_settings
@@ -450,6 +459,12 @@ async def run_optimize(
 
     use_heuristic = False
     fallback_reason: str = ""
+
+    # Apply MY26 paint changeover penalties to the heuristic scorer if overrides present
+    paint_overrides: dict[str, int] = (
+        my26_overrides.get("paint_changeover_penalties", {}) if my26_overrides else {}
+    )
+
     try:
         all_results: list[list[dict]] = []
         tasks = [
@@ -501,7 +516,7 @@ async def run_optimize(
     if use_heuristic:
         logger.info("Applying heuristic fallback: %s", fallback_reason)
         result_type = ResultType.heuristic_fallback
-        ranked = apply_heuristic(request.vins, request.constraintSnapshot)
+        ranked = apply_heuristic(request.vins, request.constraintSnapshot, paint_overrides)
         confidence = 0.5
 
     duration_ms = int((time.monotonic() - start_ms) * 1000)

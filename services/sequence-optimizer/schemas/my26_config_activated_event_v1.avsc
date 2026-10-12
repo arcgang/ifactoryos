@@ -1,0 +1,38 @@
+{
+  "type": "record",
+  "name": "My26ConfigActivatedEvent",
+  "namespace": "bmw.munich.i4.sequence.my26",
+  "doc": "Published when a MY26 configuration is saved and activated.",
+  "fields": [
+    {
+      "name": "configId",
+      "type": "string",
+      "doc": "UUID of the activated MY26 configuration."
+    },
+    {
+      "name": "version",
+      "type": "string",
+      "doc": "Semantic version string of the activated configuration (e.g. 1.0.0)."
+    },
+    {
+      "name": "optionCodeCount",
+      "type": "int",
+      "doc": "Number of option code entries in the activated configuration."
+    },
+    {
+      "name": "paintPaletteCount",
+      "type": "int",
+      "doc": "Number of paint palette entries in the activated configuration."
+    },
+    {
+      "name": "activatedBy",
+      "type": "string",
+      "doc": "JWT subject (sub/upn claim) of the user who activated the configuration."
+    },
+    {
+      "name": "activatedAt",
+      "type": "string",
+      "doc": "ISO-8601 UTC timestamp when the configuration was activated."
+    }
+  ]
+}

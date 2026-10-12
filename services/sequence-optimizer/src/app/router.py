@@ -1,4 +1,4 @@
-"""FastAPI router for constraint threshold and sequence optimizer endpoints."""
+"""FastAPI router for constraint threshold, sequence optimizer, and MY26 config endpoints."""
 
 from __future__ import annotations
 
@@ -8,10 +8,19 @@ from typing import Any
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth import caller_subject, require_bearer, require_resequence_writer, require_threshold_writer
+from app.auth import (
+    caller_subject,
+    require_bearer,
+    require_my26_config_writer,
+    require_resequence_writer,
+    require_threshold_writer,
+)
 from app.models import (
     AlertListResponse,
     ConstraintThreshold,
+    My26Config,
+    My26ConfigDraft,
+    My26ValidationResult,
     OptimizeRequest,
     OptimizeResponse,
     ResequenceRequest,
@@ -78,6 +87,7 @@ async def run_optimizer(
     pool: asyncpg.Pool = Depends(_get_pool),
 ) -> OptimizeResponse:
     from app.kserve_client import make_kserve_client
+    from app.my26_config import build_constraint_overrides, load_my26_config_by_version
     from app.optimizer import run_optimize
     from app.validation import validate_option_codes
 
@@ -96,12 +106,39 @@ async def run_optimizer(
             },
         )
 
+    # 422: requested MY26 config version must exist and be active
+    my26_overrides: dict[str, Any] | None = None
+    if body.my26ConfigVersion is not None:
+        try:
+            config_id = uuid.UUID(body.my26ConfigVersion)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "INVALID_MY26_CONFIG_VERSION",
+                    "message": "my26ConfigVersion must be a valid UUID",
+                    "correlation_id": str(uuid.uuid4()),
+                },
+            )
+        my26_cfg = await load_my26_config_by_version(config_id, pool)
+        if my26_cfg is None or my26_cfg.status.value != "active":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "MY26_CONFIG_NOT_ACTIVE",
+                    "message": f"MY26 config version {body.my26ConfigVersion} does not exist or is not active",
+                    "correlation_id": str(uuid.uuid4()),
+                },
+            )
+        my26_overrides = build_constraint_overrides(my26_cfg)
+
     kserve_client = make_kserve_client()
     return await run_optimize(
         request=body,
         pool=pool,
         kserve_client=kserve_client,
         user_id=user_id,
+        my26_overrides=my26_overrides,
     )
 
 
@@ -181,3 +218,79 @@ async def list_constraint_alerts(
         limit=limit,
         status_filter=status_filter,
     )
+
+
+# ---------------------------------------------------------------------------
+# MY26 configuration endpoints
+# ---------------------------------------------------------------------------
+
+my26_router = APIRouter(tags=["MY26 Config"])
+
+
+@my26_router.get(
+    "/my26/config",
+    response_model=My26Config,
+    operation_id="getMy26Config",
+)
+async def get_my26_config(
+    _payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> My26Config:
+    from app.my26_config import get_active_my26_config
+
+    config = await get_active_my26_config(pool)
+    if config is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "MY26_CONFIG_NOT_FOUND",
+                "message": "No active MY26 configuration exists",
+                "correlation_id": str(uuid.uuid4()),
+            },
+        )
+    return config
+
+
+@my26_router.post(
+    "/my26/config/validate",
+    response_model=My26ValidationResult,
+    operation_id="validateMy26Config",
+    status_code=status.HTTP_200_OK,
+)
+async def validate_my26_config(
+    body: My26ConfigDraft,
+    _payload: dict[str, Any] = Depends(require_bearer),
+) -> My26ValidationResult:
+    from app.my26_config import validate_my26_draft
+
+    return validate_my26_draft(body)
+
+
+@my26_router.post(
+    "/my26/config/save",
+    response_model=My26Config,
+    operation_id="saveMy26Config",
+    status_code=status.HTTP_201_CREATED,
+)
+async def save_my26_config_endpoint(
+    body: My26ConfigDraft,
+    payload: dict[str, Any] = Depends(require_my26_config_writer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> My26Config:
+    from app.my26_config import save_my26_config, validate_my26_draft
+
+    # Re-run validation inline; reject with 409 if unresolved errors exist
+    validation = validate_my26_draft(body)
+    if not validation.valid:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "MY26_CONFIG_VALIDATION_FAILED",
+                "message": "Validation failed — resolve all error-severity issues before saving",
+                "correlation_id": str(uuid.uuid4()),
+                "details": [i.model_dump(mode="json") for i in validation.issues],
+            },
+        )
+
+    user_id = caller_subject(payload)
+    return await save_my26_config(body, pool, user_id)

@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # Required role for POST /resequence
     resequence_writer_role: str = "production-planner"
 
+    # Required role for POST /my26/config/save
+    my26_config_writer_role: str = "production-planner"
+
+    # MY26 config activated event topic
+    my26_config_activated_topic: str = "uns.munich.i4.sequence.my26.config.activated.v1"
+
     # KServe model endpoint
     kserve_endpoint_url: str = "http://sequence-optimizer.kserve.svc.cluster.local/v1/models/sequence-optimizer:predict"
     kserve_timeout_s: float = 43.0

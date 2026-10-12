@@ -158,3 +158,61 @@ class ResequenceRequest(BaseModel):
     affectedVins: list[VinInput] = Field(min_length=1, max_length=500)
     constraintSnapshot: ConstraintSnapshot
     idempotencyKey: UUID | None = None
+
+
+# ---------------------------------------------------------------------------
+# MY26 configuration models
+# ---------------------------------------------------------------------------
+
+
+class My26ConfigStatus(str, Enum):
+    draft = "draft"
+    validated = "validated"
+    active = "active"
+    superseded = "superseded"
+
+
+class OptionCodeEntry(BaseModel):
+    code: str
+    description: str
+    constraintMappings: list[str] = Field(default_factory=list)
+
+
+class PaintPaletteEntry(BaseModel):
+    paintCode: str
+    batchGroup: str
+    changeoverPenaltyMinutes: int | None = Field(default=None, ge=0)
+
+
+class My26Config(BaseModel):
+    configId: UUID
+    version: str
+    status: My26ConfigStatus
+    optionCodes: list[OptionCodeEntry]
+    paintPalette: list[PaintPaletteEntry]
+    kittingRules: list[dict[str, Any]] = Field(default_factory=list)
+    createdAt: str
+    createdBy: str
+    activatedAt: str | None = None
+
+
+class My26ConfigDraft(BaseModel):
+    optionCodes: list[OptionCodeEntry]
+    paintPalette: list[PaintPaletteEntry]
+    kittingRules: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class My26ValidationSeverity(str, Enum):
+    error = "error"
+    warning = "warning"
+
+
+class My26ValidationIssue(BaseModel):
+    severity: My26ValidationSeverity
+    field: str
+    message: str
+
+
+class My26ValidationResult(BaseModel):
+    valid: bool
+    issues: list[My26ValidationIssue]

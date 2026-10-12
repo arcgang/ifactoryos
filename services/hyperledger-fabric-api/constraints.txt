@@ -1,0 +1,20 @@
+# The resolved dependency set, pinned. Python's equivalent of the sibling templates'
+# package-lock.json: requirements.txt names what the project wants, this names every
+# version that actually gets installed, transitives included.
+#
+# Regenerate with `npm run refresh-templates` — never by hand. Editing one pin without
+# re-resolving can produce a set pip cannot satisfy, and the failure surfaces as a seeded
+# repo whose very first verify cannot install.
+#
+# Marker-guarded lines (win32, Python < 3.11) are carried over from the previous file
+# rather than resolved: pip freezes only the platform it ran on, so those dependencies are
+# invisible to a Linux run. They advance only when a human edits them. See
+# scripts/refresh-templates.ts#conditionalPins.
+iniconfig==2.3.0
+packaging==26.2
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==9.1.1
+colorama==0.4.6 ; sys_platform == "win32"
+exceptiongroup==1.3.1 ; python_version < "3.11"
+tomli==2.4.1 ; python_version < "3.11"

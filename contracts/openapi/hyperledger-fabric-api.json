@@ -1,0 +1,740 @@
+{
+  "info": {
+    "title": "Hyperledger Fabric API",
+    "version": "1.0.0",
+    "description": "API in front of Hyperledger Fabric — anchors Digital Birth Certificates for certified vehicles and exposes certificate query and verification endpoints."
+  },
+  "paths": {
+    "/certificates": {
+      "get": {
+        "summary": "List Digital Birth Certificates with optional filters (VIN, shift, date range)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of certificate records"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_READER role"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor from previous response"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "maxLength": 17
+            },
+            "required": false,
+            "description": "Filter by Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "shiftId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "description": "Filter by shift identifier for shift export"
+          },
+          {
+            "in": "query",
+            "name": "issuedAfter",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 lower bound (inclusive) for certificate issuance timestamp"
+          },
+          {
+            "in": "query",
+            "name": "issuedBefore",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 upper bound (exclusive) for certificate issuance timestamp"
+          }
+        ],
+        "description": "Cursor-paginated list of certificate records. Supports shift export use case (AC-fb3fae1c) by filtering on shiftId or issuedAfter/issuedBefore.",
+        "operationId": "listCertificates"
+      }
+    },
+    "/certificate/issue": {
+      "post": {
+        "summary": "Anchor a Digital Birth Certificate to Hyperledger Fabric",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateIssueResponse"
+                }
+              }
+            },
+            "description": "Certificate already anchored (idempotent replay) — returns existing record"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateIssueResponse"
+                }
+              }
+            },
+            "description": "Certificate successfully anchored to Fabric"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_ISSUER role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict — certificateId already anchored with different payload (hash mismatch)"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric peer unavailable or transaction endorsement failed"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric transaction commit timed out (> 55 s)"
+          }
+        },
+        "description": "Accepts a certificate payload (VIN, gate results snapshot, health score, validator ID, timestamp, certificate hash), submits a Fabric transaction, and returns the Fabric transaction hash. Idempotent on certificateId — a duplicate submission returns the existing transaction hash without creating a new ledger entry.",
+        "operationId": "issueCertificate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificateIssueRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/certificate/{certificateId}": {
+      "get": {
+        "summary": "Retrieve a certificate record and its Fabric anchor by certificateId",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateRecord"
+                }
+              }
+            },
+            "description": "Certificate record found"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_READER role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Certificate not found"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric ledger query failed"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "certificateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "description": "UUID of the Digital Birth Certificate"
+          }
+        ],
+        "description": "Returns the stored certificate metadata and the Fabric transaction hash. Used by quality-studio to verify tamper-evidence (AC-c040ff38).",
+        "operationId": "getCertificate"
+      }
+    },
+    "/certificate/{certificateId}/verify": {
+      "get": {
+        "summary": "Verify that a certificate hash matches the Fabric ledger entry",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateVerifyResponse"
+                }
+              }
+            },
+            "description": "Verification result"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_READER role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Certificate not found"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric ledger query failed"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "certificateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "description": "UUID of the Digital Birth Certificate to verify"
+          }
+        ],
+        "description": "Queries the Fabric ledger for the stored hash and compares it against the hash of the current certificate record, confirming tamper-evidence (AC-c040ff38).",
+        "operationId": "verifyCertificate"
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "servers": [
+    {
+      "url": "https://hyperledger-fabric-api.internal.bmw-ifos.eu/api/v1",
+      "description": "Internal ARO service endpoint (private subnet, mTLS enforced at zone boundary)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "CertificateRecord": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "vin",
+          "gateResultSnapshot",
+          "healthScore",
+          "validatorId",
+          "issuedAt",
+          "certificateHash",
+          "fabricTransactionId",
+          "fabricBlockNumber",
+          "anchoredAt",
+          "sourceSystem"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "anchoredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "healthScore": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "validatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceSystem": {
+            "enum": [
+              "quality-studio",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "certificateHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "fabricBlockNumber": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gateResultSnapshot": {
+            "$ref": "#/components/schemas/GateResultSnapshot"
+          },
+          "fabricTransactionId": {
+            "type": "string"
+          }
+        }
+      },
+      "GateResultSnapshot": {
+        "type": "object",
+        "required": [
+          "gateId",
+          "stationResults"
+        ],
+        "properties": {
+          "gateId": {
+            "type": "string",
+            "description": "Quality gate identifier (e.g., GATE-3)"
+          },
+          "stationResults": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "stationCode",
+                "result"
+              ],
+              "properties": {
+                "result": {
+                  "enum": [
+                    "PASS",
+                    "CONDITIONAL",
+                    "FAIL"
+                  ],
+                  "type": "string",
+                  "description": "Station-level result"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Optional free-text detail or anomaly description"
+                },
+                "stationCode": {
+                  "enum": [
+                    "DIM",
+                    "LEAK",
+                    "ELEC",
+                    "NVH",
+                    "ADAS"
+                  ],
+                  "type": "string",
+                  "description": "Gate station code"
+                }
+              }
+            }
+          }
+        },
+        "description": "Snapshot of all gate station results at time of certification"
+      },
+      "CertificateIssueRequest": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "vin",
+          "gateResultSnapshot",
+          "healthScore",
+          "validatorId",
+          "issuedAt",
+          "certificateHash"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17,
+            "description": "Vehicle Identification Number (17-char ISO 3779)"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Shift identifier — used for shift export grouping (AC-fb3fae1c)"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp of the certify action in quality-studio"
+          },
+          "healthScore": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "description": "Unified vehicle health score at time of certification (0–100)"
+          },
+          "validatorId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "BMW Entra ID subject (sub claim) of the certifying Quality Gate Validator"
+          },
+          "sourceSystem": {
+            "enum": [
+              "quality-studio",
+              "legacy"
+            ],
+            "type": "string",
+            "default": "quality-studio",
+            "description": "Originating system — enables A7 metric (≥90% certs via quality-studio)"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated UUID for idempotency key — must be stable across retries"
+          },
+          "certificateHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hex digest of the canonical certificate payload (computed by caller before submission)"
+          },
+          "gateResultSnapshot": {
+            "$ref": "#/components/schemas/GateResultSnapshot"
+          }
+        }
+      },
+      "CertificateListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CertificateRecord"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "CertificateIssueResponse": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "vin",
+          "fabricTransactionId",
+          "fabricBlockNumber",
+          "anchoredAt",
+          "certificateHash"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "anchoredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the Fabric transaction was committed"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "description": "True if this response was served from an existing record (duplicate submission)"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "certificateHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hex digest echoed back for caller verification"
+          },
+          "fabricBlockNumber": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fabric block number in which the transaction was committed"
+          },
+          "fabricTransactionId": {
+            "type": "string",
+            "description": "Hyperledger Fabric transaction ID (hex string) — the immutable anchor reference"
+          }
+        }
+      },
+      "CertificateVerifyResponse": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "verified",
+          "storedHash",
+          "fabricTransactionId"
+        ],
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "description": "True if the stored certificate hash matches the Fabric ledger entry"
+          },
+          "fabricHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hash retrieved from the Fabric ledger (null if Fabric query failed)"
+          },
+          "storedHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hash stored in the local database"
+          },
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mismatchReason": {
+            "type": "string",
+            "description": "Human-readable explanation when verified=false"
+          },
+          "fabricTransactionId": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

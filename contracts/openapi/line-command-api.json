@@ -1,0 +1,1798 @@
+{
+  "info": {
+    "title": "line-command-api",
+    "version": "1.0.0",
+    "description": "Backend API for Line Command console — serves AR work instructions, torque log submission, and shift handover for Assembly Associates and Shift Leads at BMW Munich i4."
+  },
+  "paths": {
+    "/handover": {
+      "post": {
+        "tags": [
+          "Shift Handover"
+        ],
+        "summary": "Submit a structured digital shift handover",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverResponse"
+                }
+              }
+            },
+            "description": "Handover submitted successfully"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid handover payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have shift-lead role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Handover already submitted for this shift (idempotency)"
+          }
+        },
+        "description": "Creates a shift handover record linking open Andon alert dispositions, OEE delta, and held VINs. Emits HANDOVER_SUBMITTED adoption event. Satisfies AC-e37bcf34, AC-5f4b73cb, AC-04cd3711, AC-fd1f00c6.",
+        "operationId": "submitHandover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoverRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/handovers": {
+      "get": {
+        "tags": [
+          "Shift Handover"
+        ],
+        "summary": "List shift handover records (paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of handover records"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "fromTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "toTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "description": "Returns cursor-paginated handover records. Used by incoming Shift Lead and Plant Manager daily review. Satisfies AC-5f4b73cb, AC-04cd3711.",
+        "operationId": "listHandovers"
+      }
+    },
+    "/torque/log": {
+      "post": {
+        "tags": [
+          "Torque Log"
+        ],
+        "summary": "Submit a torque tightening record from the Beckhoff PLC via edge gateway",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueLogResponse"
+                }
+              }
+            },
+            "description": "Torque log accepted and forwarded to UNS"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueLogResponse"
+                }
+              }
+            },
+            "description": "Torque log accepted but UNS publish pending (edge-buffered scenario)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid torque log payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Duplicate torque log (idempotency key already processed)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueOutOfToleranceResponse"
+                }
+              }
+            },
+            "description": "Torque value out of tolerance — alert raised"
+          }
+        },
+        "description": "Accepts a torque/angle trace record for a VIN fastener point. Validates against VIN option-code tolerance, writes to torque_log table, forwards to UNS, and emits adoption event. Satisfies AC-13685a24, AC-69c77dfd, AC-b734032a, AC-fd1f00c6.",
+        "operationId": "submitTorqueLog",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TorqueLogRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/ar/sessions": {
+      "post": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "Record the start of an AR Workbench session for adoption instrumentation",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArSessionStartResponse"
+                }
+              }
+            },
+            "description": "AR session event recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "description": "Emits an AR_SESSION_START adoption event. Must include VIN, device type, and station ID. No biometric or gaze data. Satisfies AC-9c6cd996 and AC-fd1f00c6.",
+        "operationId": "startArSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArSessionStartRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/torque/logs": {
+      "get": {
+        "tags": [
+          "Torque Log"
+        ],
+        "summary": "List torque log records for a VIN or station (paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueLogListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of torque log records"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "description": "Returns cursor-paginated torque log records. Used by Shift Lead and Quality Studio for traceability review.",
+        "operationId": "listTorqueLogs"
+      }
+    },
+    "/ar/expert-calls": {
+      "post": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "Initiate a remote expert call from the AR Workbench",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertCallResponse"
+                }
+              }
+            },
+            "description": "Expert call session created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "description": "Creates an expert call session record. Returns call mode (video/voice) based on Works Council approval flag. Satisfies AC-7293efd6, AC-48bbc2a6.",
+        "operationId": "initiateExpertCall",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpertCallRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/ar/instructions/{vin}": {
+      "get": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "Retrieve VIN-specific AR holographic work instruction overlay",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArInstructionResponse"
+                }
+              }
+            },
+            "description": "VIN-specific AR instruction overlay"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN or missing required query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have the assembly-associate or shift-lead role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found in digital thread"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArInstructionFallbackResponse"
+                }
+              }
+            },
+            "description": "Upstream digital thread or instruction store did not respond within timeout; fallback payload included"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Station identifier (e.g. MARRIAGE-01, FINAL-02)"
+          },
+          {
+            "in": "query",
+            "name": "deviceType",
+            "schema": {
+              "enum": [
+                "HoloLens2",
+                "iPad"
+              ],
+              "type": "string"
+            },
+            "required": true,
+            "description": "AR device type for overlay rendering"
+          }
+        ],
+        "description": "Returns the full work instruction payload for the given VIN including option codes, torque specifications, step sequence, variant delta indicators, and a fallback PDF QR code URL. Must respond within 5 s at p95 to satisfy AC-00bc6b07.",
+        "operationId": "getArInstructions"
+      }
+    },
+    "/handovers/{handoverId}": {
+      "get": {
+        "tags": [
+          "Shift Handover"
+        ],
+        "summary": "Retrieve a single shift handover record by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverRecord"
+                }
+              }
+            },
+            "description": "Handover record"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Handover not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handoverId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "description": "Returns the full handover record including alert dispositions, OEE delta, and held VINs. Satisfies AC-5f4b73cb, AC-04cd3711.",
+        "operationId": "getHandover"
+      }
+    },
+    "/line-command/andon/alerts": {
+      "get": {
+        "tags": [
+          "Andon Alerts"
+        ],
+        "summary": "List open predictive Andon alerts for the current shift (paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndonAlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of Andon alerts"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "shiftId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "open",
+                "resolved",
+                "escalated",
+                "monitoring"
+              ],
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "description": "Returns cursor-paginated open Andon alerts. Used by Handover Builder to pre-populate alert line items. Satisfies AC-e37bcf34.",
+        "operationId": "listAndonAlerts"
+      }
+    },
+    "/ar/expert-calls/{callId}/end": {
+      "post": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "End a remote expert call and log the session to the VIN digital thread audit trail",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertCallEndResponse"
+                }
+              }
+            },
+            "description": "Expert call ended and logged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Call session not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "callId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "description": "Closes the call session and writes call duration, VIN, station ID, call mode, and expert user ID to the audit trail. No biometric or gaze data. Satisfies AC-e30375d9.",
+        "operationId": "endExpertCall",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpertCallEndRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/andon/alerts/{alertId}/acknowledge": {
+      "post": {
+        "tags": [
+          "Andon Alerts"
+        ],
+        "summary": "Acknowledge a predictive Andon alert and record disposition",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertAcknowledgeResponse"
+                }
+              }
+            },
+            "description": "Alert acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid disposition value"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have shift-lead role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert already acknowledged"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "description": "Records the Shift Lead's disposition (resolved/escalated/monitoring) for an alert. Emits ALERT_ACKNOWLEDGED adoption event. Satisfies AC-fd1f00c6.",
+        "operationId": "acknowledgeAndonAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertAcknowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "servers": [
+    {
+      "url": "https://line-command-api.internal.bmw-ifos.eu/api/v1",
+      "description": "Production (ARO Germany West Central)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AndonAlert": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "shiftId",
+          "lineId",
+          "stationId",
+          "alertType",
+          "status",
+          "predictedFailureTs",
+          "createdAt"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "escalated",
+              "monitoring"
+            ],
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertType": {
+            "type": "string",
+            "description": "e.g. ELECTRODE_WEAR, PRESS_DIE_OVERRUN, AGV_DELAY"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "disposition": {
+            "enum": [
+              "resolved",
+              "escalated",
+              "monitoring"
+            ],
+            "type": "string",
+            "nullable": true
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "dispositionNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "predictedFailureTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledgedByUserId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "HandoverRecord": {
+        "type": "object",
+        "required": [
+          "handoverId",
+          "shiftId",
+          "lineId",
+          "shiftStartTs",
+          "shiftEndTs",
+          "submittedByUserId",
+          "alertDispositions",
+          "oeeDeltaPct",
+          "heldVins",
+          "createdAt"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "heldVins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "handoverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shiftEndTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "oeeDeltaPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "shiftStartTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "alertDispositions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertDispositionItem"
+            }
+          },
+          "submittedByUserId": {
+            "type": "string"
+          }
+        }
+      },
+      "HandoverRequest": {
+        "type": "object",
+        "required": [
+          "shiftId",
+          "lineId",
+          "shiftStartTs",
+          "shiftEndTs",
+          "alertDispositions",
+          "oeeDeltaPct"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "heldVins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "description": "VINs flagged for quality review"
+          },
+          "shiftEndTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "oeeDeltaPct": {
+            "type": "number",
+            "format": "double",
+            "description": "OEE delta: current shift vs. 30-day average per weld line (positive = above average)"
+          },
+          "shiftStartTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertDispositions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertDispositionItem"
+            }
+          }
+        }
+      },
+      "TorqueLogRecord": {
+        "type": "object",
+        "required": [
+          "torqueLogId",
+          "vin",
+          "stationId",
+          "fastenerPointId",
+          "torqueNm",
+          "anglesDeg",
+          "status",
+          "plcTimestamp",
+          "createdAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "in_tolerance",
+              "out_of_tolerance",
+              "pending_sync"
+            ],
+            "type": "string"
+          },
+          "torqueNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "anglesDeg": {
+            "type": "number",
+            "format": "double"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "torqueLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plcTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          },
+          "unsPublishStatus": {
+            "enum": [
+              "published",
+              "queued",
+              "failed"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "HandoverResponse": {
+        "type": "object",
+        "required": [
+          "handoverId",
+          "submittedAt",
+          "submittedByUserId"
+        ],
+        "properties": {
+          "handoverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedByUserId": {
+            "type": "string"
+          }
+        }
+      },
+      "TorqueLogRequest": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "fastenerPointId",
+          "torqueNm",
+          "anglesDeg",
+          "plcTimestamp",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "torqueNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "anglesDeg": {
+            "type": "number",
+            "format": "double"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "traceData": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "offsetMs",
+                "torqueNm",
+                "angleDeg"
+              ],
+              "properties": {
+                "angleDeg": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "offsetMs": {
+                  "type": "integer"
+                },
+                "torqueNm": {
+                  "type": "number",
+                  "format": "double"
+                }
+              }
+            },
+            "description": "Raw PLC torque/angle trace samples (1kHz or 100Hz)"
+          },
+          "edgeBuffered": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when submitted from edge buffer after UNS reconnection"
+          },
+          "plcTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "PLC-generated idempotency key; prevents duplicate log on retry"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          }
+        }
+      },
+      "ArInstructionStep": {
+        "type": "object",
+        "required": [
+          "stepNumber",
+          "description",
+          "torqueSpecNm",
+          "torqueToleranceNm",
+          "fastenerPointId"
+        ],
+        "properties": {
+          "stepNumber": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "torqueSpecNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "isVariantDelta": {
+            "type": "boolean",
+            "description": "True if this step differs from standard i4 configuration"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          },
+          "variantDeltaNote": {
+            "type": "string",
+            "description": "Human-readable description of what differs for this variant"
+          },
+          "torqueToleranceNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "holographicAssetUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "ExpertCallRequest": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "sessionId"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "TorqueLogResponse": {
+        "type": "object",
+        "required": [
+          "torqueLogId",
+          "vin",
+          "status",
+          "unsPublishStatus",
+          "recordedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "pending_sync"
+            ],
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "torqueLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unsPublishStatus": {
+            "enum": [
+              "published",
+              "queued",
+              "failed"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "ExpertCallResponse": {
+        "type": "object",
+        "required": [
+          "callId",
+          "callMode",
+          "createdAt"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "callMode": {
+            "enum": [
+              "video",
+              "voice"
+            ],
+            "type": "string",
+            "description": "Determined by Works Council approval flag stored server-side"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertDispositionItem": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "disposition"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "disposition": {
+            "enum": [
+              "resolved",
+              "escalated",
+              "monitoring"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "ExpertCallEndRequest": {
+        "type": "object",
+        "required": [
+          "expertUserId",
+          "durationSeconds"
+        ],
+        "properties": {
+          "expertUserId": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "HandoverListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverRecord"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ArInstructionResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "optionCodes",
+          "variantCode",
+          "isRareVariant",
+          "steps",
+          "instructionVersion",
+          "fetchedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArInstructionStep"
+            }
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "variantCode": {
+            "type": "string"
+          },
+          "isRareVariant": {
+            "type": "boolean"
+          },
+          "fallbackPdfQrUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "QR code URL for fallback PDF; always populated"
+          },
+          "instructionVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "ArSessionStartRequest": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "deviceType"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "deviceType": {
+            "enum": [
+              "HoloLens2",
+              "iPad"
+            ],
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated idempotency key"
+          }
+        }
+      },
+      "ExpertCallEndResponse": {
+        "type": "object",
+        "required": [
+          "callId",
+          "auditEntryId",
+          "endedAt"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "auditEntryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "TorqueLogListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TorqueLogRecord"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "AndonAlertListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AndonAlert"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ArSessionStartResponse": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "eventId",
+          "recordedAt"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertAcknowledgeRequest": {
+        "type": "object",
+        "required": [
+          "disposition"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "disposition": {
+            "enum": [
+              "resolved",
+              "escalated",
+              "monitoring"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "AlertAcknowledgeResponse": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "status",
+          "acknowledgedAt",
+          "eventId"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TorqueOutOfToleranceResponse": {
+        "type": "object",
+        "required": [
+          "torqueLogId",
+          "vin",
+          "fastenerPointId",
+          "torqueNm",
+          "specNm",
+          "toleranceNm",
+          "alertId",
+          "recordedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "specNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "torqueNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "toleranceNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "torqueLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          }
+        }
+      },
+      "ArInstructionFallbackResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "fallbackPdfQrUrl",
+          "failureLoggedAt",
+          "correlationId"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "failureLoggedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fallbackPdfQrUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

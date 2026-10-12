@@ -1,0 +1,324 @@
+{
+  "info": {
+    "title": "VIN Digital Thread API — Async Events",
+    "version": "1.0.0",
+    "description": "Events published by vin-digital-thread-api when manufacturing events are linked to VIN nodes and when completeness thresholds are breached."
+  },
+  "servers": {
+    "kafka-uns": {
+      "host": "kafka.uns.factory-os.bmw.de:9093",
+      "protocol": "kafka-secure",
+      "security": [
+        {
+          "saslScram": []
+        }
+      ],
+      "description": "On-premises UNS Kafka cluster — SASL/SCRAM + TLS 1.3"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "uns-manufacturing-event": {
+      "address": "factory.munich.uns.manufacturing.event.v1",
+      "messages": {
+        "UnsManufacturingEvent": {
+          "$ref": "#/components/messages/UnsManufacturingEvent"
+        }
+      },
+      "description": "Consumed from the UNS backbone — raw manufacturing events (PLC traces, gate results, torque logs, AR instruction executions) that must be linked to VIN nodes within 5 seconds."
+    },
+    "vin-thread-event-linked": {
+      "address": "factory.munich.vin.thread.event.linked.v1",
+      "messages": {
+        "VinThreadEventLinked": {
+          "$ref": "#/components/messages/VinThreadEventLinked"
+        }
+      },
+      "description": "Published when a manufacturing event is successfully linked to a VIN node in the Neo4j digital thread graph."
+    },
+    "vin-thread-completeness-alert": {
+      "address": "factory.munich.vin.thread.completeness.alert.v1",
+      "messages": {
+        "VinThreadCompletenessAlert": {
+          "$ref": "#/components/messages/VinThreadCompletenessAlert"
+        }
+      },
+      "description": "Published when a VIN's digital thread completeness falls below the 95% threshold after UNS go-live."
+    },
+    "vin-thread-final-gate-complete": {
+      "address": "factory.munich.vin.thread.final.gate.complete.v1",
+      "messages": {
+        "VinThreadFinalGateComplete": {
+          "$ref": "#/components/messages/VinThreadFinalGateComplete"
+        }
+      },
+      "description": "Published when a VIN completes the final quality gate and a continuous chain of events from body-in-white through final gate is confirmed in the digital thread."
+    }
+  },
+  "components": {
+    "messages": {
+      "VinThreadEventLinked": {
+        "name": "VinThreadEventLinked",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "vin",
+            "eventType",
+            "shop",
+            "station",
+            "occurredAt",
+            "dataSource",
+            "linkedAt",
+            "correlationId"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "shop": {
+              "type": "string"
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "station": {
+              "type": "string"
+            },
+            "linkedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "dataSource": {
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "stageNumber": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "correlationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "UnsManufacturingEvent": {
+        "name": "UnsManufacturingEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "messageId",
+            "vin",
+            "eventType",
+            "shop",
+            "station",
+            "occurredAt",
+            "dataSource",
+            "parameters"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "shop": {
+              "type": "string"
+            },
+            "station": {
+              "type": "string"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UNS-assigned message ID used as idempotency key"
+            },
+            "dataSource": {
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "number",
+                  "string",
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "stageNumber": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tunnelPositionMm": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "VinThreadCompletenessAlert": {
+        "name": "VinThreadCompletenessAlert",
+        "payload": {
+          "type": "object",
+          "required": [
+            "vin",
+            "overallCompletenessPercent",
+            "missingStages",
+            "alertedAt",
+            "correlationId"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "alertedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "correlationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "missingStages": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "description": "Stage numbers (1–14) with no data"
+            },
+            "overallCompletenessPercent": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "VinThreadFinalGateComplete": {
+        "name": "VinThreadFinalGateComplete",
+        "payload": {
+          "type": "object",
+          "required": [
+            "vin",
+            "completenessPercent",
+            "bodyInWhiteEntryAt",
+            "finalGateCertifiedAt",
+            "eventCount",
+            "completedAt",
+            "correlationId"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "eventCount": {
+              "type": "integer",
+              "description": "Total number of events in the complete thread"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "correlationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "bodyInWhiteEntryAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "completenessPercent": {
+              "type": "number",
+              "format": "float"
+            },
+            "finalGateCertifiedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "contentType": "application/json"
+      }
+    },
+    "securitySchemes": {
+      "saslScram": {
+        "type": "scramSha512",
+        "description": "Kafka SASL/SCRAM-SHA-512 with 90-day maximum credential rotation per EA-SEC-002"
+      }
+    }
+  },
+  "operations": {
+    "publishVinThreadEventLinked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/vin-thread-event-linked"
+      },
+      "summary": "Publish confirmation that a manufacturing event has been linked to a VIN node in the digital thread graph.",
+      "messages": [
+        {
+          "$ref": "#/channels/vin-thread-event-linked/messages/VinThreadEventLinked"
+        }
+      ]
+    },
+    "consumeUnsManufacturingEvent": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/uns-manufacturing-event"
+      },
+      "summary": "Consume raw manufacturing events from the UNS backbone and link them to VIN nodes in the Neo4j digital thread graph within 5 seconds.",
+      "messages": [
+        {
+          "$ref": "#/channels/uns-manufacturing-event/messages/UnsManufacturingEvent"
+        }
+      ]
+    },
+    "publishVinThreadCompletenessAlert": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/vin-thread-completeness-alert"
+      },
+      "summary": "Publish an alert when a VIN's digital thread completeness drops below 95%.",
+      "messages": [
+        {
+          "$ref": "#/channels/vin-thread-completeness-alert/messages/VinThreadCompletenessAlert"
+        }
+      ]
+    },
+    "publishVinThreadFinalGateComplete": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/vin-thread-final-gate-complete"
+      },
+      "summary": "Publish notification that a VIN has a complete unbroken digital thread from body-in-white through final quality gate.",
+      "messages": [
+        {
+          "$ref": "#/channels/vin-thread-final-gate-complete/messages/VinThreadFinalGateComplete"
+        }
+      ]
+    }
+  }
+}

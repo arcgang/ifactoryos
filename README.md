@@ -11,6 +11,10 @@ iFactoryOS — every component of the architecture
 | sequence-optimizer | `services/sequence-optimizer` | KServe, Python, scikit-optimize, MLflow, watsonx.governance | Python |
 | defect-genome | `services/defect-genome` | KServe, Python, scikit-learn, DBSCAN, XGBoost, MLflow, watsonx.governance | Python |
 | hyperledger-fabric | `services/hyperledger-fabric` | Hyperledger Fabric 2.5, Go chaincode | blank |
+| timescaledb | `services/timescaledb` | TimescaleDB 2.x, PostgreSQL 15 | blank |
+| line-command-api | `services/line-command-api` | Python | Python |
+| vin-digital-thread-api | `services/vin-digital-thread-api` | Python | Python |
+| hyperledger-fabric-api | `services/hyperledger-fabric-api` | Python | Python |
 | api-gateway | `platform/api-gateway` | IBM API Connect, IBM DataPower Gateway, OAuth 2.0 / OIDC | blank |
 | uns-backbone | `platform/uns-backbone` | Confluent Kafka, Confluent Schema Registry (Avro), MQTT Broker (HiveMQ/EMQX), Dead-Letter Queue | blank |
 | edge-gateways | `platform/edge-gateways` | Siemens SIMATIC IPC, Beckhoff ADS/ADS-UDP, MQTT Sparkplug B, SPIFFE/SPIRE SVID | blank |
@@ -20,7 +24,6 @@ iFactoryOS — every component of the architecture
 | hashicorp-vault | `platform/hashicorp-vault` | HashiCorp Vault, Vault Agent Injector, Kubernetes auth method | blank |
 | immutable-audit-log | `platform/immutable-audit-log` | Azure Blob Storage (WORM/Object Lock), AES-256 encryption | blank |
 | observability-stack | `platform/observability-stack` | Prometheus, Grafana, OpenTelemetry, IBM Instana | blank |
-| timescaledb | `platform/timescaledb` | TimescaleDB 2.x, PostgreSQL 15 | blank |
 | postgresql-citus | `platform/postgresql-citus` | PostgreSQL 15, Citus 12.x | blank |
 | jira-integration | `platform/jira-integration` | Jira REST API v3, OAuth 2.0 | blank |
 

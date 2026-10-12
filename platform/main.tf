@@ -43,11 +43,6 @@ module "observability_stack" {
   environment = var.environment
 }
 
-module "timescaledb" {
-  source      = "./timescaledb"
-  environment = var.environment
-}
-
 module "postgresql_citus" {
   source      = "./postgresql-citus"
   environment = var.environment

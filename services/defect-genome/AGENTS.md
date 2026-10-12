@@ -1,26 +1,27 @@
 # defect-genome
 
-LLD component `cmp:defect-genome` · KServe, Python, scikit-learn, DBSCAN, XGBoost, MLflow, watsonx.governance · seeded from the Python template
+LLD component `cmp:defect-genome` · KServe, Python, scikit-learn, DBSCAN, XGBoost, MLflow, watsonx.governance · seeded from Python
 
 Custom-trained paint defect clustering model — DBSCAN + XGBoost, real-time cluster detection, root-cause probability distribution, Rule-Based Defect Advisor v1 fallback
 
 ## Stories
 
+- `EN-defect-genome`
 - `US-014`
 - `US-015`
 
 ## Endpoints
 
-- `POST /defect/cluster-query`
+- `GET /defect-genome/alerts`
 - `GET /defect/clusters`
-- `GET /defect/clusters/{clusterId}`
-- `POST /defect/clusters/{clusterId}/corrective-action`
-- `GET /alerts`
+- `POST /models/feedback`
 - `GET /alerts/{alertId}`
-- `POST /alerts/{alertId}/acknowledge`
+- `POST /defect/cluster-query`
+- `GET /defect/clusters/{clusterId}`
 - `GET /models/confidence-threshold`
 - `PUT /models/confidence-threshold`
-- `POST /models/feedback`
+- `POST /defect-genome/alerts/{alertId}/acknowledge`
+- `POST /defect/clusters/{clusterId}/corrective-action`
 
 ## Entities
 
@@ -37,8 +38,8 @@ Custom-trained paint defect clustering model — DBSCAN + XGBoost, real-time clu
 
 - `evt:bmw.munich.paint.defect.events.v1`
 - `evt:bmw.munich.defectgenome.cluster.alerts.v1`
-- `evt:bmw.munich.defectgenome.query.results.v1`
 - `evt:bmw.munich.defectgenome.corrective.actions.v1`
+- `evt:bmw.munich.defectgenome.query.results.v1`
 
 ## Acceptance criteria
 

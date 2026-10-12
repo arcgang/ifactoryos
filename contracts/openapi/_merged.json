@@ -107,6 +107,83 @@
         "operationId": "getSyncHealth"
       }
     },
+    "/handover": {
+      "post": {
+        "tags": [
+          "Shift Handover"
+        ],
+        "summary": "Submit a structured digital shift handover",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverResponse"
+                }
+              }
+            },
+            "description": "Handover submitted successfully"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid handover payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have shift-lead role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Handover already submitted for this shift (idempotency)"
+          }
+        },
+        "description": "Creates a shift handover record linking open Andon alert dispositions, OEE delta, and held VINs. Emits HANDOVER_SUBMITTED adoption event. Satisfies AC-e37bcf34, AC-5f4b73cb, AC-04cd3711, AC-fd1f00c6.",
+        "operationId": "submitHandover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoverRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/optimize": {
       "post": {
         "summary": "Trigger a 50-run Monte Carlo optimisation and return a ranked VIN sequence",
@@ -189,6 +266,100 @@
           },
           "required": true
         }
+      }
+    },
+    "/handovers": {
+      "get": {
+        "tags": [
+          "Shift Handover"
+        ],
+        "summary": "List shift handover records (paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of handover records"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "fromTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "toTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "description": "Returns cursor-paginated handover records. Used by incoming Shift Lead and Plant Manager daily review. Satisfies AC-5f4b73cb, AC-04cd3711.",
+        "operationId": "listHandovers"
       }
     },
     "/overrides": {
@@ -388,6 +559,150 @@
         }
       }
     },
+    "/torque/log": {
+      "post": {
+        "tags": [
+          "Torque Log"
+        ],
+        "summary": "Submit a torque tightening record from the Beckhoff PLC via edge gateway",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueLogResponse"
+                }
+              }
+            },
+            "description": "Torque log accepted and forwarded to UNS"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueLogResponse"
+                }
+              }
+            },
+            "description": "Torque log accepted but UNS publish pending (edge-buffered scenario)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid torque log payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Duplicate torque log (idempotency key already processed)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueOutOfToleranceResponse"
+                }
+              }
+            },
+            "description": "Torque value out of tolerance — alert raised"
+          }
+        },
+        "description": "Accepts a torque/angle trace record for a VIN fastener point. Validates against VIN option-code tolerance, writes to torque_log table, forwards to UNS, and emits adoption event. Satisfies AC-13685a24, AC-69c77dfd, AC-b734032a, AC-fd1f00c6.",
+        "operationId": "submitTorqueLog",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TorqueLogRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/ar/sessions": {
+      "post": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "Record the start of an AR Workbench session for adoption instrumentation",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArSessionStartResponse"
+                }
+              }
+            },
+            "description": "AR session event recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "description": "Emits an AR_SESSION_START adoption event. Must include VIN, device type, and station ID. No biometric or gaze data. Satisfies AC-9c6cd996 and AC-fd1f00c6.",
+        "operationId": "startArSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArSessionStartRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/my26/config": {
       "get": {
         "summary": "Retrieve the current MY26 constraint model configuration",
@@ -429,6 +744,91 @@
           }
         },
         "operationId": "getMy26Config"
+      }
+    },
+    "/torque/logs": {
+      "get": {
+        "tags": [
+          "Torque Log"
+        ],
+        "summary": "List torque log records for a VIN or station (paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorqueLogListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of torque log records"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "description": "Returns cursor-paginated torque log records. Used by Shift Lead and Quality Studio for traceability review.",
+        "operationId": "listTorqueLogs"
       }
     },
     "/andon/alerts": {
@@ -519,6 +919,122 @@
         ],
         "description": "Returns paginated Andon alerts. Open predictive alerts are sorted by minutesToPredictedFailure ascending to support the Shift Lead Command Center view. Station-level only — no operator-identifiable data.",
         "operationId": "listAndonAlerts"
+      }
+    },
+    "/certificates": {
+      "get": {
+        "summary": "List Digital Birth Certificates with optional filters (VIN, shift, date range)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of certificate records"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_READER role"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor from previous response"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "maxLength": 17
+            },
+            "required": false,
+            "description": "Filter by Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "shiftId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "description": "Filter by shift identifier for shift export"
+          },
+          {
+            "in": "query",
+            "name": "issuedAfter",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 lower bound (inclusive) for certificate issuance timestamp"
+          },
+          {
+            "in": "query",
+            "name": "issuedBefore",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 upper bound (exclusive) for certificate issuance timestamp"
+          }
+        ],
+        "description": "Cursor-paginated list of certificate records. Supports shift export use case (AC-fb3fae1c) by filtering on shiftId or issuedAfter/issuedBefore.",
+        "operationId": "listCertificates"
       }
     },
     "/gate-results": {
@@ -818,6 +1334,63 @@
         ],
         "description": "Returns paginated list of sync jobs. Planners use this to monitor 'Pending Publish' status. Supports filtering by status.",
         "operationId": "listSyncJobs"
+      }
+    },
+    "/ar/expert-calls": {
+      "post": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "Initiate a remote expert call from the AR Workbench",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertCallResponse"
+                }
+              }
+            },
+            "description": "Expert call session created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "description": "Creates an expert call session record. Returns call mode (video/voice) based on Works Council approval flag. Satisfies AC-7293efd6, AC-48bbc2a6.",
+        "operationId": "initiateExpertCall",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpertCallRequest"
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/defect/clusters": {
@@ -1323,6 +1896,340 @@
         }
       }
     },
+    "/vin/{vin}/thread": {
+      "get": {
+        "tags": [
+          "Digital Thread"
+        ],
+        "summary": "Retrieve the full digital thread for a VIN — all manufacturing events from body-in-white through final quality gate, ordered by timestamp.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VinThreadResponse"
+                }
+              }
+            },
+            "description": "Digital thread events for the requested VIN"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN format or query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role (quality-engineer or quality-lead)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found in the digital thread graph"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error or Neo4j query failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Neo4j cluster temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor returned by a previous response"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false,
+            "description": "Maximum number of thread events to return (1–200)"
+          },
+          {
+            "in": "query",
+            "name": "shopFilter",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Comma-separated list of shop codes to restrict results (e.g. PAINT,BODY,ASSEMBLY)"
+          },
+          {
+            "in": "query",
+            "name": "fromTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 UTC timestamp — return only events at or after this time"
+          },
+          {
+            "in": "query",
+            "name": "toTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 UTC timestamp — return only events at or before this time"
+          }
+        ],
+        "operationId": "getVinThread"
+      }
+    },
+    "/certificate/issue": {
+      "post": {
+        "summary": "Anchor a Digital Birth Certificate to Hyperledger Fabric",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateIssueResponse"
+                }
+              }
+            },
+            "description": "Certificate already anchored (idempotent replay) — returns existing record"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateIssueResponse"
+                }
+              }
+            },
+            "description": "Certificate successfully anchored to Fabric"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_ISSUER role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict — certificateId already anchored with different payload (hash mismatch)"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric peer unavailable or transaction endorsement failed"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric transaction commit timed out (> 55 s)"
+          }
+        },
+        "description": "Accepts a certificate payload (VIN, gate results snapshot, health score, validator ID, timestamp, certificate hash), submits a Fabric transaction, and returns the Fabric transaction hash. Idempotent on certificateId — a duplicate submission returns the existing transaction hash without creating a new ledger entry.",
+        "operationId": "issueCertificate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificateIssueRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/defect-genome/alerts": {
+      "get": {
+        "summary": "List cluster alerts for the current user's Quality Studio session",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of cluster alerts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "$ref": "#/components/schemas/AlertStatus"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listClusterAlerts"
+      }
+    },
     "/defect/cluster-query": {
       "post": {
         "summary": "Run a DefectGenome cluster query for a defect class and return root-cause probability distribution",
@@ -1447,6 +2354,117 @@
           },
           "required": true
         }
+      }
+    },
+    "/ar/instructions/{vin}": {
+      "get": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "Retrieve VIN-specific AR holographic work instruction overlay",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArInstructionResponse"
+                }
+              }
+            },
+            "description": "VIN-specific AR instruction overlay"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN or missing required query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have the assembly-associate or shift-lead role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found in digital thread"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArInstructionFallbackResponse"
+                }
+              }
+            },
+            "description": "Upstream digital thread or instruction store did not respond within timeout; fallback payload included"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Station identifier (e.g. MARRIAGE-01, FINAL-02)"
+          },
+          {
+            "in": "query",
+            "name": "deviceType",
+            "schema": {
+              "enum": [
+                "HoloLens2",
+                "iPad"
+              ],
+              "type": "string"
+            },
+            "required": true,
+            "description": "AR device type for overlay rendering"
+          }
+        ],
+        "description": "Returns the full work instruction payload for the given VIN including option codes, torque specifications, step sequence, variant delta indicators, and a fallback PDF QR code URL. Must respond within 5 s at p95 to satisfy AC-00bc6b07.",
+        "operationId": "getArInstructions"
       }
     },
     "/andon/alerts/{alertId}": {
@@ -1628,6 +2646,64 @@
         }
       }
     },
+    "/handovers/{handoverId}": {
+      "get": {
+        "tags": [
+          "Shift Handover"
+        ],
+        "summary": "Retrieve a single shift handover record by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverRecord"
+                }
+              }
+            },
+            "description": "Handover record"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Handover not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handoverId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "description": "Returns the full handover record including alert dispositions, OEE delta, and held VINs. Satisfies AC-5f4b73cb, AC-04cd3711.",
+        "operationId": "getHandover"
+      }
+    },
     "/overrides/{overrideId}": {
       "get": {
         "summary": "Retrieve a single override record",
@@ -1680,6 +2756,352 @@
           }
         ],
         "operationId": "getOverride"
+      }
+    },
+    "/vin/{vin}/thread/events": {
+      "post": {
+        "tags": [
+          "Event Ingestion"
+        ],
+        "summary": "Ingest a single manufacturing event and link it to the VIN node in the Neo4j digital thread graph. Called by internal services (e.g. UNS consumer) via service-to-service OAuth 2.0 Client Credentials.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadEventIngestResponse"
+                }
+              }
+            },
+            "description": "Event successfully linked to the VIN node in the digital thread graph"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN or event payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role (thread-ingestor)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Duplicate event — idempotency key already processed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Event payload fails schema validation"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error or Neo4j write failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Neo4j cluster temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          }
+        ],
+        "operationId": "ingestVinThreadEvent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadEventIngestRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/vin/{vin}/thread/replay": {
+      "get": {
+        "tags": [
+          "Process Replay"
+        ],
+        "summary": "Retrieve the Process Replay payload for a VIN — all 14 paint prep stage parameters, booth parameters, and climate data as an aligned time-series with completeness metadata.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessReplayResponse"
+                }
+              }
+            },
+            "description": "Process Replay payload with aligned time-series and completeness metadata"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN format or query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role (quality-engineer or quality-lead)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found in the digital thread graph"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error or Neo4j query failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Neo4j cluster temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor returned by a previous response"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false,
+            "description": "Maximum number of parameter samples to return per page (1–200)"
+          }
+        ],
+        "operationId": "getVinProcessReplay"
+      }
+    },
+    "/line-command/andon/alerts": {
+      "get": {
+        "tags": [
+          "Andon Alerts"
+        ],
+        "summary": "List open predictive Andon alerts for the current shift (paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndonAlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of Andon alerts"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "shiftId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "open",
+                "resolved",
+                "escalated",
+                "monitoring"
+              ],
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "description": "Returns cursor-paginated open Andon alerts. Used by Handover Builder to pre-populate alert line items. Satisfies AC-e37bcf34.",
+        "operationId": "listAndonAlerts"
       }
     },
     "/sequence/jobs/{syncJobId}": {
@@ -1744,6 +3166,180 @@
           }
         ],
         "operationId": "getSyncJob"
+      }
+    },
+    "/vin/{vin}/thread/snapshot": {
+      "get": {
+        "tags": [
+          "Process Replay"
+        ],
+        "summary": "Return all parameter values for a VIN at a specific timestamp — supports timeline scrubbing in the Process Replay UI.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSnapshotResponse"
+                }
+              }
+            },
+            "description": "Parameter snapshot at the requested timestamp"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN or timestamp"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found or no data at the requested timestamp"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "atTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true,
+            "description": "ISO 8601 UTC timestamp for the scrub point"
+          }
+        ],
+        "operationId": "getVinThreadSnapshot"
+      }
+    },
+    "/certificate/{certificateId}": {
+      "get": {
+        "summary": "Retrieve a certificate record and its Fabric anchor by certificateId",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateRecord"
+                }
+              }
+            },
+            "description": "Certificate record found"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_READER role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Certificate not found"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric ledger query failed"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "certificateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "description": "UUID of the Digital Birth Certificate"
+          }
+        ],
+        "description": "Returns the stored certificate metadata and the Fabric transaction hash. Used by quality-studio to verify tamper-evidence (AC-c040ff38).",
+        "operationId": "getCertificate"
       }
     },
     "/defect/clusters/{clusterId}": {
@@ -2042,6 +3638,172 @@
         "operationId": "acknowledgeAlert"
       }
     },
+    "/ar/expert-calls/{callId}/end": {
+      "post": {
+        "tags": [
+          "AR Instructions"
+        ],
+        "summary": "End a remote expert call and log the session to the VIN digital thread audit trail",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertCallEndResponse"
+                }
+              }
+            },
+            "description": "Expert call ended and logged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Call session not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "callId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "description": "Closes the call session and writes call duration, VIN, station ID, call mode, and expert user ID to the audit trail. No biometric or gaze data. Satisfies AC-e30375d9.",
+        "operationId": "endExpertCall",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpertCallEndRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/vin/{vin}/thread/completeness": {
+      "get": {
+        "tags": [
+          "Process Replay"
+        ],
+        "summary": "Return per-stage completeness metrics for a VIN's digital thread — used to render grey gaps and the completeness percentage in Process Replay.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadCompletenessResponse"
+                }
+              }
+            },
+            "description": "Completeness report for all stages of the VIN's digital thread"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN format"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          }
+        ],
+        "operationId": "getVinThreadCompleteness"
+      }
+    },
     "/optimize/{runId}/explain/{vin}": {
       "get": {
         "summary": "Return top-3 constraint factors driving a VIN's position in a given run",
@@ -2103,6 +3865,274 @@
           }
         ],
         "operationId": "explainVinPosition"
+      }
+    },
+    "/andon/alerts/{alertId}/acknowledge": {
+      "post": {
+        "tags": [
+          "Andon Alerts"
+        ],
+        "summary": "Acknowledge a predictive Andon alert and record disposition",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertAcknowledgeResponse"
+                }
+              }
+            },
+            "description": "Alert acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid disposition value"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have shift-lead role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert already acknowledged"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "description": "Records the Shift Lead's disposition (resolved/escalated/monitoring) for an alert. Emits ALERT_ACKNOWLEDGED adoption event. Satisfies AC-fd1f00c6.",
+        "operationId": "acknowledgeAndonAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertAcknowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/certificate/{certificateId}/verify": {
+      "get": {
+        "summary": "Verify that a certificate hash matches the Fabric ledger entry",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateVerifyResponse"
+                }
+              }
+            },
+            "description": "Verification result"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks CERTIFICATE_READER role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Certificate not found"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Fabric ledger query failed"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "certificateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "description": "UUID of the Digital Birth Certificate to verify"
+          }
+        ],
+        "description": "Queries the Fabric ledger for the stored hash and compares it against the hash of the current certificate record, confirming tamper-evidence (AC-c040ff38).",
+        "operationId": "verifyCertificate"
+      }
+    },
+    "/defect-genome/alerts/{alertId}/acknowledge": {
+      "post": {
+        "summary": "Acknowledge a cluster alert and optionally assign a corrective action",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterAlert"
+                }
+              }
+            },
+            "description": "Alert acknowledged and status updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert already acknowledged"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "acknowledgeClusterAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgeAlertRequest"
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/defect/clusters/{clusterId}/corrective-action": {
@@ -2726,6 +4756,93 @@
           }
         }
       },
+      "ThreadEvent": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "vin",
+          "eventType",
+          "shop",
+          "station",
+          "occurredAt",
+          "dataSource",
+          "parameters"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "description": "17-character VIN this event is linked to"
+          },
+          "shop": {
+            "type": "string",
+            "description": "Shop code where the event occurred (e.g. PAINT, BODY, ASSEMBLY)"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable unique identifier for this event node in the graph"
+          },
+          "station": {
+            "type": "string",
+            "description": "Station identifier within the shop (anonymised to station level per GDPR)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when this event was written to the digital thread graph"
+          },
+          "eventType": {
+            "enum": [
+              "PLC_TRACE",
+              "GATE_RESULT",
+              "TORQUE_LOG",
+              "AR_INSTRUCTION_EXECUTION",
+              "PAINT_PREP_STAGE",
+              "BOOTH_PARAMETER",
+              "CLIMATE_DATA",
+              "SHOP_BOUNDARY_TRANSITION",
+              "QUALITY_CERTIFICATION"
+            ],
+            "type": "string",
+            "description": "Discriminator for the event category"
+          },
+          "dataSource": {
+            "type": "string",
+            "description": "Originating system identifier (e.g. BECKHOFF_PLC_WELD_CELL_7, OPCENTER, UNS)"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the event occurred at the physical station"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Key-value map of process parameters captured at this event (e.g. ecoat_voltage_v, phosphate_concentration_g_l, humidity_pct, temperature_c)",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "stageNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Paint prep stage number 1–14; null for non-paint events"
+          },
+          "tunnelPositionMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "VIN position in the prep tunnel in millimetres at the time of this event; null for non-tunnel events"
+          }
+        }
+      },
       "ClusterAlert": {
         "type": "object",
         "required": [
@@ -2889,6 +5006,72 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "HandoverRecord": {
+        "type": "object",
+        "required": [
+          "handoverId",
+          "shiftId",
+          "lineId",
+          "shiftStartTs",
+          "shiftEndTs",
+          "submittedByUserId",
+          "alertDispositions",
+          "oeeDeltaPct",
+          "heldVins",
+          "createdAt"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "heldVins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "handoverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shiftEndTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "oeeDeltaPct": {
+            "type": "number",
+            "format": "double"
+          },
+          "shiftStartTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "alertDispositions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertDispositionItem"
+            }
+          },
+          "submittedByUserId": {
+            "type": "string"
           }
         }
       },
@@ -3110,6 +5293,61 @@
           }
         }
       },
+      "HandoverRequest": {
+        "type": "object",
+        "required": [
+          "shiftId",
+          "lineId",
+          "shiftStartTs",
+          "shiftEndTs",
+          "alertDispositions",
+          "oeeDeltaPct"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "lineId": {
+            "type": "string"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "heldVins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "description": "VINs flagged for quality review"
+          },
+          "shiftEndTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "oeeDeltaPct": {
+            "type": "number",
+            "format": "double",
+            "description": "OEE delta: current shift vs. 30-day average per weld line (positive = above average)"
+          },
+          "shiftStartTs": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertDispositions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertDispositionItem"
+            }
+          }
+        }
+      },
       "My26ConfigDraft": {
         "type": "object",
         "required": [
@@ -3274,6 +5512,67 @@
           }
         }
       },
+      "TorqueLogRecord": {
+        "type": "object",
+        "required": [
+          "torqueLogId",
+          "vin",
+          "stationId",
+          "fastenerPointId",
+          "torqueNm",
+          "anglesDeg",
+          "status",
+          "plcTimestamp",
+          "createdAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "in_tolerance",
+              "out_of_tolerance",
+              "pending_sync"
+            ],
+            "type": "string"
+          },
+          "torqueNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "anglesDeg": {
+            "type": "number",
+            "format": "double"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "torqueLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plcTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          },
+          "unsPublishStatus": {
+            "enum": [
+              "published",
+              "queued",
+              "failed"
+            ],
+            "type": "string"
+          }
+        }
+      },
       "VinSequenceItem": {
         "type": "object",
         "required": [
@@ -3331,6 +5630,27 @@
           "weightedScore": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "HandoverResponse": {
+        "type": "object",
+        "required": [
+          "handoverId",
+          "submittedAt",
+          "submittedByUserId"
+        ],
+        "properties": {
+          "handoverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedByUserId": {
+            "type": "string"
           }
         }
       },
@@ -3411,6 +5731,77 @@
           }
         }
       },
+      "TorqueLogRequest": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "fastenerPointId",
+          "torqueNm",
+          "anglesDeg",
+          "plcTimestamp",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "torqueNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "anglesDeg": {
+            "type": "number",
+            "format": "double"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "traceData": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "offsetMs",
+                "torqueNm",
+                "angleDeg"
+              ],
+              "properties": {
+                "angleDeg": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "offsetMs": {
+                  "type": "integer"
+                },
+                "torqueNm": {
+                  "type": "number",
+                  "format": "double"
+                }
+              }
+            },
+            "description": "Raw PLC torque/angle trace samples (1kHz or 100Hz)"
+          },
+          "edgeBuffered": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when submitted from edge buffer after UNS reconnection"
+          },
+          "plcTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "PLC-generated idempotency key; prevents duplicate log on retry"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          }
+        }
+      },
       "AlertListResponse": {
         "type": "object",
         "required": [
@@ -3426,6 +5817,181 @@
           },
           "page": {
             "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ArInstructionStep": {
+        "type": "object",
+        "required": [
+          "stepNumber",
+          "description",
+          "torqueSpecNm",
+          "torqueToleranceNm",
+          "fastenerPointId"
+        ],
+        "properties": {
+          "stepNumber": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "torqueSpecNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "isVariantDelta": {
+            "type": "boolean",
+            "description": "True if this step differs from standard i4 configuration"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          },
+          "variantDeltaNote": {
+            "type": "string",
+            "description": "Human-readable description of what differs for this variant"
+          },
+          "torqueToleranceNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "holographicAssetUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "CertificateRecord": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "vin",
+          "gateResultSnapshot",
+          "healthScore",
+          "validatorId",
+          "issuedAt",
+          "certificateHash",
+          "fabricTransactionId",
+          "fabricBlockNumber",
+          "anchoredAt",
+          "sourceSystem"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "anchoredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "healthScore": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "validatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceSystem": {
+            "enum": [
+              "quality-studio",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "certificateHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "fabricBlockNumber": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gateResultSnapshot": {
+            "$ref": "#/components/schemas/GateResultSnapshot"
+          },
+          "fabricTransactionId": {
+            "type": "string"
+          }
+        }
+      },
+      "ClimateTimeSeries": {
+        "type": "object",
+        "required": [
+          "available",
+          "samples"
+        ],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ts",
+                "parameters"
+              ],
+              "properties": {
+                "ts": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "number",
+                      "string",
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ExpertCallRequest": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "sessionId"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -3504,6 +6070,75 @@
           },
           "constraintSnapshot": {
             "$ref": "#/components/schemas/ConstraintSnapshot"
+          }
+        }
+      },
+      "TorqueLogResponse": {
+        "type": "object",
+        "required": [
+          "torqueLogId",
+          "vin",
+          "status",
+          "unsPublishStatus",
+          "recordedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "pending_sync"
+            ],
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "torqueLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unsPublishStatus": {
+            "enum": [
+              "published",
+              "queued",
+              "failed"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "VinThreadResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "data",
+          "page"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThreadEvent"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          },
+          "vinStatus": {
+            "enum": [
+              "IN_PROGRESS",
+              "FINAL_GATE_COMPLETE",
+              "UNKNOWN"
+            ],
+            "type": "string",
+            "description": "Current lifecycle status of the VIN in the manufacturing process"
           }
         }
       },
@@ -3614,6 +6249,82 @@
           }
         },
         "description": "Live constraint values fetched from UNS at the time of the optimisation request"
+      },
+      "ExpertCallResponse": {
+        "type": "object",
+        "required": [
+          "callId",
+          "callMode",
+          "createdAt"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "callMode": {
+            "enum": [
+              "video",
+              "voice"
+            ],
+            "type": "string",
+            "description": "Determined by Works Council approval flag stored server-side"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GateResultSnapshot": {
+        "type": "object",
+        "required": [
+          "gateId",
+          "stationResults"
+        ],
+        "properties": {
+          "gateId": {
+            "type": "string",
+            "description": "Quality gate identifier (e.g., GATE-3)"
+          },
+          "stationResults": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "stationCode",
+                "result"
+              ],
+              "properties": {
+                "result": {
+                  "enum": [
+                    "PASS",
+                    "CONDITIONAL",
+                    "FAIL"
+                  ],
+                  "type": "string",
+                  "description": "Station-level result"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Optional free-text detail or anomaly description"
+                },
+                "stationCode": {
+                  "enum": [
+                    "DIM",
+                    "LEAK",
+                    "ELEC",
+                    "NVH",
+                    "ADAS"
+                  ],
+                  "type": "string",
+                  "description": "Gate station code"
+                }
+              }
+            }
+          }
+        },
+        "description": "Snapshot of all gate station results at time of certification"
       },
       "SyncHealthResponse": {
         "type": "object",
@@ -3798,6 +6509,65 @@
           }
         }
       },
+      "PrepStageTimeSeries": {
+        "type": "object",
+        "required": [
+          "stageNumber",
+          "stageName",
+          "available",
+          "samples"
+        ],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ts",
+                "parameters"
+              ],
+              "properties": {
+                "ts": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "number",
+                      "string",
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "tunnelPositionMm": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "Time-ordered parameter samples for this stage"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "False when no data was received for this stage (OQ-6 partial traceability scenario)"
+          },
+          "stageName": {
+            "type": "string",
+            "description": "Human-readable stage name (e.g. Pre-Degreasing, Phosphating, E-Coat)"
+          },
+          "stageNumber": {
+            "type": "integer",
+            "maximum": 14,
+            "minimum": 1,
+            "description": "Paint prep stage number (1–14)"
+          }
+        }
+      },
       "SyncJobListResponse": {
         "type": "object",
         "required": [
@@ -3809,6 +6579,65 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SyncJob"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "AlertDispositionItem": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "disposition"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "disposition": {
+            "enum": [
+              "resolved",
+              "escalated",
+              "monitoring"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "ExpertCallEndRequest": {
+        "type": "object",
+        "required": [
+          "expertUserId",
+          "durationSeconds"
+        ],
+        "properties": {
+          "expertUserId": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "HandoverListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HandoverRecord"
             }
           },
           "page": {
@@ -3890,6 +6719,167 @@
           }
         }
       },
+      "ArInstructionResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "optionCodes",
+          "variantCode",
+          "isRareVariant",
+          "steps",
+          "instructionVersion",
+          "fetchedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArInstructionStep"
+            }
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "variantCode": {
+            "type": "string"
+          },
+          "isRareVariant": {
+            "type": "boolean"
+          },
+          "fallbackPdfQrUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "QR code URL for fallback PDF; always populated"
+          },
+          "instructionVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "ArSessionStartRequest": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "deviceType"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "deviceType": {
+            "enum": [
+              "HoloLens2",
+              "iPad"
+            ],
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated idempotency key"
+          }
+        }
+      },
+      "ExpertCallEndResponse": {
+        "type": "object",
+        "required": [
+          "callId",
+          "auditEntryId",
+          "endedAt"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "auditEntryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ProcessReplayResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "overallCompletenessPercent",
+          "prepStages",
+          "boothParameters",
+          "climateData",
+          "page"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          },
+          "prepStages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrepStageTimeSeries"
+            },
+            "maxItems": 14,
+            "minItems": 14
+          },
+          "climateData": {
+            "$ref": "#/components/schemas/ClimateTimeSeries"
+          },
+          "boothParameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BoothParameterTimeSeries"
+            }
+          },
+          "replayWindowEnd": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Latest timestamp in the replay dataset"
+          },
+          "replayWindowStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Earliest timestamp in the replay dataset"
+          },
+          "overallCompletenessPercent": {
+            "type": "number",
+            "format": "float",
+            "maximum": 100,
+            "minimum": 0,
+            "description": "Percentage of expected parameter samples that are present across all 14 prep stages"
+          }
+        }
+      },
       "ThresholdListResponse": {
         "type": "object",
         "required": [
@@ -3901,6 +6891,24 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ConstraintThreshold"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "TorqueLogListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TorqueLogRecord"
             }
           },
           "page": {
@@ -3923,6 +6931,28 @@
           },
           "page": {
             "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ArSessionStartResponse": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "eventId",
+          "recordedAt"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -4017,6 +7047,64 @@
           }
         }
       },
+      "ThreadSnapshotResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "atTs",
+          "stageName",
+          "stageNumber",
+          "tunnelPositionMm",
+          "parameters"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "atTs": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The requested scrub timestamp"
+          },
+          "stageName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Name of the prep stage the VIN was in at the requested timestamp; null if outside paint prep"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "All parameter values interpolated or last-known at the requested timestamp",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "stageNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Prep stage number 1–14 at the requested timestamp; null if outside paint prep"
+          },
+          "dataAvailable": {
+            "type": "boolean",
+            "description": "False when the requested timestamp falls in a data gap (OQ-6 scenario)"
+          },
+          "tunnelPositionMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "VIN position in the prep tunnel in millimetres at the requested timestamp"
+          }
+        }
+      },
       "AcknowledgeAlertRequest": {
         "type": "object",
         "required": [
@@ -4032,6 +7120,108 @@
           "corrective_action_jira_id": {
             "type": "string",
             "description": "Jira ticket ID if corrective action already created"
+          }
+        }
+      },
+      "AlertAcknowledgeRequest": {
+        "type": "object",
+        "required": [
+          "disposition"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "disposition": {
+            "enum": [
+              "resolved",
+              "escalated",
+              "monitoring"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "CertificateIssueRequest": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "vin",
+          "gateResultSnapshot",
+          "healthScore",
+          "validatorId",
+          "issuedAt",
+          "certificateHash"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17,
+            "description": "Vehicle Identification Number (17-char ISO 3779)"
+          },
+          "shiftId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Shift identifier — used for shift export grouping (AC-fb3fae1c)"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp of the certify action in quality-studio"
+          },
+          "healthScore": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "description": "Unified vehicle health score at time of certification (0–100)"
+          },
+          "validatorId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "BMW Entra ID subject (sub claim) of the certifying Quality Gate Validator"
+          },
+          "sourceSystem": {
+            "enum": [
+              "quality-studio",
+              "legacy"
+            ],
+            "type": "string",
+            "default": "quality-studio",
+            "description": "Originating system — enables A7 metric (≥90% certs via quality-studio)"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated UUID for idempotency key — must be stable across retries"
+          },
+          "certificateHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hex digest of the canonical certificate payload (computed by caller before submission)"
+          },
+          "gateResultSnapshot": {
+            "$ref": "#/components/schemas/GateResultSnapshot"
+          }
+        }
+      },
+      "CertificateListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CertificateRecord"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
           }
         }
       },
@@ -4132,6 +7322,275 @@
           }
         }
       },
+      "StageCompletenessDetail": {
+        "type": "object",
+        "required": [
+          "stageNumber",
+          "stageName",
+          "available",
+          "completenessPercent",
+          "expectedSampleCount",
+          "actualSampleCount"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "stageName": {
+            "type": "string"
+          },
+          "stageNumber": {
+            "type": "integer",
+            "maximum": 14,
+            "minimum": 1
+          },
+          "actualSampleCount": {
+            "type": "integer"
+          },
+          "missingParameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of parameter names with no data for this stage"
+          },
+          "completenessPercent": {
+            "type": "number",
+            "format": "float",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "expectedSampleCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "AlertAcknowledgeResponse": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "status",
+          "acknowledgedAt",
+          "eventId"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BoothParameterTimeSeries": {
+        "type": "object",
+        "required": [
+          "boothId",
+          "available",
+          "samples"
+        ],
+        "properties": {
+          "boothId": {
+            "type": "string",
+            "description": "Booth identifier (e.g. BOOTH_1 through BOOTH_6)"
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ts",
+                "parameters"
+              ],
+              "properties": {
+                "ts": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "number",
+                      "string",
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CertificateIssueResponse": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "vin",
+          "fabricTransactionId",
+          "fabricBlockNumber",
+          "anchoredAt",
+          "certificateHash"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "anchoredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the Fabric transaction was committed"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "description": "True if this response was served from an existing record (duplicate submission)"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "certificateHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hex digest echoed back for caller verification"
+          },
+          "fabricBlockNumber": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fabric block number in which the transaction was committed"
+          },
+          "fabricTransactionId": {
+            "type": "string",
+            "description": "Hyperledger Fabric transaction ID (hex string) — the immutable anchor reference"
+          }
+        }
+      },
+      "ThreadEventIngestRequest": {
+        "type": "object",
+        "required": [
+          "idempotencyKey",
+          "eventType",
+          "shop",
+          "station",
+          "occurredAt",
+          "dataSource",
+          "parameters"
+        ],
+        "properties": {
+          "shop": {
+            "type": "string"
+          },
+          "station": {
+            "type": "string"
+          },
+          "eventType": {
+            "enum": [
+              "PLC_TRACE",
+              "GATE_RESULT",
+              "TORQUE_LOG",
+              "AR_INSTRUCTION_EXECUTION",
+              "PAINT_PREP_STAGE",
+              "BOOTH_PARAMETER",
+              "CLIMATE_DATA",
+              "SHOP_BOUNDARY_TRANSITION",
+              "QUALITY_CERTIFICATION"
+            ],
+            "type": "string"
+          },
+          "dataSource": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "stageNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 14,
+            "minimum": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated UUID; duplicate submissions with the same key return 409"
+          },
+          "tunnelPositionMm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "CertificateVerifyResponse": {
+        "type": "object",
+        "required": [
+          "certificateId",
+          "verified",
+          "storedHash",
+          "fabricTransactionId"
+        ],
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "description": "True if the stored certificate hash matches the Fabric ledger entry"
+          },
+          "fabricHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hash retrieved from the Fabric ledger (null if Fabric query failed)"
+          },
+          "storedHash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "description": "SHA-256 hash stored in the local database"
+          },
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "certificateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mismatchReason": {
+            "type": "string",
+            "description": "Human-readable explanation when verified=false"
+          },
+          "fabricTransactionId": {
+            "type": "string"
+          }
+        }
+      },
       "ConfidenceThresholdConfig": {
         "type": "object",
         "required": [
@@ -4170,6 +7629,133 @@
             "default": 4,
             "minimum": 1,
             "description": "Rolling window in hours for cluster alert detection"
+          }
+        }
+      },
+      "ThreadEventIngestResponse": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "vin",
+          "linkedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID assigned to the newly created event node in the graph"
+          },
+          "linkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the event was linked to the VIN node in Neo4j"
+          }
+        }
+      },
+      "ThreadCompletenessResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "overallCompletenessPercent",
+          "stages"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageCompletenessDetail"
+            }
+          },
+          "meetsThreshold": {
+            "type": "boolean",
+            "description": "True when overallCompletenessPercent >= 95 (post-UNS go-live requirement)"
+          },
+          "overallCompletenessPercent": {
+            "type": "number",
+            "format": "float",
+            "maximum": 100,
+            "minimum": 0
+          }
+        }
+      },
+      "TorqueOutOfToleranceResponse": {
+        "type": "object",
+        "required": [
+          "torqueLogId",
+          "vin",
+          "fastenerPointId",
+          "torqueNm",
+          "specNm",
+          "toleranceNm",
+          "alertId",
+          "recordedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "specNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "torqueNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "toleranceNm": {
+            "type": "number",
+            "format": "double"
+          },
+          "torqueLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fastenerPointId": {
+            "type": "string"
+          }
+        }
+      },
+      "ArInstructionFallbackResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "stationId",
+          "fallbackPdfQrUrl",
+          "failureLoggedAt",
+          "correlationId"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "failureLoggedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fallbackPdfQrUrl": {
+            "type": "string",
+            "format": "uri"
           }
         }
       }

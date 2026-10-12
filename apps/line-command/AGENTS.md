@@ -1,6 +1,6 @@
 # line-command
 
-LLD component `cmp:line-command` · React 18, TypeScript, Microsoft HoloLens 2 (WebXR), iPad Pro (ARKit), OpenTelemetry SDK, BMW Entra ID OIDC · seeded from the React template
+LLD component `cmp:line-command` · React 18, TypeScript, Microsoft HoloLens 2 (WebXR), iPad Pro (ARKit), OpenTelemetry SDK, BMW Entra ID OIDC · seeded from React
 
 Role-based console for Shift Leads and Assembly Associates — OEE monitoring, predictive Andon, AR work instructions, shift handover
 
@@ -17,23 +17,17 @@ Role-based console for Shift Leads and Assembly Associates — OEE monitoring, p
 - `US-023`
 - `US-024`
 
-## Endpoints
-
-- `GET /api/v1/ar/instructions/{vin}`
-- `POST /api/v1/torque/log`
-- `POST /api/v1/handover`
-
 ## Events
 
-- `evt:factory.munich.line-command.adoption.v1`
-- `evt:factory.munich.line-command.ar-session.v1`
-- `evt:factory.munich.line-command.torque-log.v1`
-- `evt:factory.munich.line-command.handover.v1`
-- `evt:factory.munich.line-command.maintenance-dispatch.v1`
-- `evt:factory.munich.line-command.expert-call.v1`
-- `evt:factory.munich.opcenter.oee.snapshot.v1`
 - `evt:factory.munich.opcenter.andon.alert.v1`
+- `evt:factory.munich.opcenter.oee.snapshot.v1`
+- `evt:factory.munich.line-command.ar-session.v1`
 - `evt:factory.munich.vin-thread.torque.feedback.v1`
+- `evt:factory.munich.line-command.torque-log.v1`
+- `evt:factory.munich.line-command.expert-call.v1`
+- `evt:factory.munich.line-command.handover.v1`
+- `evt:factory.munich.line-command.adoption.v1`
+- `evt:factory.munich.line-command.maintenance-dispatch.v1`
 
 ## Acceptance criteria
 

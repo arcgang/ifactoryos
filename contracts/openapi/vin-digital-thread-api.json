@@ -1,0 +1,1215 @@
+{
+  "info": {
+    "title": "VIN Digital Thread API",
+    "version": "1.0.0",
+    "description": "API in front of the Neo4j VIN digital thread graph — serves Process Replay and digital thread queries for Quality Studio and other consumers."
+  },
+  "paths": {
+    "/vin/{vin}/thread": {
+      "get": {
+        "tags": [
+          "Digital Thread"
+        ],
+        "summary": "Retrieve the full digital thread for a VIN — all manufacturing events from body-in-white through final quality gate, ordered by timestamp.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VinThreadResponse"
+                }
+              }
+            },
+            "description": "Digital thread events for the requested VIN"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN format or query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role (quality-engineer or quality-lead)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found in the digital thread graph"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error or Neo4j query failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Neo4j cluster temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor returned by a previous response"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false,
+            "description": "Maximum number of thread events to return (1–200)"
+          },
+          {
+            "in": "query",
+            "name": "shopFilter",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Comma-separated list of shop codes to restrict results (e.g. PAINT,BODY,ASSEMBLY)"
+          },
+          {
+            "in": "query",
+            "name": "fromTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 UTC timestamp — return only events at or after this time"
+          },
+          {
+            "in": "query",
+            "name": "toTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "ISO 8601 UTC timestamp — return only events at or before this time"
+          }
+        ],
+        "operationId": "getVinThread"
+      }
+    },
+    "/vin/{vin}/thread/events": {
+      "post": {
+        "tags": [
+          "Event Ingestion"
+        ],
+        "summary": "Ingest a single manufacturing event and link it to the VIN node in the Neo4j digital thread graph. Called by internal services (e.g. UNS consumer) via service-to-service OAuth 2.0 Client Credentials.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadEventIngestResponse"
+                }
+              }
+            },
+            "description": "Event successfully linked to the VIN node in the digital thread graph"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN or event payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role (thread-ingestor)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Duplicate event — idempotency key already processed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Event payload fails schema validation"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error or Neo4j write failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Neo4j cluster temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          }
+        ],
+        "operationId": "ingestVinThreadEvent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadEventIngestRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/vin/{vin}/thread/replay": {
+      "get": {
+        "tags": [
+          "Process Replay"
+        ],
+        "summary": "Retrieve the Process Replay payload for a VIN — all 14 paint prep stage parameters, booth parameters, and climate data as an aligned time-series with completeness metadata.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessReplayResponse"
+                }
+              }
+            },
+            "description": "Process Replay payload with aligned time-series and completeness metadata"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN format or query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role (quality-engineer or quality-lead)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found in the digital thread graph"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error or Neo4j query failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Neo4j cluster temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor returned by a previous response"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false,
+            "description": "Maximum number of parameter samples to return per page (1–200)"
+          }
+        ],
+        "operationId": "getVinProcessReplay"
+      }
+    },
+    "/vin/{vin}/thread/snapshot": {
+      "get": {
+        "tags": [
+          "Process Replay"
+        ],
+        "summary": "Return all parameter values for a VIN at a specific timestamp — supports timeline scrubbing in the Process Replay UI.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSnapshotResponse"
+                }
+              }
+            },
+            "description": "Parameter snapshot at the requested timestamp"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN or timestamp"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found or no data at the requested timestamp"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          },
+          {
+            "in": "query",
+            "name": "atTs",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true,
+            "description": "ISO 8601 UTC timestamp for the scrub point"
+          }
+        ],
+        "operationId": "getVinThreadSnapshot"
+      }
+    },
+    "/vin/{vin}/thread/completeness": {
+      "get": {
+        "tags": [
+          "Process Replay"
+        ],
+        "summary": "Return per-stage completeness metrics for a VIN's digital thread — used to render grey gaps and the completeness percentage in Process Replay.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadCompletenessResponse"
+                }
+              }
+            },
+            "description": "Completeness report for all stages of the VIN's digital thread"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid VIN format"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller lacks required role"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "VIN not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true,
+            "description": "17-character ISO 3779 Vehicle Identification Number"
+          }
+        ],
+        "operationId": "getVinThreadCompleteness"
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "servers": [
+    {
+      "url": "https://api.factory-os.bmw.de/api/v1",
+      "description": "Production — Azure Germany West Central (ARO)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "ThreadEvent": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "vin",
+          "eventType",
+          "shop",
+          "station",
+          "occurredAt",
+          "dataSource",
+          "parameters"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "description": "17-character VIN this event is linked to"
+          },
+          "shop": {
+            "type": "string",
+            "description": "Shop code where the event occurred (e.g. PAINT, BODY, ASSEMBLY)"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable unique identifier for this event node in the graph"
+          },
+          "station": {
+            "type": "string",
+            "description": "Station identifier within the shop (anonymised to station level per GDPR)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when this event was written to the digital thread graph"
+          },
+          "eventType": {
+            "enum": [
+              "PLC_TRACE",
+              "GATE_RESULT",
+              "TORQUE_LOG",
+              "AR_INSTRUCTION_EXECUTION",
+              "PAINT_PREP_STAGE",
+              "BOOTH_PARAMETER",
+              "CLIMATE_DATA",
+              "SHOP_BOUNDARY_TRANSITION",
+              "QUALITY_CERTIFICATION"
+            ],
+            "type": "string",
+            "description": "Discriminator for the event category"
+          },
+          "dataSource": {
+            "type": "string",
+            "description": "Originating system identifier (e.g. BECKHOFF_PLC_WELD_CELL_7, OPCENTER, UNS)"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the event occurred at the physical station"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Key-value map of process parameters captured at this event (e.g. ecoat_voltage_v, phosphate_concentration_g_l, humidity_pct, temperature_c)",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "stageNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Paint prep stage number 1–14; null for non-paint events"
+          },
+          "tunnelPositionMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "VIN position in the prep tunnel in millimetres at the time of this event; null for non-tunnel events"
+          }
+        }
+      },
+      "ClimateTimeSeries": {
+        "type": "object",
+        "required": [
+          "available",
+          "samples"
+        ],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ts",
+                "parameters"
+              ],
+              "properties": {
+                "ts": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "number",
+                      "string",
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VinThreadResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "data",
+          "page"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThreadEvent"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          },
+          "vinStatus": {
+            "enum": [
+              "IN_PROGRESS",
+              "FINAL_GATE_COMPLETE",
+              "UNKNOWN"
+            ],
+            "type": "string",
+            "description": "Current lifecycle status of the VIN in the manufacturing process"
+          }
+        }
+      },
+      "PrepStageTimeSeries": {
+        "type": "object",
+        "required": [
+          "stageNumber",
+          "stageName",
+          "available",
+          "samples"
+        ],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ts",
+                "parameters"
+              ],
+              "properties": {
+                "ts": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "number",
+                      "string",
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "tunnelPositionMm": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "Time-ordered parameter samples for this stage"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "False when no data was received for this stage (OQ-6 partial traceability scenario)"
+          },
+          "stageName": {
+            "type": "string",
+            "description": "Human-readable stage name (e.g. Pre-Degreasing, Phosphating, E-Coat)"
+          },
+          "stageNumber": {
+            "type": "integer",
+            "maximum": 14,
+            "minimum": 1,
+            "description": "Paint prep stage number (1–14)"
+          }
+        }
+      },
+      "ProcessReplayResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "overallCompletenessPercent",
+          "prepStages",
+          "boothParameters",
+          "climateData",
+          "page"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          },
+          "prepStages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrepStageTimeSeries"
+            },
+            "maxItems": 14,
+            "minItems": 14
+          },
+          "climateData": {
+            "$ref": "#/components/schemas/ClimateTimeSeries"
+          },
+          "boothParameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BoothParameterTimeSeries"
+            }
+          },
+          "replayWindowEnd": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Latest timestamp in the replay dataset"
+          },
+          "replayWindowStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Earliest timestamp in the replay dataset"
+          },
+          "overallCompletenessPercent": {
+            "type": "number",
+            "format": "float",
+            "maximum": 100,
+            "minimum": 0,
+            "description": "Percentage of expected parameter samples that are present across all 14 prep stages"
+          }
+        }
+      },
+      "ThreadSnapshotResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "atTs",
+          "stageName",
+          "stageNumber",
+          "tunnelPositionMm",
+          "parameters"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "atTs": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The requested scrub timestamp"
+          },
+          "stageName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Name of the prep stage the VIN was in at the requested timestamp; null if outside paint prep"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "All parameter values interpolated or last-known at the requested timestamp",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "stageNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Prep stage number 1–14 at the requested timestamp; null if outside paint prep"
+          },
+          "dataAvailable": {
+            "type": "boolean",
+            "description": "False when the requested timestamp falls in a data gap (OQ-6 scenario)"
+          },
+          "tunnelPositionMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "VIN position in the prep tunnel in millimetres at the requested timestamp"
+          }
+        }
+      },
+      "StageCompletenessDetail": {
+        "type": "object",
+        "required": [
+          "stageNumber",
+          "stageName",
+          "available",
+          "completenessPercent",
+          "expectedSampleCount",
+          "actualSampleCount"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "stageName": {
+            "type": "string"
+          },
+          "stageNumber": {
+            "type": "integer",
+            "maximum": 14,
+            "minimum": 1
+          },
+          "actualSampleCount": {
+            "type": "integer"
+          },
+          "missingParameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of parameter names with no data for this stage"
+          },
+          "completenessPercent": {
+            "type": "number",
+            "format": "float",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "expectedSampleCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "BoothParameterTimeSeries": {
+        "type": "object",
+        "required": [
+          "boothId",
+          "available",
+          "samples"
+        ],
+        "properties": {
+          "boothId": {
+            "type": "string",
+            "description": "Booth identifier (e.g. BOOTH_1 through BOOTH_6)"
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ts",
+                "parameters"
+              ],
+              "properties": {
+                "ts": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "number",
+                      "string",
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ThreadEventIngestRequest": {
+        "type": "object",
+        "required": [
+          "idempotencyKey",
+          "eventType",
+          "shop",
+          "station",
+          "occurredAt",
+          "dataSource",
+          "parameters"
+        ],
+        "properties": {
+          "shop": {
+            "type": "string"
+          },
+          "station": {
+            "type": "string"
+          },
+          "eventType": {
+            "enum": [
+              "PLC_TRACE",
+              "GATE_RESULT",
+              "TORQUE_LOG",
+              "AR_INSTRUCTION_EXECUTION",
+              "PAINT_PREP_STAGE",
+              "BOOTH_PARAMETER",
+              "CLIMATE_DATA",
+              "SHOP_BOUNDARY_TRANSITION",
+              "QUALITY_CERTIFICATION"
+            ],
+            "type": "string"
+          },
+          "dataSource": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "stageNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 14,
+            "minimum": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated UUID; duplicate submissions with the same key return 409"
+          },
+          "tunnelPositionMm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "ThreadEventIngestResponse": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "vin",
+          "linkedAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID assigned to the newly created event node in the graph"
+          },
+          "linkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the event was linked to the VIN node in Neo4j"
+          }
+        }
+      },
+      "ThreadCompletenessResponse": {
+        "type": "object",
+        "required": [
+          "vin",
+          "overallCompletenessPercent",
+          "stages"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageCompletenessDetail"
+            }
+          },
+          "meetsThreshold": {
+            "type": "boolean",
+            "description": "True when overallCompletenessPercent >= 95 (post-UNS go-live requirement)"
+          },
+          "overallCompletenessPercent": {
+            "type": "number",
+            "format": "float",
+            "maximum": 100,
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

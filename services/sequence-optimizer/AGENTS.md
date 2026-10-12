@@ -1,11 +1,13 @@
 # sequence-optimizer
 
-LLD component `cmp:sequence-optimizer` · KServe, Python, scikit-optimize, MLflow, watsonx.governance · seeded from the Python template
+LLD component `cmp:sequence-optimizer` · KServe, Python, scikit-optimize, MLflow, watsonx.governance · seeded from Python
 
 Custom-trained Monte Carlo optimisation model — 50 runs against live constraints, ranked VIN sequence within 45s, rule-based heuristic fallback in shadow mode
 
 ## Stories
 
+- `EN-sequence-optimizer`
+- `US-001`
 - `US-002`
 - `US-003`
 - `US-005`
@@ -13,22 +15,22 @@ Custom-trained Monte Carlo optimisation model — 50 runs against live constrain
 
 ## Endpoints
 
-- `POST /optimize`
-- `GET /optimize/{runId}`
-- `GET /optimize/{runId}/explain/{vin}`
-- `POST /overrides`
-- `GET /overrides`
-- `GET /overrides/{overrideId}`
-- `GET /overrides/export`
 - `GET /alerts`
-- `POST /alerts/{alertId}/acknowledge`
+- `POST /optimize`
+- `GET /overrides`
+- `POST /overrides`
 - `POST /resequence`
+- `GET /my26/config`
+- `GET /model/health`
+- `POST /my26/config/save`
+- `GET /optimize/{runId}`
+- `GET /overrides/export`
+- `POST /my26/config/validate`
 - `GET /constraints/thresholds`
 - `PUT /constraints/thresholds`
-- `GET /my26/config`
-- `POST /my26/config/validate`
-- `POST /my26/config/save`
-- `GET /model/health`
+- `GET /overrides/{overrideId}`
+- `POST /alerts/{alertId}/acknowledge`
+- `GET /optimize/{runId}/explain/{vin}`
 
 ## Entities
 
@@ -44,14 +46,17 @@ Custom-trained Monte Carlo optimisation model — 50 runs against live constrain
 ## Events
 
 - `evt:bmw.munich.i4.sequence.optimized.v1`
-- `evt:bmw.munich.i4.sequence.override.applied.v1`
+- `evt:bmw.munich.i4.uns.constraints.live.v1`
 - `evt:bmw.munich.i4.sequence.constraint.alert.v1`
+- `evt:bmw.munich.i4.sequence.override.applied.v1`
 - `evt:bmw.munich.i4.sequence.resequence.triggered.v1`
 - `evt:bmw.munich.i4.sequence.my26.config.activated.v1`
-- `evt:bmw.munich.i4.uns.constraints.live.v1`
 
 ## Acceptance criteria
 
+- AC-680aba58 (US-001): Given the planner opens Constraint Radar on any Monday between 05:00 and 06:17, when the page loads, then paint capacity utilisation, body WIP queue depth, kitting readiness, and all scheduled maintenance windows for the next 7 days are displayed with data timestamps no older than 60 seconds from the UNS
+- AC-4c26c424 (US-001): Given a constraint value crosses a configurable warning threshold, when the planner is viewing Constraint Radar, then the affected constraint is highlighted in amber with the threshold value and current value displayed side by side
+- AC-64b0a4bb (US-001): Given the UNS latency exceeds 1,000ms p99, when Constraint Radar is open, then a staleness indicator is shown on each affected data tile with the last-known-good timestamp
 - AC-1848ffb5 (US-002): Given the planner clicks 'Run Optimizer' in Sequence Builder, when the SequenceOptimizer completes 50 Monte Carlo runs, then the ranked VIN sequence is displayed within 45 seconds of the click (leaving 15 seconds for review before the 60-second total target)
 - AC-c9b64630 (US-002): Given the optimizer run completes, when the planner views the ranked sequence, then each VIN in the top-ranked sequence shows its position, the constraint score driving its rank, and any mandatory override flags (VIP priority, regulatory hold)
 - AC-40a058cb (US-002): Given the optimizer run fails or times out after 45 seconds, when the planner is waiting, then a fallback rule-based heuristic sequence is presented with a clear label indicating it is the heuristic result, not the Monte Carlo optimum

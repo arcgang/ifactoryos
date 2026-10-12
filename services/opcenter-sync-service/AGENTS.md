@@ -6,6 +6,7 @@ Rust-based bidirectional adapter for Siemens OpCenter 10.2 — sequence lock pub
 
 ## Stories
 
+- `EN-opcenter-sync-service`
 - `US-001`
 - `US-004`
 - `US-007`
@@ -13,19 +14,20 @@ Rust-based bidirectional adapter for Siemens OpCenter 10.2 — sequence lock pub
 - `US-011`
 - `US-013`
 - `US-016`
+- `US-017`
 - `US-019`
 
 ## Endpoints
 
-- `POST /sequence/publish`
-- `GET /sequence/jobs`
-- `GET /sequence/jobs/{syncJobId}`
-- `GET /oee/snapshots`
-- `GET /andon/alerts`
-- `GET /andon/alerts/{alertId}`
-- `GET /gate-results`
-- `GET /gate-results/{gateResultId}`
 - `GET /health`
+- `GET /andon/alerts`
+- `GET /gate-results`
+- `GET /oee/snapshots`
+- `GET /sequence/jobs`
+- `POST /sequence/publish`
+- `GET /andon/alerts/{alertId}`
+- `GET /sequence/jobs/{syncJobId}`
+- `GET /gate-results/{gateResultId}`
 - `POST /opcenter/sequence`
 
 ## Entities
@@ -38,11 +40,11 @@ Rust-based bidirectional adapter for Siemens OpCenter 10.2 — sequence lock pub
 
 ## Events
 
-- `evt:bmw.munich.opcenter.sequence.published`
-- `evt:bmw.munich.opcenter.sequence.publish_failed`
-- `evt:bmw.munich.opcenter.oee.updated`
 - `evt:bmw.munich.opcenter.andon.alert`
+- `evt:bmw.munich.opcenter.oee.updated`
+- `evt:bmw.munich.opcenter.sequence.published`
 - `evt:bmw.munich.opcenter.gate_result.received`
+- `evt:bmw.munich.opcenter.sequence.publish_failed`
 
 ## Acceptance criteria
 
@@ -67,6 +69,9 @@ Rust-based bidirectional adapter for Siemens OpCenter 10.2 — sequence lock pub
 - AC-7e3c424d (US-016): Given a vehicle completes its final gate station and all 5 gate results are received via OpCenter, when the validator opens Gate Command for that VIN, then the unified health score is displayed within 10 seconds showing pass/conditional/fail per gate with the raw measurement values
 - AC-f201c288 (US-016): Given any gate result shows a conditional pass (measurement outside tolerance but within rework threshold), when the validator views the health score, then the anomalous measurement is highlighted with the tolerance band, the actual value, and the historical distribution for that measurement at that gate
 - AC-3f0328c7 (US-016): Given the validator clicks 'Certify', when the certification is confirmed, then the Certificate Studio generates the Digital Birth Certificate and the event is logged with the validator's user ID, VIN, gate IDs, health score snapshot, and timestamp—all within 5 minutes of the vehicle completing the final gate station
+- AC-61ec7342 (US-017): Given a vehicle is in Gate Command and one or more gate results have not yet been received from OpCenter, when the validator views the health score, then the missing gate results are shown as 'Pending' with a spinner and the 'Certify' button is disabled with a tooltip explaining which results are outstanding
+- AC-653c90e8 (US-017): Given all 5 gate results are received, when the completeness indicator updates to 100%, then the 'Certify' button becomes enabled and the validator receives a visual confirmation that the health score is complete
+- AC-202159f2 (US-017): Given a gate station times out and never sends a result (e.g., NVH station network failure), when the timeout threshold (configurable, default 10 minutes) is exceeded, then the validator receives an alert identifying the failed station and a 'Manual Override' option that requires a typed justification and supervisor approval before certification proceeds
 - AC-4167263e (US-019): Given any planner performs a session action (login, optimizer run, override, publish), when the action completes, then an event is emitted to the instrumentation layer within 1 second containing the user ID, action type, session ID, and timestamp
 - AC-8d26ecac (US-019): Given the Gate 1 measurement window (Nov 1–28, 2025), when the Product Ops Analyst queries the instrumentation layer, then WAU, sequence lock %, and override rate are available as pre-built queries with no manual data extraction required
 - AC-7f3009e7 (US-019): Given a planner session lasts less than 10 minutes without a meaningful action (optimizer run, override, or publish), when the WAU calculation runs, then that session is excluded from the active user count per the Gate 1 measurement definition

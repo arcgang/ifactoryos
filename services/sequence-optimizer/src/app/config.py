@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     constraint_alert_topic: str = "sequence.constraint.alert"
     constraint_dlq_topic: str = "uns.munich.i4.dlq.planning-cockpit-constraint-consumer"
     sequence_optimized_topic: str = "bmw.munich.i4.sequence.optimized.v1"
+    resequence_triggered_topic: str = "sequence.resequence.triggered"
 
     # Consumer group
     constraint_consumer_group: str = "planning-cockpit-constraint-consumer"
@@ -30,6 +31,9 @@ class Settings(BaseSettings):
 
     # Required role for PUT /constraints/thresholds
     threshold_writer_role: str = "constraint-threshold-writer"
+
+    # Required role for POST /resequence
+    resequence_writer_role: str = "production-planner"
 
     # KServe model endpoint
     kserve_endpoint_url: str = "http://sequence-optimizer.kserve.svc.cluster.local/v1/models/sequence-optimizer:predict"

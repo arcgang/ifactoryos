@@ -8,11 +8,13 @@ from typing import Any
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth import caller_subject, require_bearer, require_threshold_writer
+from app.auth import caller_subject, require_bearer, require_resequence_writer, require_threshold_writer
 from app.models import (
+    AlertListResponse,
     ConstraintThreshold,
     OptimizeRequest,
     OptimizeResponse,
+    ResequenceRequest,
     ThresholdListResponse,
 )
 
@@ -126,3 +128,56 @@ async def get_optimize_run(
             },
         )
     return result
+
+
+@optimize_router.post(
+    "/resequence",
+    response_model=OptimizeResponse,
+    operation_id="runTargetedResequence",
+    status_code=status.HTTP_200_OK,
+)
+async def run_targeted_resequence(
+    body: ResequenceRequest,
+    payload: dict[str, Any] = Depends(require_resequence_writer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> OptimizeResponse:
+    from app.kserve_client import make_kserve_client
+    from app.resequence import run_resequence
+
+    user_id = caller_subject(payload)
+    kserve_client = make_kserve_client()
+    return await run_resequence(
+        request=body,
+        pool=pool,
+        kserve_client=kserve_client,
+        user_id=user_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Alerts endpoints
+# ---------------------------------------------------------------------------
+
+alerts_router = APIRouter(tags=["Alerts"])
+
+
+@alerts_router.get(
+    "/api/v1/alerts",
+    response_model=AlertListResponse,
+    operation_id="listConstraintAlerts",
+)
+async def list_constraint_alerts(
+    status_filter: str | None = Query(default="active", alias="status"),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    _payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> AlertListResponse:
+    from app.resequence import list_active_alerts
+
+    return await list_active_alerts(
+        pool=pool,
+        cursor=cursor,
+        limit=limit,
+        status_filter=status_filter,
+    )

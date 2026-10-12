@@ -53,6 +53,34 @@ class ConstraintAlertEvent(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Alert persistence models
+# ---------------------------------------------------------------------------
+
+class AlertStatus(str, Enum):
+    active = "active"
+    acknowledged = "acknowledged"
+    resolved = "resolved"
+
+
+class ConstraintAlertRecord(BaseModel):
+    alertId: UUID
+    constraintType: ConstraintType
+    currentValue: float
+    thresholdValue: float
+    affectedVins: list[str]
+    status: AlertStatus
+    detectedAt: str
+    acknowledgedAt: str | None = None
+    acknowledgedBy: str | None = None
+    resolvedAt: str | None = None
+
+
+class AlertListResponse(BaseModel):
+    data: list[ConstraintAlertRecord]
+    page: CursorPage
+
+
+# ---------------------------------------------------------------------------
 # Optimizer request / response models
 # ---------------------------------------------------------------------------
 
@@ -119,3 +147,14 @@ class OptimizeResponse(BaseModel):
     confidenceScore: float = Field(ge=0, le=1)
     my26ConfigVersion: str | None = None
     constraintSnapshotTimestamp: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Re-sequence request model (placed after VinInput / ConstraintSnapshot)
+# ---------------------------------------------------------------------------
+
+class ResequenceRequest(BaseModel):
+    alertId: UUID
+    affectedVins: list[VinInput] = Field(min_length=1, max_length=500)
+    constraintSnapshot: ConstraintSnapshot
+    idempotencyKey: UUID | None = None

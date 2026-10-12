@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.health import Health, health
-from app.router import router
+from app.router import optimize_router, router
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(router)
+    app.include_router(optimize_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])
     def health_check() -> Health:

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Console-level RBAC policy — IBM API Connect / DataPower Gateway
+  IBM-SEC-001 §3.2, §5.1.3, §8.4.2.
+
+  Enforced access boundaries:
+    /planning-cockpit/**  → GRP-IFOS-PLANNERS-MUC only
+    /line-command/**      → GRP-IFOS-SHIFTLEADS-MUC and GRP-IFOS-ASSOCIATES-MUC
+    /quality-studio/**    → GRP-IFOS-PAINTENGINEER-MUC and GRP-IFOS-VALIDATORS-MUC
+  Platform admin (GRP-IFOS-PLATFORM-ADMIN) passes all console checks.
+
+  Within /line-command/**:
+    GRP-IFOS-ASSOCIATES-MUC may only access:
+      GET  /api/v1/ar/instructions/{vin}
+      POST /api/v1/torque/log
+    The following are DENIED for assembly-associates (return 403 + audit write):
+      GET  /oee/snapshots
+      GET  /andon/alerts
+      POST /alerts/{alertId}/acknowledge
+      GET  /api/v1/handover
+      POST /api/v1/handover
+    GRP-IFOS-SHIFTLEADS-MUC receives full /line-command/** access.
+
+  On any 403, the policy writes a POST /api/v1/audit/event to the immutable-audit-log
+  synchronously within the 1-second NFR-06 budget. The audit endpoint URL is read from
+  gateway property 'audit-log-endpoint'.
+-->
+<assembly>
+  <execute>
+    <gatewayscript>
+      // -----------------------------------------------------------------------
+      // Group IDs are injected from Terraform locals at deploy time as gateway
+      // properties: grp-planners-id, grp-shiftleads-id, grp-associates-id,
+      // grp-paintengineer-id, grp-validators-id, grp-platform-admin-id.
+      // -----------------------------------------------------------------------
+      var PLANNERS       = context.get('gateway.grp-planners-id');
+      var SHIFTLEADS     = context.get('gateway.grp-shiftleads-id');
+      var ASSOCIATES     = context.get('gateway.grp-associates-id');
+      var PAINTENGINEER  = context.get('gateway.grp-paintengineer-id');
+      var VALIDATORS     = context.get('gateway.grp-validators-id');
+      var PLATFORM_ADMIN = context.get('gateway.grp-platform-admin-id');
+
+      var userGroups  = context.get('rbac.groups') || [];
+      var requestPath = context.get('request.uri') || '';
+      var method      = context.get('request.verb') || '';
+      var userId      = context.get('rbac.sub') || 'unknown';
+
+      function inGroup(gid) {
+        return userGroups.indexOf(gid) !== -1;
+      }
+
+      var isPlatformAdmin  = inGroup(PLATFORM_ADMIN);
+      var isPlanner        = inGroup(PLANNERS);
+      var isShiftLead      = inGroup(SHIFTLEADS);
+      var isAssociate      = inGroup(ASSOCIATES);
+      var isPaintEngineer  = inGroup(PAINTENGINEER);
+      var isValidator      = inGroup(VALIDATORS);
+
+      // -----------------------------------------------------------------------
+      // Console-level boundary check
+      // -----------------------------------------------------------------------
+      var console = null;
+      if (requestPath.startsWith('/planning-cockpit/') || requestPath === '/planning-cockpit') {
+        console = 'planning-cockpit';
+        if (!isPlatformAdmin && !isPlanner) {
+          context.set('rbac.deny', true);
+          context.set('rbac.deny-reason', 'role_not_permitted_for_console');
+          context.set('rbac.console', console);
+          context.set('rbac.userId', userId);
+        }
+      } else if (requestPath.startsWith('/line-command/') || requestPath === '/line-command') {
+        console = 'line-command';
+        if (!isPlatformAdmin && !isShiftLead && !isAssociate) {
+          context.set('rbac.deny', true);
+          context.set('rbac.deny-reason', 'role_not_permitted_for_console');
+          context.set('rbac.console', console);
+          context.set('rbac.userId', userId);
+        }
+      } else if (requestPath.startsWith('/quality-studio/') || requestPath === '/quality-studio') {
+        console = 'quality-studio';
+        if (!isPlatformAdmin && !isPaintEngineer && !isValidator) {
+          context.set('rbac.deny', true);
+          context.set('rbac.deny-reason', 'role_not_permitted_for_console');
+          context.set('rbac.console', console);
+          context.set('rbac.userId', userId);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Within /line-command/** — assembly-associate endpoint boundary
+      // Shift leads receive full access; associates are restricted.
+      // -----------------------------------------------------------------------
+      if (console === 'line-command' && isAssociate && !isPlatformAdmin && !isShiftLead) {
+        var allowed = (
+          (method === 'GET'  && /^\/line-command\/api\/v1\/ar\/instructions\/[^/]+$/.test(requestPath)) ||
+          (method === 'POST' && requestPath === '/line-command/api/v1/torque/log')
+        );
+        if (!allowed) {
+          context.set('rbac.deny', true);
+          context.set('rbac.deny-reason', 'associate_endpoint_boundary');
+          context.set('rbac.console', console);
+          context.set('rbac.userId', userId);
+        }
+      }
+
+      context.set('rbac.requestPath', requestPath);
+      context.set('rbac.method', method);
+    </gatewayscript>
+
+    <!-- Emit audit event and return 403 when access is denied -->
+    <switch>
+      <case condition="$rbac.deny = true()">
+        <!-- Synchronous audit write to immutable-audit-log (NFR-06: within 1 second) -->
+        <invoke>
+          <target-url>$(audit-log-endpoint)/api/v1/audit/event</target-url>
+          <verb>POST</verb>
+          <timeout>1000</timeout>
+          <input>
+            <gatewayscript>
+              var body = JSON.stringify({
+                userId:    context.get('rbac.userId'),
+                action:    'unauthorized_access_attempt',
+                resource:  context.get('rbac.requestPath'),
+                role:      JSON.stringify(context.get('rbac.groups') || []),
+                console:   context.get('rbac.console'),
+                timestamp: context.get('system.datetime')
+              });
+              context.set('audit-payload', body);
+            </gatewayscript>
+          </input>
+        </invoke>
+
+        <!-- Return 403 Forbidden with standard error envelope -->
+        <set-variable>
+          <name>message.status.code</name>
+          <value>403</value>
+        </set-variable>
+        <gatewayscript>
+          var correlationId = context.get('request.headers.x-correlation-id') || context.get('system.uuid');
+          var errorBody = JSON.stringify({
+            code:           'RBAC_FORBIDDEN',
+            message:        'Access denied: your role does not permit access to this resource.',
+            correlation_id: correlationId
+          });
+          context.set('message.body', errorBody);
+          context.set('message.headers.Content-Type', 'application/json');
+        </gatewayscript>
+        <throw>
+          <message>RBAC_FORBIDDEN</message>
+          <name>rbac-forbidden</name>
+        </throw>
+      </case>
+    </switch>
+  </execute>
+</assembly>

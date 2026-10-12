@@ -1,0 +1,104 @@
+// ============================================================================
+// Gate 1 Pre-built Queries — Planning Cockpit Adoption Metrics (US-019 · BR-12)
+//
+// Default measurement window: Nov 1–28, 2025 (Gate 1 evidence period).
+// Table: AdoptionEvent_CL — populated by the OTel Collector azuremonitor exporter.
+//
+// All three queries are named saved queries in the Log Analytics workspace
+// law-ifos-euwe-pr (see main.tf resource azurerm_log_analytics_saved_search).
+// Run each query directly in the LAW portal — no code or ETL required.
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Query 1: planner_wau
+//
+// Gate 1 metric A3: Weekly Active Users — distinct planners per calendar week
+// who performed at least one meaningful action (optimizer_run, override_applied,
+// or publish_confirmed) OR whose session was ≥10 minutes.
+//
+// Session filter (per the settled decision for US-019):
+//   Include a session if:
+//     (session_duration_minutes >= 10) OR (meaningful_action_count > 0)
+//   Exclude login-only sessions that ended in under 10 minutes with no
+//   meaningful action — those are not counted as active planner sessions.
+//
+// sessionStartedAt is the field emitted by planning-cockpit at login (session_start).
+// sessionDurationSeconds is the field emitted at session_end.
+// ----------------------------------------------------------------------------
+// @name planner_wau
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+let meaningful_actions = dynamic(["optimizer_run", "override_applied", "publish_confirmed"]);
+// Collect all events in the window
+let events = AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        actionType_s    = tostring(Properties_d["actionType"]),
+        userId_s        = tostring(Properties_d["userId"]),
+        sessionId_s     = tostring(Properties_d["sessionId"]),
+        sessionDurationSeconds_d = todouble(Properties_d["sessionDurationSeconds"]),
+        sessionStartedAt_s = tostring(Properties_d["sessionStartedAt"]);
+// Per session: count meaningful actions and total duration
+let sessions = events
+    | summarize
+        meaningful_action_count = countif(actionType_s in (meaningful_actions)),
+        session_duration_seconds = max(sessionDurationSeconds_d),
+        userId_s = any(userId_s)
+      by sessionId_s, week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | extend session_duration_minutes = session_duration_seconds / 60.0
+    | where (session_duration_minutes >= 10) or (meaningful_action_count > 0);
+// Count distinct userId per calendar week
+sessions
+| summarize wau = dcount(userId_s) by week_number, year_number
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, wau
+| order by year_number asc, week_number asc;
+
+
+// ----------------------------------------------------------------------------
+// Query 2: sequence_lock_pct
+//
+// Gate 1 metric A1: Sequence Lock % — percentage of Monday lock windows in the
+// measurement period where at least one publish_confirmed event was emitted.
+//
+// Definition: "Monday lock window" = any calendar week in the measurement window
+// where the shift-start period (Monday) has a planner who published a sequence.
+// sequence_lock_pct = (weeks_with_publish / total_monday_lock_windows) × 100.
+// ----------------------------------------------------------------------------
+// @name sequence_lock_pct
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+// Total distinct Monday lock windows in the measurement period (one per week).
+// Nov 1–28, 2025 spans 4 calendar weeks (W44–W47 of 2025).
+let total_windows = 4;
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    actionType_s = tostring(Properties_d["actionType"])
+| where actionType_s == "publish_confirmed"
+| summarize weeks_with_publish = dcount(week_of_year(TimeGenerated))
+| extend
+    sequence_lock_pct = round(todouble(weeks_with_publish) / total_windows * 100.0, 2),
+    total_monday_lock_windows = total_windows
+| project total_monday_lock_windows, weeks_with_publish, sequence_lock_pct;
+
+
+// ----------------------------------------------------------------------------
+// Query 3: override_rate
+//
+// Gate 1 metric A2: Override Rate — count of override_applied events per
+// calendar week in the measurement window.
+// ----------------------------------------------------------------------------
+// @name override_rate
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    actionType_s = tostring(Properties_d["actionType"])
+| where actionType_s == "override_applied"
+| summarize override_count = count()
+    by week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, override_count
+| order by year_number asc, week_number asc;

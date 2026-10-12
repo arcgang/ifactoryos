@@ -1,0 +1,6 @@
+# Direct dependencies only. Exact versions — including transitive ones — live in
+# constraints.txt, so `pip install -r requirements.txt` resolves to the same set that
+# scripts/refresh-templates.ts last verified. See that file.
+-c constraints.txt
+
+pytest

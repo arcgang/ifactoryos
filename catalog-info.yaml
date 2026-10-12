@@ -115,6 +115,70 @@ spec:
   system: ifactoryos
 ---
 apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: timescaledb
+  description: timescaledb — TimescaleDB 2.x, PostgreSQL 15
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/timescaledb
+    sdlc.io/lld-component: cmp:timescaledb
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: line-command-api
+  description: line-command-api — Python
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/line-command-api
+    sdlc.io/lld-component: cmp:line-command-api
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: vin-digital-thread-api
+  description: vin-digital-thread-api — Python
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/vin-digital-thread-api
+    sdlc.io/lld-component: cmp:vin-digital-thread-api
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: hyperledger-fabric-api
+  description: hyperledger-fabric-api — Python
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/hyperledger-fabric-api
+    sdlc.io/lld-component: cmp:hyperledger-fabric-api
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: api-gateway
@@ -247,21 +311,6 @@ metadata:
     github.com/project-slug: arcgang/ifactoryos
     backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/observability-stack
     sdlc.io/lld-component: cmp:observability-stack
-    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
-spec:
-  type: infrastructure
-  owner: arcgang
-  system: ifactoryos
----
-apiVersion: backstage.io/v1alpha1
-kind: Resource
-metadata:
-  name: timescaledb
-  description: timescaledb — TimescaleDB 2.x, PostgreSQL 15
-  annotations:
-    github.com/project-slug: arcgang/ifactoryos
-    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/timescaledb
-    sdlc.io/lld-component: cmp:timescaledb
     sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
 spec:
   type: infrastructure

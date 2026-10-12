@@ -1,6 +1,6 @@
 # quality-studio
 
-LLD component `cmp:quality-studio` · React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC · seeded from the React template
+LLD component `cmp:quality-studio` · React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC · seeded from React
 
 Role-based console for Paint Process Engineers and Quality Gate Validators — defect analysis, process replay, gate certification, digital birth certificate
 
@@ -16,13 +16,9 @@ Role-based console for Paint Process Engineers and Quality Gate Validators — d
 - `US-022`
 - `US-023`
 - `US-024`
-- `US-030`
 
 ## Endpoints
 
-- `GET /api/v1/vin/{vin}/thread`
-- `POST /api/v1/defect/cluster`
-- `POST /api/v1/certificate/issue`
 - `POST /rest/api/3/issue`
 
 ## Acceptance criteria
@@ -57,9 +53,6 @@ Role-based console for Paint Process Engineers and Quality Gate Validators — d
 - AC-edd6ce81 (US-024): Given a user's browser or device language is set to German (de-DE), when they open any console, then all UI labels, alert messages, error messages, and work instruction text are displayed in German
 - AC-e41c448a (US-024): Given a user switches their language preference from German to English within the console settings, when the preference is saved, then all UI content updates to English within 2 seconds without requiring a page reload
 - AC-1a65ae08 (US-024): Given a new alert or work instruction is added to the system, when it is published, then both German and English translations must be present before the content is visible to end users—content with only one language translation is blocked from publication
-- AC-2818cd8a (US-030): Given any manufacturing event (PLC trace, gate result, torque log, AR instruction execution) is published to the UNS, when the event is ingested, then it is linked to the VIN node in the Neo4j digital thread graph within 5 seconds with the shop, station, timestamp, and data source
-- AC-32301269 (US-030): Given a VIN completes the final quality gate, when the digital thread graph is queried for that VIN, then a continuous chain of events from body-in-white entry through final gate certification is returned with no gaps in shop-boundary transitions
-- AC-b3b68360 (US-030): Given a VIN's digital thread is queried for Process Replay, when the query executes, then all 14 paint prep stage parameters are returned as a time-ordered sequence linked to the VIN node, with completeness ≥95% for VINs processed after UNS go-live
 
 ## Non-functional requirements
 

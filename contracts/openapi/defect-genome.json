@@ -5,78 +5,6 @@
     "description": "Paint defect clustering, root-cause probability distribution, cluster alert management, and rule-based fallback advisor for the BMW Intelligent Factory OS."
   },
   "paths": {
-    "/alerts": {
-      "get": {
-        "summary": "List cluster alerts for the current user's Quality Studio session",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlertListResponse"
-                }
-              }
-            },
-            "description": "Paginated list of cluster alerts"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unauthorised"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Internal server error"
-          }
-        },
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "schema": {
-              "$ref": "#/components/schemas/AlertStatus"
-            },
-            "required": false
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "type": "integer",
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1
-            },
-            "required": false
-          }
-        ],
-        "operationId": "listClusterAlerts"
-      }
-    },
     "/defect/clusters": {
       "get": {
         "summary": "List defect clusters with optional filters",
@@ -292,6 +220,78 @@
           }
         ],
         "operationId": "getClusterAlert"
+      }
+    },
+    "/defect-genome/alerts": {
+      "get": {
+        "summary": "List cluster alerts for the current user's Quality Studio session",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of cluster alerts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "$ref": "#/components/schemas/AlertStatus"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listClusterAlerts"
       }
     },
     "/defect/cluster-query": {
@@ -545,7 +545,7 @@
         }
       }
     },
-    "/alerts/{alertId}/acknowledge": {
+    "/defect-genome/alerts/{alertId}/acknowledge": {
       "post": {
         "summary": "Acknowledge a cluster alert and optionally assign a corrective action",
         "security": [

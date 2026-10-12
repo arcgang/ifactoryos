@@ -4,3 +4,6 @@ apps/line-command react
 apps/quality-studio react
 services/sequence-optimizer python
 services/defect-genome python
+services/line-command-api python
+services/vin-digital-thread-api python
+services/hyperledger-fabric-api python

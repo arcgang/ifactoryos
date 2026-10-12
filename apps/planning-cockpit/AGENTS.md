@@ -1,6 +1,6 @@
 # planning-cockpit
 
-LLD component `cmp:planning-cockpit` · React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC · seeded from the React template
+LLD component `cmp:planning-cockpit` · React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC · seeded from React
 
 Role-based console for Production Planners — sequence optimisation, constraint monitoring, OpCenter publish authority
 
@@ -22,7 +22,6 @@ Role-based console for Production Planners — sequence optimisation, constraint
 
 - `POST /api/v1/sequence/optimize`
 - `POST /api/v1/sequence/publish`
-- `GET /api/v1/constraints`
 
 ## Acceptance criteria
 

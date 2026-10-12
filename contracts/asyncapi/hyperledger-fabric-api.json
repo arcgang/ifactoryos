@@ -1,0 +1,251 @@
+{
+  "info": {
+    "title": "Hyperledger Fabric API — Event Bus",
+    "version": "1.0.0",
+    "description": "Events published by hyperledger-fabric-api after successful Fabric anchor operations. Consumed by observability-stack (adoption metrics A7, AC-77d7d8c2) and immutable-audit-log."
+  },
+  "servers": {
+    "kafka-uns": {
+      "host": "kafka.uns-backbone.internal:9093",
+      "protocol": "kafka-secure",
+      "security": [
+        {
+          "saslScram": []
+        }
+      ],
+      "description": "On-premises Kafka cluster on UNS backbone; SASL/SCRAM + TLS 1.3; SPIFFE mTLS at zone boundary"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "certificate-issued": {
+      "address": "bmw.ifos.munich.fabric.certificate.issued.v1",
+      "messages": {
+        "CertificateIssuedEvent": {
+          "$ref": "#/components/messages/CertificateIssuedEvent"
+        }
+      },
+      "description": "Published when a Digital Birth Certificate is successfully anchored to Hyperledger Fabric"
+    },
+    "certificate-verify-failed": {
+      "address": "bmw.ifos.munich.fabric.certificate.verify-failed.v1",
+      "messages": {
+        "CertificateVerifyFailedEvent": {
+          "$ref": "#/components/messages/CertificateVerifyFailedEvent"
+        }
+      },
+      "description": "Published when a certificate hash verification against the Fabric ledger fails (tamper detection)"
+    }
+  },
+  "components": {
+    "messages": {
+      "CertificateIssuedEvent": {
+        "name": "CertificateIssuedEvent",
+        "title": "Digital Birth Certificate Anchored",
+        "headers": {
+          "type": "object",
+          "properties": {
+            "eventType": {
+              "type": "string",
+              "const": "certificate.issued"
+            },
+            "correlationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "schemaVersion": {
+              "type": "string",
+              "const": "1.0.0"
+            },
+            "sourceComponent": {
+              "type": "string",
+              "const": "hyperledger-fabric-api"
+            }
+          }
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "certificateId",
+            "vin",
+            "fabricTransactionId",
+            "fabricBlockNumber",
+            "certificateHash",
+            "validatorId",
+            "issuedAt",
+            "anchoredAt",
+            "sourceSystem",
+            "shiftId"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string",
+              "maxLength": 17,
+              "minLength": 17
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Unique event identifier"
+            },
+            "shiftId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "issuedAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Timestamp of the certify action in quality-studio"
+            },
+            "anchoredAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Timestamp of Fabric commit"
+            },
+            "healthScore": {
+              "type": "number",
+              "format": "double",
+              "maximum": 100,
+              "minimum": 0
+            },
+            "validatorId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "BMW Entra ID subject of the certifying validator"
+            },
+            "sourceSystem": {
+              "enum": [
+                "quality-studio",
+                "legacy"
+              ],
+              "type": "string"
+            },
+            "certificateId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "certificateHash": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{64}$"
+            },
+            "fabricBlockNumber": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "fabricTransactionId": {
+              "type": "string",
+              "description": "Hyperledger Fabric transaction ID — the immutable anchor reference"
+            }
+          }
+        },
+        "summary": "Emitted within 1 second of successful Fabric commit; carries Fabric transaction hash for A7 cross-reference (AC-77d7d8c2)",
+        "contentType": "application/json"
+      },
+      "CertificateVerifyFailedEvent": {
+        "name": "CertificateVerifyFailedEvent",
+        "title": "Certificate Tamper Detection Alert",
+        "headers": {
+          "type": "object",
+          "properties": {
+            "eventType": {
+              "type": "string",
+              "const": "certificate.verify-failed"
+            },
+            "correlationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "schemaVersion": {
+              "type": "string",
+              "const": "1.0.0"
+            },
+            "sourceComponent": {
+              "type": "string",
+              "const": "hyperledger-fabric-api"
+            }
+          }
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "certificateId",
+            "vin",
+            "fabricTransactionId",
+            "storedHash",
+            "fabricHash",
+            "detectedAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string",
+              "maxLength": 17,
+              "minLength": 17
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "detectedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "fabricHash": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{64}$"
+            },
+            "storedHash": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{64}$"
+            },
+            "certificateId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "mismatchReason": {
+              "type": "string"
+            },
+            "fabricTransactionId": {
+              "type": "string"
+            }
+          }
+        },
+        "summary": "Emitted when a hash comparison between local DB and Fabric ledger reveals a mismatch",
+        "contentType": "application/json"
+      }
+    },
+    "securitySchemes": {
+      "saslScram": {
+        "type": "scramSha512",
+        "description": "Kafka SASL/SCRAM-SHA-512; credentials rotated every 90 days via HashiCorp Vault"
+      }
+    }
+  },
+  "operations": {
+    "publishCertificateIssued": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/certificate-issued"
+      },
+      "summary": "Publish event after successful Fabric anchor — consumed by observability-stack for A7 metric and immutable-audit-log",
+      "messages": [
+        {
+          "$ref": "#/channels/certificate-issued/messages/CertificateIssuedEvent"
+        }
+      ]
+    },
+    "publishCertificateVerifyFailed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/certificate-verify-failed"
+      },
+      "summary": "Publish tamper-detection alert when stored hash does not match Fabric ledger",
+      "messages": [
+        {
+          "$ref": "#/channels/certificate-verify-failed/messages/CertificateVerifyFailedEvent"
+        }
+      ]
+    }
+  }
+}

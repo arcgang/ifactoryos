@@ -1,0 +1,606 @@
+{
+  "info": {
+    "title": "line-command-api Events",
+    "version": "1.0.0",
+    "description": "Events published by line-command-api to the UNS Kafka backbone and consumed from it."
+  },
+  "servers": {
+    "kafka-uns": {
+      "host": "kafka.uns.internal.bmw-ifos.eu:9093",
+      "protocol": "kafka-secure",
+      "description": "On-premises UNS Kafka cluster (SASL/SCRAM + TLS 1.3)"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "uns.andon.alerts": {
+      "address": "bmw.ifos.munich.uns.andon.alerts.v1",
+      "messages": {
+        "AndonAlertEvent": {
+          "$ref": "#/components/messages/AndonAlertEvent"
+        }
+      },
+      "description": "Predictive Andon alert events from opcenter-sync-service — consumed by line-command-api to populate alert store."
+    },
+    "uns.torque.plcTrace": {
+      "address": "bmw.ifos.munich.uns.torque.plc-trace.v1",
+      "messages": {
+        "PlcTorqueTraceEvent": {
+          "$ref": "#/components/messages/PlcTorqueTraceEvent"
+        }
+      },
+      "description": "Raw Beckhoff PLC torque trace published by edge-gateways — consumed by line-command-api to trigger torque log processing."
+    },
+    "lineCommand.adoption.events": {
+      "address": "bmw.ifos.munich.line-command.adoption.v1",
+      "messages": {
+        "AdoptionEvent": {
+          "$ref": "#/components/messages/AdoptionEvent"
+        }
+      },
+      "description": "Adoption instrumentation events for Gate 1 WAU metrics (A5, A6). Emitted within 1 second of meaningful action."
+    },
+    "lineCommand.expertCall.ended": {
+      "address": "bmw.ifos.munich.line-command.expert-call.ended.v1",
+      "messages": {
+        "ExpertCallEndedEvent": {
+          "$ref": "#/components/messages/ExpertCallEndedEvent"
+        }
+      },
+      "description": "Expert call ended event — consumed by vin-digital-thread-api to append audit entry."
+    },
+    "lineCommand.torque.submitted": {
+      "address": "bmw.ifos.munich.line-command.torque.submitted.v1",
+      "messages": {
+        "TorqueSubmittedEvent": {
+          "$ref": "#/components/messages/TorqueSubmittedEvent"
+        }
+      },
+      "description": "Torque log submitted event — consumed by vin-digital-thread-api to link the record to the VIN thread."
+    },
+    "lineCommand.arSession.started": {
+      "address": "bmw.ifos.munich.line-command.ar-session.started.v1",
+      "messages": {
+        "ArSessionStartedEvent": {
+          "$ref": "#/components/messages/ArSessionStartedEvent"
+        }
+      },
+      "description": "AR session start event — consumed by observability-stack for adoption metrics."
+    },
+    "lineCommand.handover.submitted": {
+      "address": "bmw.ifos.munich.line-command.handover.submitted.v1",
+      "messages": {
+        "HandoverSubmittedEvent": {
+          "$ref": "#/components/messages/HandoverSubmittedEvent"
+        }
+      },
+      "description": "Shift handover submitted event — consumed by observability-stack and immutable-audit-log."
+    },
+    "lineCommand.torque.outOfTolerance": {
+      "address": "bmw.ifos.munich.line-command.torque.out-of-tolerance.v1",
+      "messages": {
+        "TorqueOutOfToleranceEvent": {
+          "$ref": "#/components/messages/TorqueOutOfToleranceEvent"
+        }
+      },
+      "description": "Torque out-of-tolerance alert event — consumed by line-command (console) to turn AR overlay red and alert Shift Lead."
+    }
+  },
+  "components": {
+    "messages": {
+      "AdoptionEvent": {
+        "name": "AdoptionEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "userId",
+            "role",
+            "actionType",
+            "stationId",
+            "occurredAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string",
+              "nullable": true
+            },
+            "role": {
+              "enum": [
+                "shift-lead",
+                "assembly-associate"
+              ],
+              "type": "string"
+            },
+            "userId": {
+              "type": "string",
+              "description": "BMW Entra ID subject — not anonymised at this layer; anonymised in analytics exports"
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "actionType": {
+              "enum": [
+                "ALERT_ACKNOWLEDGED",
+                "HANDOVER_SUBMITTED",
+                "AR_SESSION_START",
+                "TORQUE_LOG_SUBMITTED"
+              ],
+              "type": "string"
+            },
+            "deviceType": {
+              "enum": [
+                "HoloLens2",
+                "iPad"
+              ],
+              "type": "string",
+              "nullable": true
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "AndonAlertEvent": {
+        "name": "AndonAlertEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "alertId",
+            "lineId",
+            "stationId",
+            "alertType",
+            "predictedFailureTs",
+            "occurredAt"
+          ],
+          "properties": {
+            "lineId": {
+              "type": "string"
+            },
+            "alertId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "alertType": {
+              "type": "string"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "predictedFailureTs": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "PlcTorqueTraceEvent": {
+        "name": "PlcTorqueTraceEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "vin",
+            "stationId",
+            "fastenerPointId",
+            "torqueNm",
+            "anglesDeg",
+            "plcTimestamp",
+            "edgeGatewayId",
+            "idempotencyKey"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "torqueNm": {
+              "type": "number",
+              "format": "double"
+            },
+            "anglesDeg": {
+              "type": "number",
+              "format": "double"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "traceData": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "angleDeg": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "offsetMs": {
+                    "type": "integer"
+                  },
+                  "torqueNm": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            },
+            "plcTimestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "edgeGatewayId": {
+              "type": "string"
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "fastenerPointId": {
+              "type": "string"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "ExpertCallEndedEvent": {
+        "name": "ExpertCallEndedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "callId",
+            "vin",
+            "stationId",
+            "callMode",
+            "expertUserId",
+            "durationSeconds",
+            "endedAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "callId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "callMode": {
+              "enum": [
+                "video",
+                "voice"
+              ],
+              "type": "string"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "expertUserId": {
+              "type": "string"
+            },
+            "durationSeconds": {
+              "type": "integer"
+            },
+            "biometricDataIncluded": {
+              "type": "boolean",
+              "const": false
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "TorqueSubmittedEvent": {
+        "name": "TorqueSubmittedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "torqueLogId",
+            "vin",
+            "stationId",
+            "fastenerPointId",
+            "torqueNm",
+            "anglesDeg",
+            "plcTimestamp",
+            "publishedAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "torqueNm": {
+              "type": "number",
+              "format": "double"
+            },
+            "anglesDeg": {
+              "type": "number",
+              "format": "double"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "inTolerance": {
+              "type": "boolean"
+            },
+            "publishedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "torqueLogId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "plcTimestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "fastenerPointId": {
+              "type": "string"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "ArSessionStartedEvent": {
+        "name": "ArSessionStartedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "vin",
+            "stationId",
+            "deviceType",
+            "userId",
+            "occurredAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "userId": {
+              "type": "string",
+              "description": "No biometric or gaze data included"
+            },
+            "sessionId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "deviceType": {
+              "enum": [
+                "HoloLens2",
+                "iPad"
+              ],
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "HandoverSubmittedEvent": {
+        "name": "HandoverSubmittedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "handoverId",
+            "shiftId",
+            "lineId",
+            "submittedByUserId",
+            "shiftStartTs",
+            "shiftEndTs",
+            "alertCount",
+            "heldVinCount",
+            "occurredAt"
+          ],
+          "properties": {
+            "lineId": {
+              "type": "string"
+            },
+            "shiftId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "alertCount": {
+              "type": "integer"
+            },
+            "handoverId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "shiftEndTs": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "oeeDeltaPct": {
+              "type": "number",
+              "format": "double"
+            },
+            "heldVinCount": {
+              "type": "integer"
+            },
+            "shiftStartTs": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "submittedByUserId": {
+              "type": "string"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "TorqueOutOfToleranceEvent": {
+        "name": "TorqueOutOfToleranceEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "alertId",
+            "torqueLogId",
+            "vin",
+            "stationId",
+            "fastenerPointId",
+            "torqueNm",
+            "specNm",
+            "toleranceNm",
+            "occurredAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "specNm": {
+              "type": "number",
+              "format": "double"
+            },
+            "alertId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "torqueNm": {
+              "type": "number",
+              "format": "double"
+            },
+            "stationId": {
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "toleranceNm": {
+              "type": "number",
+              "format": "double"
+            },
+            "torqueLogId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "fastenerPointId": {
+              "type": "string"
+            }
+          }
+        },
+        "contentType": "application/json"
+      }
+    }
+  },
+  "operations": {
+    "consumeAndonAlert": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/uns.andon.alerts"
+      },
+      "summary": "Consume predictive Andon alert events from opcenter-sync-service",
+      "messages": [
+        {
+          "$ref": "#/channels/uns.andon.alerts/messages/AndonAlertEvent"
+        }
+      ]
+    },
+    "publishAdoptionEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.adoption.events"
+      },
+      "summary": "Publish adoption instrumentation event on meaningful user action",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.adoption.events/messages/AdoptionEvent"
+        }
+      ]
+    },
+    "consumePlcTorqueTrace": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/uns.torque.plcTrace"
+      },
+      "summary": "Consume raw PLC torque trace from UNS to trigger torque log processing",
+      "messages": [
+        {
+          "$ref": "#/channels/uns.torque.plcTrace/messages/PlcTorqueTraceEvent"
+        }
+      ]
+    },
+    "publishExpertCallEnded": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.expertCall.ended"
+      },
+      "summary": "Publish expert call ended event for VIN digital thread audit",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.expertCall.ended/messages/ExpertCallEndedEvent"
+        }
+      ]
+    },
+    "publishTorqueSubmitted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.torque.submitted"
+      },
+      "summary": "Publish torque log submitted event to UNS for VIN digital thread linkage",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.torque.submitted/messages/TorqueSubmittedEvent"
+        }
+      ]
+    },
+    "publishArSessionStarted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.arSession.started"
+      },
+      "summary": "Publish AR session start event for adoption instrumentation",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.arSession.started/messages/ArSessionStartedEvent"
+        }
+      ]
+    },
+    "publishHandoverSubmitted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.handover.submitted"
+      },
+      "summary": "Publish handover submitted event for audit log and observability",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.handover.submitted/messages/HandoverSubmittedEvent"
+        }
+      ]
+    },
+    "publishTorqueOutOfTolerance": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommand.torque.outOfTolerance"
+      },
+      "summary": "Publish out-of-tolerance alert when torque value exceeds VIN spec",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommand.torque.outOfTolerance/messages/TorqueOutOfToleranceEvent"
+        }
+      ]
+    }
+  }
+}

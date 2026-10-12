@@ -9,6 +9,16 @@ variable "environment" {
 # Topics the architecture's AsyncAPI contracts publish and subscribe to.
 locals {
   topics = [
+    "bmw.ifos.munich.fabric.certificate.issued.v1",
+    "bmw.ifos.munich.fabric.certificate.verify-failed.v1",
+    "bmw.ifos.munich.line-command.adoption.v1",
+    "bmw.ifos.munich.line-command.ar-session.started.v1",
+    "bmw.ifos.munich.line-command.expert-call.ended.v1",
+    "bmw.ifos.munich.line-command.handover.submitted.v1",
+    "bmw.ifos.munich.line-command.torque.out-of-tolerance.v1",
+    "bmw.ifos.munich.line-command.torque.submitted.v1",
+    "bmw.ifos.munich.uns.andon.alerts.v1",
+    "bmw.ifos.munich.uns.torque.plc-trace.v1",
     "bmw.munich.defectgenome.cluster.alerts.v1",
     "bmw.munich.defectgenome.corrective.actions.v1",
     "bmw.munich.defectgenome.query.results.v1",
@@ -32,6 +42,10 @@ locals {
     "factory.munich.line-command.torque-log.v1",
     "factory.munich.opcenter.andon.alert.v1",
     "factory.munich.opcenter.oee.snapshot.v1",
-    "factory.munich.vin-thread.torque.feedback.v1"
+    "factory.munich.uns.manufacturing.event.v1",
+    "factory.munich.vin-thread.torque.feedback.v1",
+    "factory.munich.vin.thread.completeness.alert.v1",
+    "factory.munich.vin.thread.event.linked.v1",
+    "factory.munich.vin.thread.final.gate.complete.v1"
   ]
 }

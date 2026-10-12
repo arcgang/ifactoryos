@@ -1,0 +1,6 @@
+react+python 16
+apps/planning-cockpit react
+apps/line-command react
+apps/quality-studio react
+services/sequence-optimizer python
+services/defect-genome python

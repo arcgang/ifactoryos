@@ -1,0 +1,4185 @@
+{
+  "info": {
+    "title": "BMW Intelligent Factory OS — Horizon 1 MVP (Munich i4 Reference Implementation)",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/alerts": {
+      "get": {
+        "summary": "List active and recent constraint breach alerts (cursor-paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated alert list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "active",
+                "acknowledged",
+                "resolved",
+                "all"
+              ],
+              "type": "string",
+              "default": "active"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listAlerts"
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Get operational health of the OpCenter sync service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncHealthResponse"
+                }
+              }
+            },
+            "description": "Health status (healthy or degraded)"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncHealthResponse"
+                }
+              }
+            },
+            "description": "Service unhealthy"
+          }
+        },
+        "description": "Returns connectivity status for OpCenter GraphQL subscription, Kafka producer health, event freshness, and pending publish queue depth. Used by observability-stack and operations team.",
+        "operationId": "getSyncHealth"
+      }
+    },
+    "/optimize": {
+      "post": {
+        "summary": "Trigger a 50-run Monte Carlo optimisation and return a ranked VIN sequence",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizeResponse"
+                }
+              }
+            },
+            "description": "Optimisation completed (Monte Carlo or heuristic fallback)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Constraint model validation failure (e.g. unknown option code)"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Optimisation timed out; heuristic fallback was not available"
+          }
+        },
+        "description": "Accepts a list of VINs and live constraint snapshot. Executes 50 Monte Carlo runs via KServe. Returns ranked sequence within 45 s; falls back to rule-based heuristic if timeout or model error occurs.",
+        "operationId": "runOptimizer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptimizeRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/overrides": {
+      "get": {
+        "summary": "List override log entries for a given week (cursor-paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideListResponse"
+                }
+              }
+            },
+            "description": "Paginated override log"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "weekIso",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+            },
+            "required": false,
+            "description": "ISO week string e.g. 2025-W30; defaults to current week"
+          },
+          {
+            "in": "query",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listOverrides"
+      },
+      "post": {
+        "summary": "Record a manual VIN position override with planner justification",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideRecord"
+                }
+              }
+            },
+            "description": "Override recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error (e.g. justification < 10 chars)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          }
+        },
+        "operationId": "createOverride",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/resequence": {
+      "post": {
+        "summary": "Trigger a targeted Monte Carlo re-sequence for a subset of affected VINs (mid-week disruption)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizeResponse"
+                }
+              }
+            },
+            "description": "Re-sequence result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          }
+        },
+        "operationId": "runTargetedResequence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResequenceRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/my26/config": {
+      "get": {
+        "summary": "Retrieve the current MY26 constraint model configuration",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/My26Config"
+                }
+              }
+            },
+            "description": "MY26 configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No MY26 config exists yet"
+          }
+        },
+        "operationId": "getMy26Config"
+      }
+    },
+    "/andon/alerts": {
+      "get": {
+        "summary": "List Andon alerts received from OpCenter, sorted by minutesToPredictedFailure ascending",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndonAlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated Andon alerts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "open",
+                "acknowledged",
+                "resolved",
+                "false_positive"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Returns paginated Andon alerts. Open predictive alerts are sorted by minutesToPredictedFailure ascending to support the Shift Lead Command Center view. Station-level only — no operator-identifiable data.",
+        "operationId": "listAndonAlerts"
+      }
+    },
+    "/gate-results": {
+      "get": {
+        "summary": "List gate results received from OpCenter for quality gate processing",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateResultListResponse"
+                }
+              }
+            },
+            "description": "Paginated gate results"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "description": "Filter by VIN"
+          },
+          {
+            "in": "query",
+            "name": "gateType",
+            "schema": {
+              "enum": [
+                "dimensional",
+                "leak",
+                "electrical",
+                "nvh",
+                "adas"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "schema": {
+              "enum": [
+                "pass",
+                "conditional_pass",
+                "fail"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "receivedAfter",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO-8601 UTC; return only results received after this timestamp"
+          }
+        ],
+        "description": "Returns paginated gate results as received from OpCenter. Supports filtering by VIN and gateType. Used by quality-studio to auto-populate the unified vehicle health score.",
+        "operationId": "listGateResults"
+      }
+    },
+    "/model/health": {
+      "get": {
+        "summary": "Return KServe model health, active model version, and shadow-mode heuristic status",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelHealth"
+                }
+              }
+            },
+            "description": "Model health status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "operationId": "getModelHealth"
+      }
+    },
+    "/oee/snapshots": {
+      "get": {
+        "summary": "List latest OEE snapshots for all weld lines",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OeeSnapshotListResponse"
+                }
+              }
+            },
+            "description": "Paginated OEE snapshots"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to a specific weld line"
+          },
+          {
+            "in": "query",
+            "name": "maxAgeSeconds",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only return snapshots newer than this many seconds"
+          }
+        ],
+        "description": "Returns the most recent OEE snapshot per weld line as received from OpCenter via GraphQL subscription. Data age is included so consumers can detect staleness. Supports filtering by lineId.",
+        "operationId": "listOeeSnapshots"
+      }
+    },
+    "/sequence/jobs": {
+      "get": {
+        "summary": "List sequence publish sync jobs with their current status",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncJobListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of sync jobs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque pagination cursor"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "published",
+                "queued",
+                "retrying",
+                "failed",
+                "rejected_by_opcenter"
+              ],
+              "type": "string"
+            },
+            "description": "Filter by job status"
+          }
+        ],
+        "description": "Returns paginated list of sync jobs. Planners use this to monitor 'Pending Publish' status. Supports filtering by status.",
+        "operationId": "listSyncJobs"
+      }
+    },
+    "/defect/clusters": {
+      "get": {
+        "summary": "List defect clusters with optional filters",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of defect clusters"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "defectClass",
+            "schema": {
+              "$ref": "#/components/schemas/DefectClass"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "$ref": "#/components/schemas/ClusterStatus"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listClusters"
+      }
+    },
+    "/models/feedback": {
+      "post": {
+        "summary": "Submit engineer feedback on a root-cause assignment to improve the DefectGenome model",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelFeedbackAck"
+                }
+              }
+            },
+            "description": "Feedback accepted for model retraining pipeline"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid feedback payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "submitModelFeedback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/alerts/{alertId}": {
+      "get": {
+        "summary": "Get a specific cluster alert by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterAlert"
+                }
+              }
+            },
+            "description": "Cluster alert detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getClusterAlert"
+      }
+    },
+    "/my26/config/save": {
+      "post": {
+        "summary": "Save a validated MY26 configuration; activates for subsequent optimizer runs",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/My26Config"
+                }
+              }
+            },
+            "description": "MY26 configuration saved and activated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation failed; config not saved"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict — unresolved validation errors must be fixed before saving"
+          }
+        },
+        "operationId": "saveMy26Config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/My26ConfigDraft"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/optimize/{runId}": {
+      "get": {
+        "summary": "Retrieve a previously completed optimisation run by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizeResponse"
+                }
+              }
+            },
+            "description": "Optimisation run result"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Run not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getOptimizeRun"
+      }
+    },
+    "/overrides/export": {
+      "get": {
+        "summary": "Export override log for a given week as PDF (for Plant Director review)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "description": "PDF binary"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid week parameter"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "weekIso",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "exportOverridesPdf"
+      }
+    },
+    "/sequence/publish": {
+      "post": {
+        "summary": "Publish a locked VIN sequence to Siemens OpCenter 10.2",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePublishResponse"
+                }
+              }
+            },
+            "description": "Sequence already published (idempotent replay) — returns cached response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePublishResponse"
+                }
+              }
+            },
+            "description": "Sequence accepted — either published to OpCenter (status=published) or queued for retry (status=queued)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid JWT"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have sequence-publish role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflicting publish in progress for the same sequencePlanId"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "OpCenter rejected the sequence (e.g., unsigned upload, invalid VIN)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "description": "Accepts a finalised VIN sequence from planning-cockpit, signs it with the Planning Cockpit API key, and forwards it to OpCenter via HTTPS/REST. If OpCenter is unavailable, the job is queued with 30-second retry. Source field is always 'planning-cockpit'. Idempotent on idempotencyKey.",
+        "operationId": "publishSequenceToOpCenter",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SequencePublishRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/defect/cluster-query": {
+      "post": {
+        "summary": "Run a DefectGenome cluster query for a defect class and return root-cause probability distribution",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterQueryResult"
+                }
+              }
+            },
+            "description": "Cluster query result with root-cause probability distribution"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable entity — defect class not supported"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "runClusterQuery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterQueryRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/my26/config/validate": {
+      "post": {
+        "summary": "Validate new MY26 option codes and paint palette against the constraint model without saving",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/My26ValidationResult"
+                }
+              }
+            },
+            "description": "Validation result with any conflicts or missing mappings"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Malformed payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "operationId": "validateMy26Config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/My26ConfigDraft"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/andon/alerts/{alertId}": {
+      "get": {
+        "summary": "Get a specific Andon alert by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndonAlert"
+                }
+              }
+            },
+            "description": "Andon alert detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getAndonAlert"
+      }
+    },
+    "/constraints/thresholds": {
+      "get": {
+        "summary": "List all configurable constraint warning thresholds (cursor-paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThresholdListResponse"
+                }
+              }
+            },
+            "description": "Paginated threshold list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listConstraintThresholds"
+      },
+      "put": {
+        "summary": "Create or update a constraint warning threshold",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintThreshold"
+                }
+              }
+            },
+            "description": "Threshold saved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          }
+        },
+        "operationId": "upsertConstraintThreshold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConstraintThreshold"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/overrides/{overrideId}": {
+      "get": {
+        "summary": "Retrieve a single override record",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideRecord"
+                }
+              }
+            },
+            "description": "Override record"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Override not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "overrideId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getOverride"
+      }
+    },
+    "/sequence/jobs/{syncJobId}": {
+      "get": {
+        "summary": "Get a specific sequence publish sync job by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncJob"
+                }
+              }
+            },
+            "description": "Sync job detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Sync job not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "syncJobId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getSyncJob"
+      }
+    },
+    "/defect/clusters/{clusterId}": {
+      "get": {
+        "summary": "Get a specific defect cluster by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefectCluster"
+                }
+              }
+            },
+            "description": "Defect cluster detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Cluster not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clusterId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getCluster"
+      }
+    },
+    "/gate-results/{gateResultId}": {
+      "get": {
+        "summary": "Get a specific gate result by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateResult"
+                }
+              }
+            },
+            "description": "Gate result detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Gate result not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateResultId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getGateResult"
+      }
+    },
+    "/models/confidence-threshold": {
+      "get": {
+        "summary": "Get the current configurable confidence threshold for low-confidence badge display",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfidenceThresholdConfig"
+                }
+              }
+            },
+            "description": "Current confidence threshold configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "getConfidenceThreshold"
+      },
+      "put": {
+        "summary": "Update the configurable confidence threshold (admin only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfidenceThresholdConfig"
+                }
+              }
+            },
+            "description": "Threshold updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid threshold value"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden — admin role required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "updateConfidenceThreshold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfidenceThresholdConfig"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/alerts/{alertId}/acknowledge": {
+      "post": {
+        "summary": "Acknowledge a constraint breach alert",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintAlert"
+                }
+              }
+            },
+            "description": "Alert acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "acknowledgeAlert"
+      }
+    },
+    "/optimize/{runId}/explain/{vin}": {
+      "get": {
+        "summary": "Return top-3 constraint factors driving a VIN's position in a given run",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VinExplanation"
+                }
+              }
+            },
+            "description": "Constraint contribution explanation for the VIN"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Run or VIN not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "explainVinPosition"
+      }
+    },
+    "/defect/clusters/{clusterId}/corrective-action": {
+      "post": {
+        "summary": "Pre-populate and submit a Jira corrective action ticket for a cluster",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectiveActionResult"
+                }
+              }
+            },
+            "description": "Corrective action Jira ticket created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Cluster not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Corrective action already exists for this cluster"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clusterId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "createCorrectiveAction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectiveActionRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SyncJob": {
+        "type": "object",
+        "required": [
+          "syncJobId",
+          "sequencePlanId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "published",
+              "queued",
+              "retrying",
+              "failed",
+              "rejected_by_opcenter"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "syncJobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextRetryAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastAttemptAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "opcenterError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw error message from OpCenter if rejected"
+          },
+          "plannerUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequencePlanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "opcenterSequenceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "VinInput": {
+        "type": "object",
+        "required": [
+          "vin"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "modelYear": {
+            "enum": [
+              "MY25",
+              "MY26"
+            ],
+            "type": "string"
+          },
+          "paintCode": {
+            "type": "string"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vipPriority": {
+            "type": "boolean",
+            "default": false
+          },
+          "regulatoryHold": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "RankedVin": {
+        "type": "object",
+        "required": [
+          "vin",
+          "position",
+          "constraintScore"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "vipPriority": {
+            "type": "boolean"
+          },
+          "regulatoryHold": {
+            "type": "boolean"
+          },
+          "constraintScore": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "AndonAlert": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "stationId",
+          "lineId",
+          "alertType",
+          "predictedFailureType",
+          "minutesToPredictedFailure",
+          "recommendedAction",
+          "status",
+          "detectedAt"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved",
+              "false_positive"
+            ],
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertType": {
+            "enum": [
+              "predictive",
+              "reactive"
+            ],
+            "type": "string",
+            "description": "predictive = threshold-rule based from Beckhoff PLC trace; reactive = post-failure"
+          },
+          "stationId": {
+            "type": "string",
+            "description": "Station identifier (station-level, not operator-level per GDPR/BetrVG)"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "acknowledgedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "opcenterEventId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source event ID from OpCenter GraphQL subscription"
+          },
+          "recommendedAction": {
+            "type": "string"
+          },
+          "predictedFailureType": {
+            "type": "string",
+            "description": "e.g., electrode_wear, press_die_overrun, agv_delay"
+          },
+          "minutesToPredictedFailure": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Countdown in minutes; null for reactive alerts"
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "GateResult": {
+        "type": "object",
+        "required": [
+          "gateResultId",
+          "vin",
+          "gateId",
+          "gateType",
+          "result",
+          "measurements",
+          "measuredAt",
+          "receivedFromOpcenterAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "gateId": {
+            "type": "string",
+            "description": "e.g., GATE-DIM, GATE-LEAK, GATE-ELEC, GATE-NVH, GATE-ADAS"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "conditional_pass",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "gateType": {
+            "enum": [
+              "dimensional",
+              "leak",
+              "electrical",
+              "nvh",
+              "adas"
+            ],
+            "type": "string"
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of measurement in OpCenter"
+          },
+          "gateResultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateMeasurement"
+            }
+          },
+          "opcenterEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receivedFromOpcenterAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when this service received the event from OpCenter"
+          }
+        }
+      },
+      "My26Config": {
+        "type": "object",
+        "required": [
+          "configId",
+          "version",
+          "status",
+          "optionCodes",
+          "paintPalette",
+          "createdAt",
+          "createdBy"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "draft",
+              "validated",
+              "active",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "description": "Semantic version string e.g. 1.0.0"
+          },
+          "configId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "activatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptionCodeEntry"
+            }
+          },
+          "kittingRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "paintPalette": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaintPaletteEntry"
+            }
+          }
+        }
+      },
+      "AlertStatus": {
+        "enum": [
+          "new",
+          "acknowledged",
+          "in_progress",
+          "resolved"
+        ],
+        "type": "string",
+        "description": "Lifecycle status of a cluster alert"
+      },
+      "DefectClass": {
+        "enum": [
+          "dust",
+          "orange_peel",
+          "run",
+          "crater",
+          "pinhole"
+        ],
+        "type": "string",
+        "description": "Supported paint defect classes"
+      },
+      "ModelHealth": {
+        "type": "object",
+        "required": [
+          "monteCarloPrimary",
+          "heuristicShadow",
+          "activeModelVersion",
+          "my26ConfigVersion"
+        ],
+        "properties": {
+          "kserveEndpoint": {
+            "type": "string"
+          },
+          "heuristicShadow": {
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "lastHealthCheckAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "monteCarloPrimary": {
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "my26ConfigVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activeModelVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "OeeSnapshot": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "oeePercent",
+          "availability",
+          "performance",
+          "quality",
+          "measuredAt",
+          "dataAgeSeconds"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "description": "Weld line identifier (e.g., WELD-LINE-1)"
+          },
+          "quality": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the OEE measurement in OpCenter"
+          },
+          "oeePercent": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "performance": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "availability": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "dataAgeSeconds": {
+            "type": "integer",
+            "description": "Seconds since measuredAt; consumers use this to detect staleness"
+          }
+        }
+      },
+      "ClusterAlert": {
+        "type": "object",
+        "required": [
+          "alert_id",
+          "cluster_id",
+          "defect_class",
+          "status",
+          "affected_vin_count",
+          "root_cause_signature",
+          "confidence_score",
+          "most_recent_vin",
+          "process_replay_url",
+          "triggered_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/AlertStatus"
+          },
+          "alert_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "most_recent_vin": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 3
+          },
+          "process_replay_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "root_cause_signature": {
+            "type": "string"
+          },
+          "acknowledged_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "corrective_action_jira_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClusterStatus": {
+        "enum": [
+          "open",
+          "in_progress",
+          "resolved"
+        ],
+        "type": "string",
+        "description": "Lifecycle status of a defect cluster"
+      },
+      "DefectCluster": {
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "defect_class",
+          "status",
+          "root_cause_signature",
+          "confidence_score",
+          "affected_vin_count",
+          "most_recent_vin",
+          "detected_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ClusterStatus"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "top_factors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RootCauseFactor"
+            }
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "most_recent_vin": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "process_replay_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Deep link to Process Replay for most recent affected VIN"
+          },
+          "root_cause_signature": {
+            "type": "string",
+            "description": "Canonical root-cause signature string"
+          },
+          "corrective_action_jira_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OverrideRecord": {
+        "type": "object",
+        "required": [
+          "overrideId",
+          "runId",
+          "vin",
+          "originalPosition",
+          "newPosition",
+          "justification",
+          "plannerId",
+          "createdAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "plannerId": {
+            "type": "string",
+            "description": "Entra ID subject claim of the planner"
+          },
+          "overrideId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "newPosition": {
+            "type": "integer"
+          },
+          "justification": {
+            "type": "string"
+          },
+          "originalPosition": {
+            "type": "integer"
+          }
+        }
+      },
+      "VinExplanation": {
+        "type": "object",
+        "required": [
+          "runId",
+          "vin",
+          "position",
+          "topFactors"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "topFactors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConstraintFactor"
+            },
+            "maxItems": 3,
+            "minItems": 1
+          }
+        }
+      },
+      "AdvisorV1Result": {
+        "type": "object",
+        "required": [
+          "rule_id",
+          "rule_description",
+          "recommended_action"
+        ],
+        "properties": {
+          "rule_id": {
+            "type": "string"
+          },
+          "rule_description": {
+            "type": "string"
+          },
+          "matched_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_action": {
+            "type": "string"
+          }
+        }
+      },
+      "ConstraintAlert": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "constraintType",
+          "currentValue",
+          "thresholdValue",
+          "affectedVins",
+          "status",
+          "detectedAt"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "active",
+              "acknowledged",
+              "resolved"
+            ],
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "affectedVins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            }
+          },
+          "currentValue": {
+            "type": "number",
+            "format": "double"
+          },
+          "acknowledgedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "acknowledgedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "constraintType": {
+            "enum": [
+              "paint_capacity",
+              "body_wip_queue",
+              "kitting_readiness",
+              "maintenance_window",
+              "agv_delay",
+              "press_die_overrun"
+            ],
+            "type": "string"
+          },
+          "thresholdValue": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "GateMeasurement": {
+        "type": "object",
+        "required": [
+          "measurementId",
+          "name",
+          "value",
+          "unit",
+          "toleranceLow",
+          "toleranceHigh",
+          "withinTolerance"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          },
+          "toleranceLow": {
+            "type": "number",
+            "format": "double"
+          },
+          "measurementId": {
+            "type": "string"
+          },
+          "toleranceHigh": {
+            "type": "number",
+            "format": "double"
+          },
+          "withinTolerance": {
+            "type": "boolean"
+          },
+          "reworkThresholdLow": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "reworkThresholdHigh": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "My26ConfigDraft": {
+        "type": "object",
+        "required": [
+          "optionCodes",
+          "paintPalette"
+        ],
+        "properties": {
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptionCodeEntry"
+            }
+          },
+          "kittingRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "Kitting rule overrides for MY26 variants"
+          },
+          "paintPalette": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaintPaletteEntry"
+            }
+          }
+        }
+      },
+      "OptimizeRequest": {
+        "type": "object",
+        "required": [
+          "weekIso",
+          "vins",
+          "constraintSnapshot"
+        ],
+        "properties": {
+          "vins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VinInput"
+            },
+            "maxItems": 500,
+            "minItems": 1
+          },
+          "weekIso": {
+            "type": "string",
+            "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-supplied idempotency key; same key returns cached result within 10 minutes"
+          },
+          "monteCarloRuns": {
+            "type": "integer",
+            "default": 50,
+            "maximum": 50,
+            "minimum": 1
+          },
+          "my26ConfigVersion": {
+            "type": "string",
+            "description": "MY26 config version UUID if applicable"
+          },
+          "constraintSnapshot": {
+            "$ref": "#/components/schemas/ConstraintSnapshot"
+          }
+        }
+      },
+      "OptionCodeEntry": {
+        "type": "object",
+        "required": [
+          "code",
+          "description"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "constraintMappings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Constraint model keys this option code maps to"
+          }
+        }
+      },
+      "OverrideRequest": {
+        "type": "object",
+        "required": [
+          "runId",
+          "vin",
+          "originalPosition",
+          "newPosition",
+          "justification"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "newPosition": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 10
+          },
+          "originalPosition": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "RootCauseFactor": {
+        "type": "object",
+        "required": [
+          "rank",
+          "factor_name",
+          "factor_category",
+          "probability_score",
+          "supporting_vin_count"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "maximum": 5,
+            "minimum": 1
+          },
+          "factor_name": {
+            "type": "string",
+            "description": "Human-readable factor label, e.g. 'e-coat voltage drop at stage 6'"
+          },
+          "factor_category": {
+            "enum": [
+              "prep_stage",
+              "booth_parameter",
+              "climate_condition"
+            ],
+            "type": "string",
+            "description": "Category of the contributing factor"
+          },
+          "probability_score": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "supporting_vin_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "VinSequenceItem": {
+        "type": "object",
+        "required": [
+          "vin",
+          "position",
+          "optionCodes"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$",
+            "description": "17-character VIN"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based position in the production sequence"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "BMW option codes for this VIN"
+          }
+        }
+      },
+      "ConstraintFactor": {
+        "type": "object",
+        "required": [
+          "factorName",
+          "weightedScore",
+          "dataSource"
+        ],
+        "properties": {
+          "rawValue": {
+            "type": "number",
+            "format": "double"
+          },
+          "dataSource": {
+            "type": "string",
+            "description": "UNS topic or constraint model field that supplied this factor"
+          },
+          "factorName": {
+            "enum": [
+              "paint_batch_conflict",
+              "changeover_penalty",
+              "maintenance_window",
+              "kitting_gap",
+              "vip_priority",
+              "regulatory_hold"
+            ],
+            "type": "string"
+          },
+          "weightedScore": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "ModelFeedbackAck": {
+        "type": "object",
+        "required": [
+          "feedback_id",
+          "accepted_at"
+        ],
+        "properties": {
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedback_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "OptimizeResponse": {
+        "type": "object",
+        "required": [
+          "runId",
+          "weekIso",
+          "resultType",
+          "rankedSequence",
+          "completedAt",
+          "durationMs",
+          "confidenceScore",
+          "my26ConfigVersion"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "weekIso": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "resultType": {
+            "enum": [
+              "monte_carlo",
+              "heuristic_fallback"
+            ],
+            "type": "string",
+            "description": "Indicates whether the result is from Monte Carlo optimisation or the rule-based heuristic fallback"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rankedSequence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedVin"
+            }
+          },
+          "confidenceScore": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "my26ConfigVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "constraintSnapshotTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConstraintAlert"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "MaintenanceWindow": {
+        "type": "object",
+        "required": [
+          "windowId",
+          "stationId",
+          "startsAt",
+          "endsAt"
+        ],
+        "properties": {
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "PaintPaletteEntry": {
+        "type": "object",
+        "required": [
+          "paintCode",
+          "batchGroup"
+        ],
+        "properties": {
+          "paintCode": {
+            "type": "string"
+          },
+          "batchGroup": {
+            "type": "string"
+          },
+          "changeoverPenaltyMinutes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ResequenceRequest": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "affectedVins",
+          "constraintSnapshot"
+        ],
+        "properties": {
+          "alertId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Alert that triggered this re-sequence"
+          },
+          "affectedVins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VinInput"
+            },
+            "maxItems": 500,
+            "minItems": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "constraintSnapshot": {
+            "$ref": "#/components/schemas/ConstraintSnapshot"
+          }
+        }
+      },
+      "ClusterQueryResult": {
+        "type": "object",
+        "required": [
+          "query_id",
+          "defect_class",
+          "cluster_id",
+          "model_confidence",
+          "low_confidence",
+          "top_factors",
+          "affected_vin_count",
+          "queried_at"
+        ],
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "queried_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "top_factors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RootCauseFactor"
+            },
+            "maxItems": 5,
+            "minItems": 1
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "affected_vins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of affected VINs (anonymised to station level in exports)"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "low_confidence": {
+            "type": "boolean",
+            "description": "True when model_confidence < configured threshold"
+          },
+          "model_confidence": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "advisor_v1_fallback": {
+            "$ref": "#/components/schemas/AdvisorV1Result",
+            "description": "Present when low_confidence is true"
+          }
+        }
+      },
+      "ConstraintSnapshot": {
+        "type": "object",
+        "required": [
+          "snapshotTimestamp",
+          "paintCapacityUtilisation",
+          "bodyWipQueueDepth",
+          "kittingReadinessPct"
+        ],
+        "properties": {
+          "unsLatencyMs": {
+            "type": "integer",
+            "description": "UNS p99 latency at snapshot time in ms"
+          },
+          "bodyWipQueueDepth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "snapshotTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maintenanceWindows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceWindow"
+            }
+          },
+          "kittingReadinessPct": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "paintCapacityUtilisation": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          }
+        },
+        "description": "Live constraint values fetched from UNS at the time of the optimisation request"
+      },
+      "SyncHealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "opcenterConnected",
+          "kafkaProducerHealthy",
+          "lastOeeEventAt",
+          "lastAndonEventAt",
+          "lastGateResultAt",
+          "pendingPublishCount",
+          "checkedAt"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ],
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastOeeEventAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastAndonEventAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastGateResultAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "opcenterConnected": {
+            "type": "boolean",
+            "description": "Whether the GraphQL subscription to OpCenter is active"
+          },
+          "pendingPublishCount": {
+            "type": "integer",
+            "description": "Number of sequence publish jobs in queued/retrying state"
+          },
+          "kafkaProducerHealthy": {
+            "type": "boolean"
+          },
+          "opcenterApiKeyRotationDue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Date when the OpCenter API key must be rotated (90-day max)"
+          }
+        }
+      },
+      "ClusterListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DefectCluster"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ClusterQueryRequest": {
+        "type": "object",
+        "required": [
+          "defect_class"
+        ],
+        "properties": {
+          "vin_filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of VINs to scope the query; omit for all recent VINs"
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-supplied idempotency key; same key returns cached result within 5 minutes"
+          },
+          "time_window_hours": {
+            "type": "integer",
+            "default": 4,
+            "maximum": 168,
+            "minimum": 1,
+            "description": "Rolling time window in hours for cluster detection"
+          }
+        }
+      },
+      "ConstraintThreshold": {
+        "type": "object",
+        "required": [
+          "thresholdId",
+          "constraintType",
+          "warningLevel",
+          "criticalLevel",
+          "unit"
+        ],
+        "properties": {
+          "unit": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "thresholdId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warningLevel": {
+            "type": "number",
+            "format": "double"
+          },
+          "criticalLevel": {
+            "type": "number",
+            "format": "double"
+          },
+          "constraintType": {
+            "enum": [
+              "paint_capacity",
+              "body_wip_queue",
+              "kitting_readiness",
+              "maintenance_window",
+              "agv_delay",
+              "press_die_overrun"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "My26ValidationIssue": {
+        "type": "object",
+        "required": [
+          "severity",
+          "field",
+          "message"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "SyncJobListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyncJob"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ModelFeedbackRequest": {
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "query_id",
+          "engineer_user_id",
+          "accepted_factor_rank",
+          "defect_class"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "query_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "engineer_user_id": {
+            "type": "string"
+          },
+          "override_root_cause": {
+            "type": "string",
+            "description": "Free-text override if engineer disagrees with all top-5 factors"
+          },
+          "accepted_factor_rank": {
+            "type": "integer",
+            "maximum": 5,
+            "minimum": 1
+          }
+        }
+      },
+      "My26ValidationResult": {
+        "type": "object",
+        "required": [
+          "valid",
+          "issues"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/My26ValidationIssue"
+            }
+          }
+        }
+      },
+      "OverrideListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OverrideRecord"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ThresholdListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConstraintThreshold"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "AndonAlertListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AndonAlert"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "CorrectiveActionResult": {
+        "type": "object",
+        "required": [
+          "jira_ticket_id",
+          "jira_ticket_url",
+          "cluster_id",
+          "created_at"
+        ],
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "jira_ticket_id": {
+            "type": "string"
+          },
+          "jira_ticket_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "prepopulated_summary": {
+            "type": "string"
+          }
+        }
+      },
+      "GateResultListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateResult"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "SequencePublishRequest": {
+        "type": "object",
+        "required": [
+          "sequencePlanId",
+          "vinSequence",
+          "source",
+          "lockedAt"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string",
+            "description": "Must always be 'planning-cockpit' — OpCenter rejects any other value"
+          },
+          "lockedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 UTC timestamp when the planner locked the sequence"
+          },
+          "vinSequence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VinSequenceItem"
+            },
+            "minItems": 1
+          },
+          "plannerUserId": {
+            "type": "string",
+            "description": "BMW Entra ID subject of the planner who locked the sequence"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-supplied idempotency key; duplicate submissions with same key return the cached response"
+          },
+          "sequencePlanId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the VIN sequence plan from postgresql-citus vinsequenceplan table"
+          }
+        }
+      },
+      "AcknowledgeAlertRequest": {
+        "type": "object",
+        "required": [
+          "acknowledged_by_user_id"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "acknowledged_by_user_id": {
+            "type": "string"
+          },
+          "corrective_action_jira_id": {
+            "type": "string",
+            "description": "Jira ticket ID if corrective action already created"
+          }
+        }
+      },
+      "CorrectiveActionRequest": {
+        "type": "object",
+        "required": [
+          "assigned_root_cause_factor_rank",
+          "confirmed_by_user_id"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "additional_notes": {
+            "type": "string"
+          },
+          "confirmed_by_user_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject claim of the confirming engineer"
+          },
+          "assigned_root_cause_factor_rank": {
+            "type": "integer",
+            "maximum": 5,
+            "minimum": 1
+          }
+        }
+      },
+      "OeeSnapshotListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OeeSnapshot"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "SequencePublishResponse": {
+        "type": "object",
+        "required": [
+          "syncJobId",
+          "opcenterSequenceId",
+          "status",
+          "source",
+          "publishedAt"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "published",
+              "queued",
+              "failed"
+            ],
+            "type": "string",
+            "description": "published = confirmed by OpCenter; queued = OpCenter unavailable, retry pending; failed = permanent error"
+          },
+          "syncJobId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Internal sync job ID for tracking"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of successful OpCenter confirmation; null if queued"
+          },
+          "auditEventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the immutable audit log entry for this publish action"
+          },
+          "retryScheduledAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Next retry timestamp when status=queued"
+          },
+          "opcenterSequenceId": {
+            "type": "string",
+            "description": "Sequence ID returned by Siemens OpCenter 10.2 API"
+          }
+        }
+      },
+      "ConfidenceThresholdConfig": {
+        "type": "object",
+        "required": [
+          "low_confidence_threshold",
+          "cluster_alert_threshold"
+        ],
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cluster_alert_min_vins": {
+            "type": "integer",
+            "default": 3,
+            "minimum": 1,
+            "description": "Minimum number of VINs sharing a root-cause signature to trigger an alert"
+          },
+          "cluster_alert_threshold": {
+            "type": "number",
+            "format": "double",
+            "default": 0.8,
+            "maximum": 1,
+            "minimum": 0,
+            "description": "Minimum confidence for a cluster to trigger a real-time alert"
+          },
+          "low_confidence_threshold": {
+            "type": "number",
+            "format": "double",
+            "default": 0.6,
+            "maximum": 1,
+            "minimum": 0,
+            "description": "Below this score a Low Confidence badge is shown and Advisor v1 fallback is displayed"
+          },
+          "cluster_alert_window_hours": {
+            "type": "integer",
+            "default": 4,
+            "minimum": 1,
+            "description": "Rolling window in hours for cluster alert detection"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

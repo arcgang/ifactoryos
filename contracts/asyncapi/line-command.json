@@ -1,0 +1,851 @@
+{
+  "info": {
+    "title": "line-command AsyncAPI",
+    "version": "1.0.0",
+    "description": "Events published by the line-command client to the observability adoption instrumentation layer and consumed from the UNS backbone for OEE, Andon, and torque feedback."
+  },
+  "servers": {
+    "uns-kafka": {
+      "host": "uns-backbone:9093",
+      "protocol": "kafka-secure",
+      "security": [
+        {
+          "$ref": "#/components/securitySchemes/SpiffeMtls"
+        }
+      ],
+      "description": "On-premises UNS Kafka broker (mTLS SPIFFE/SPIRE)"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "andonAlert": {
+      "address": "factory.munich.opcenter.andon.alert.v1",
+      "messages": {
+        "AndonAlertMessage": {
+          "$ref": "#/components/messages/AndonAlertMessage"
+        }
+      },
+      "description": "Predictive Andon alert events consumed from UNS backbone for Command Center and Station Detail (US-007, US-008, US-011)."
+    },
+    "oeeSnapshot": {
+      "address": "factory.munich.opcenter.oee.snapshot.v1",
+      "messages": {
+        "OeeSnapshotMessage": {
+          "$ref": "#/components/messages/OeeSnapshotMessage"
+        }
+      },
+      "description": "OEE snapshot events consumed from UNS backbone (published by opcenter-sync-service) for Command Center display (US-007, US-008)."
+    },
+    "arSessionEvent": {
+      "address": "factory.munich.line-command.ar-session.v1",
+      "messages": {
+        "ArSessionEvent": {
+          "$ref": "#/components/messages/ArSessionEvent"
+        }
+      },
+      "description": "AR Workbench session lifecycle events (start, end, fallback) for VIN digital thread linkage and adoption metrics (US-010, US-011, US-012, US-020)."
+    },
+    "torqueFeedback": {
+      "address": "factory.munich.vin-thread.torque.feedback.v1",
+      "messages": {
+        "TorqueFeedbackMessage": {
+          "$ref": "#/components/messages/TorqueFeedbackMessage"
+        }
+      },
+      "description": "Torque out-of-tolerance feedback events consumed from UNS backbone to drive AR overlay red indicator and Shift Lead alert (US-011)."
+    },
+    "torqueLogEvent": {
+      "address": "factory.munich.line-command.torque-log.v1",
+      "messages": {
+        "TorqueLogEvent": {
+          "$ref": "#/components/messages/TorqueLogEvent"
+        }
+      },
+      "description": "Torque tightening events submitted by the AR Workbench for VIN digital thread linkage (US-011)."
+    },
+    "expertCallEvent": {
+      "address": "factory.munich.line-command.expert-call.v1",
+      "messages": {
+        "ExpertCallEvent": {
+          "$ref": "#/components/messages/ExpertCallEvent"
+        }
+      },
+      "description": "Remote expert call session events (start, end) for VIN digital thread audit trail (US-012)."
+    },
+    "handoverSubmittedEvent": {
+      "address": "factory.munich.line-command.handover.v1",
+      "messages": {
+        "HandoverSubmittedEvent": {
+          "$ref": "#/components/messages/HandoverSubmittedEvent"
+        }
+      },
+      "description": "Shift handover submission events for incoming Shift Lead Command Center and audit trail (US-009)."
+    },
+    "lineCommandAdoptionEvent": {
+      "address": "factory.munich.line-command.adoption.v1",
+      "messages": {
+        "AdoptionEvent": {
+          "$ref": "#/components/messages/AdoptionEvent"
+        }
+      },
+      "description": "Adoption instrumentation events emitted by line-command for Gate 1 WAU measurement (US-020)."
+    },
+    "maintenanceDispatchEvent": {
+      "address": "factory.munich.line-command.maintenance-dispatch.v1",
+      "messages": {
+        "MaintenanceDispatchEvent": {
+          "$ref": "#/components/messages/MaintenanceDispatchEvent"
+        }
+      },
+      "description": "Maintenance dispatch events triggered from Station Detail (US-008)."
+    }
+  },
+  "components": {
+    "schemas": {
+      "AndonAlertPayload": {
+        "type": "object",
+        "required": [
+          "alert_id",
+          "station_id",
+          "failure_type",
+          "predicted_failure_at",
+          "minutes_to_failure",
+          "recommended_action",
+          "threshold_value",
+          "current_value",
+          "created_at"
+        ],
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "failure_type": {
+            "type": "string",
+            "description": "e.g., electrode_wear, press_die_overrun, agv_delay"
+          },
+          "current_value": {
+            "type": "number"
+          },
+          "threshold_value": {
+            "type": "number"
+          },
+          "minutes_to_failure": {
+            "type": "integer",
+            "description": "Countdown value; updated every 60 seconds in UI"
+          },
+          "recommended_action": {
+            "type": "string"
+          },
+          "predicted_failure_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "threshold_crossing_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "OeeSnapshotPayload": {
+        "type": "object",
+        "required": [
+          "snapshot_id",
+          "weld_line_id",
+          "oee_pct",
+          "availability_pct",
+          "performance_pct",
+          "quality_pct",
+          "captured_at"
+        ],
+        "properties": {
+          "oee_pct": {
+            "type": "number",
+            "description": "Overall Equipment Effectiveness percentage"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of OEE measurement; must be ≤30s old when displayed"
+          },
+          "quality_pct": {
+            "type": "number"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "weld_line_id": {
+            "type": "string",
+            "description": "Weld line identifier (1–4)"
+          },
+          "performance_pct": {
+            "type": "number"
+          },
+          "availability_pct": {
+            "type": "number"
+          }
+        }
+      },
+      "AdoptionEventPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "user_id",
+          "role",
+          "action_type",
+          "station_id",
+          "session_id",
+          "occurred_at"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "shift_lead",
+              "assembly_associate"
+            ],
+            "type": "string",
+            "description": "Console role of the acting user"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject claim; station-level anonymised in analytics exports"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique event identifier"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional action-specific metadata (e.g., alert_id for acknowledgment)",
+            "additionalProperties": true
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string",
+            "description": "Station identifier (anonymised to station level per Works Council §87 BetrVG)"
+          },
+          "action_type": {
+            "enum": [
+              "kiosk_login",
+              "alert_acknowledgment",
+              "handover_submission",
+              "ar_session_start",
+              "torque_log_submission",
+              "maintenance_dispatch"
+            ],
+            "type": "string",
+            "description": "Meaningful action type for WAU calculation"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the action"
+          }
+        }
+      },
+      "ArSessionEventPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "session_id",
+          "user_id",
+          "vin",
+          "station_id",
+          "device_type",
+          "event_kind",
+          "occurred_at"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17,
+            "description": "Vehicle Identification Number"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject; no biometric or gaze data included"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "call_mode": {
+            "enum": [
+              "video",
+              "voice_only",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set only for expert call events; null otherwise"
+          },
+          "event_kind": {
+            "enum": [
+              "session_start",
+              "session_end",
+              "overlay_loaded",
+              "overlay_fallback",
+              "overlay_load_timeout"
+            ],
+            "type": "string",
+            "description": "AR session lifecycle event kind"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "device_type": {
+            "enum": [
+              "hololens2",
+              "ipad_pro"
+            ],
+            "type": "string",
+            "description": "AR device type for adoption analysis"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Session or call duration in seconds; set on session_end"
+          }
+        }
+      },
+      "TorqueFeedbackPayload": {
+        "type": "object",
+        "required": [
+          "feedback_id",
+          "vin",
+          "station_id",
+          "step_id",
+          "torque_nm",
+          "within_tolerance",
+          "alert_raised",
+          "plc_timestamp"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "torque_nm": {
+            "type": "number"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "feedback_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alert_raised": {
+            "type": "boolean",
+            "description": "True when out-of-tolerance alert sent to Shift Lead within 30s"
+          },
+          "plc_timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "within_tolerance": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TorqueLogEventPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "vin",
+          "station_id",
+          "step_id",
+          "torque_nm",
+          "angle_deg",
+          "within_tolerance",
+          "plc_timestamp",
+          "sync_status",
+          "occurred_at"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "step_id": {
+            "type": "string",
+            "description": "Work instruction step identifier"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "angle_deg": {
+            "type": "number",
+            "description": "Measured angle in degrees"
+          },
+          "torque_nm": {
+            "type": "number",
+            "description": "Measured torque in Newton-metres"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sync_status": {
+            "enum": [
+              "synced",
+              "pending_sync",
+              "cached_local"
+            ],
+            "type": "string",
+            "description": "UNS sync status; pending_sync shown in AR overlay"
+          },
+          "plc_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp from Beckhoff PLC at moment of tightening"
+          },
+          "tolerance_max_nm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tolerance_min_nm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "within_tolerance": {
+            "type": "boolean"
+          },
+          "nominal_torque_nm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Specified nominal torque for this VIN option code"
+          }
+        }
+      },
+      "ExpertCallEventPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "session_id",
+          "vin",
+          "station_id",
+          "call_mode",
+          "event_kind",
+          "expert_user_id",
+          "occurred_at"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "maxLength": 17,
+            "minLength": 17
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "call_mode": {
+            "enum": [
+              "video",
+              "voice_only"
+            ],
+            "type": "string",
+            "description": "video only when Works Council-approved; no biometric or gaze data transmitted"
+          },
+          "event_kind": {
+            "enum": [
+              "call_start",
+              "call_end"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expert_user_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject of remote expert"
+          },
+          "duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Set on call_end"
+          }
+        }
+      },
+      "HandoverSubmittedEventPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "handover_id",
+          "submitting_shift_lead_id",
+          "shift_start",
+          "shift_end",
+          "weld_line_oee_deltas",
+          "alert_dispositions",
+          "occurred_at"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shift_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "handover_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "shift_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "alert_dispositions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "alert_id",
+                "disposition"
+              ],
+              "properties": {
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "alert_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "disposition": {
+                  "enum": [
+                    "resolved",
+                    "escalated",
+                    "monitoring"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "weld_line_oee_deltas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "weld_line_id",
+                "current_shift_oee_pct",
+                "thirty_day_avg_oee_pct",
+                "delta_pct"
+              ],
+              "properties": {
+                "delta_pct": {
+                  "type": "number"
+                },
+                "weld_line_id": {
+                  "type": "string"
+                },
+                "current_shift_oee_pct": {
+                  "type": "number"
+                },
+                "thirty_day_avg_oee_pct": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "submitting_shift_lead_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject of outgoing Shift Lead"
+          },
+          "vins_flagged_for_quality": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 17,
+              "minLength": 17
+            }
+          }
+        }
+      },
+      "MaintenanceDispatchEventPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "shift_lead_id",
+          "station_id",
+          "alert_id",
+          "occurred_at"
+        ],
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "shift_lead_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject of dispatching Shift Lead"
+          }
+        }
+      }
+    },
+    "messages": {
+      "AdoptionEvent": {
+        "name": "AdoptionEvent",
+        "title": "Line Command Adoption Instrumentation Event",
+        "payload": {
+          "$ref": "#/components/schemas/AdoptionEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "ArSessionEvent": {
+        "name": "ArSessionEvent",
+        "title": "AR Workbench Session Event",
+        "payload": {
+          "$ref": "#/components/schemas/ArSessionEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "TorqueLogEvent": {
+        "name": "TorqueLogEvent",
+        "title": "Torque Tightening Log Event",
+        "payload": {
+          "$ref": "#/components/schemas/TorqueLogEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "ExpertCallEvent": {
+        "name": "ExpertCallEvent",
+        "title": "Remote Expert Call Session Event",
+        "payload": {
+          "$ref": "#/components/schemas/ExpertCallEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "AndonAlertMessage": {
+        "name": "AndonAlertMessage",
+        "title": "Predictive Andon Alert from UNS",
+        "payload": {
+          "$ref": "#/components/schemas/AndonAlertPayload"
+        },
+        "contentType": "application/json"
+      },
+      "OeeSnapshotMessage": {
+        "name": "OeeSnapshotMessage",
+        "title": "OEE Snapshot from OpCenter",
+        "payload": {
+          "$ref": "#/components/schemas/OeeSnapshotPayload"
+        },
+        "contentType": "application/json"
+      },
+      "TorqueFeedbackMessage": {
+        "name": "TorqueFeedbackMessage",
+        "title": "Torque Out-of-Tolerance Feedback from UNS",
+        "payload": {
+          "$ref": "#/components/schemas/TorqueFeedbackPayload"
+        },
+        "contentType": "application/json"
+      },
+      "HandoverSubmittedEvent": {
+        "name": "HandoverSubmittedEvent",
+        "title": "Shift Handover Submitted Event",
+        "payload": {
+          "$ref": "#/components/schemas/HandoverSubmittedEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "MaintenanceDispatchEvent": {
+        "name": "MaintenanceDispatchEvent",
+        "title": "Maintenance Dispatch Event",
+        "payload": {
+          "$ref": "#/components/schemas/MaintenanceDispatchEventPayload"
+        },
+        "contentType": "application/json"
+      }
+    },
+    "securitySchemes": {
+      "SpiffeMtls": {
+        "type": "X509",
+        "description": "SPIFFE/SPIRE-issued X.509 SVID for mTLS authentication at OT-IT zone boundary"
+      }
+    }
+  },
+  "operations": {
+    "consumeAndonAlert": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/andonAlert"
+      },
+      "summary": "Consume predictive Andon alert from UNS backbone for Command Center and Station Detail",
+      "messages": [
+        {
+          "$ref": "#/channels/andonAlert/messages/AndonAlertMessage"
+        }
+      ]
+    },
+    "consumeOeeSnapshot": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/oeeSnapshot"
+      },
+      "summary": "Consume OEE snapshot from UNS backbone for Command Center display",
+      "messages": [
+        {
+          "$ref": "#/channels/oeeSnapshot/messages/OeeSnapshotMessage"
+        }
+      ]
+    },
+    "publishAdoptionEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/lineCommandAdoptionEvent"
+      },
+      "summary": "Emit adoption instrumentation event within 1 second of meaningful user action",
+      "messages": [
+        {
+          "$ref": "#/channels/lineCommandAdoptionEvent/messages/AdoptionEvent"
+        }
+      ]
+    },
+    "consumeTorqueFeedback": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/torqueFeedback"
+      },
+      "summary": "Consume torque out-of-tolerance feedback to drive AR overlay indicator and Shift Lead alert",
+      "messages": [
+        {
+          "$ref": "#/channels/torqueFeedback/messages/TorqueFeedbackMessage"
+        }
+      ]
+    },
+    "publishArSessionEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/arSessionEvent"
+      },
+      "summary": "Emit AR Workbench session lifecycle event",
+      "messages": [
+        {
+          "$ref": "#/channels/arSessionEvent/messages/ArSessionEvent"
+        }
+      ]
+    },
+    "publishTorqueLogEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/torqueLogEvent"
+      },
+      "summary": "Emit torque tightening event to UNS for VIN digital thread linkage",
+      "messages": [
+        {
+          "$ref": "#/channels/torqueLogEvent/messages/TorqueLogEvent"
+        }
+      ]
+    },
+    "publishExpertCallEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/expertCallEvent"
+      },
+      "summary": "Emit remote expert call session event for VIN digital thread audit trail",
+      "messages": [
+        {
+          "$ref": "#/channels/expertCallEvent/messages/ExpertCallEvent"
+        }
+      ]
+    },
+    "publishHandoverSubmittedEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/handoverSubmittedEvent"
+      },
+      "summary": "Emit shift handover submission event",
+      "messages": [
+        {
+          "$ref": "#/channels/handoverSubmittedEvent/messages/HandoverSubmittedEvent"
+        }
+      ]
+    },
+    "publishMaintenanceDispatchEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/maintenanceDispatchEvent"
+      },
+      "summary": "Emit maintenance dispatch event for audit trail",
+      "messages": [
+        {
+          "$ref": "#/channels/maintenanceDispatchEvent/messages/MaintenanceDispatchEvent"
+        }
+      ]
+    }
+  }
+}

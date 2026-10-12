@@ -1,0 +1,1365 @@
+{
+  "info": {
+    "title": "OpCenter Sync Service API",
+    "version": "1.0.0",
+    "description": "Bidirectional adapter for Siemens OpCenter 10.2 — sequence lock publish, OEE/Andon event subscription, and sync status management. All cross-zone connections use mTLS with SPIFFE/SPIRE-issued X.509 SVIDs."
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Get operational health of the OpCenter sync service",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncHealthResponse"
+                }
+              }
+            },
+            "description": "Health status (healthy or degraded)"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncHealthResponse"
+                }
+              }
+            },
+            "description": "Service unhealthy"
+          }
+        },
+        "description": "Returns connectivity status for OpCenter GraphQL subscription, Kafka producer health, event freshness, and pending publish queue depth. Used by observability-stack and operations team.",
+        "operationId": "getSyncHealth"
+      }
+    },
+    "/andon/alerts": {
+      "get": {
+        "summary": "List Andon alerts received from OpCenter, sorted by minutesToPredictedFailure ascending",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndonAlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated Andon alerts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "open",
+                "acknowledged",
+                "resolved",
+                "false_positive"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Returns paginated Andon alerts. Open predictive alerts are sorted by minutesToPredictedFailure ascending to support the Shift Lead Command Center view. Station-level only — no operator-identifiable data.",
+        "operationId": "listAndonAlerts"
+      }
+    },
+    "/gate-results": {
+      "get": {
+        "summary": "List gate results received from OpCenter for quality gate processing",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateResultListResponse"
+                }
+              }
+            },
+            "description": "Paginated gate results"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "description": "Filter by VIN"
+          },
+          {
+            "in": "query",
+            "name": "gateType",
+            "schema": {
+              "enum": [
+                "dimensional",
+                "leak",
+                "electrical",
+                "nvh",
+                "adas"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "schema": {
+              "enum": [
+                "pass",
+                "conditional_pass",
+                "fail"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "receivedAfter",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO-8601 UTC; return only results received after this timestamp"
+          }
+        ],
+        "description": "Returns paginated gate results as received from OpCenter. Supports filtering by VIN and gateType. Used by quality-studio to auto-populate the unified vehicle health score.",
+        "operationId": "listGateResults"
+      }
+    },
+    "/oee/snapshots": {
+      "get": {
+        "summary": "List latest OEE snapshots for all weld lines",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OeeSnapshotListResponse"
+                }
+              }
+            },
+            "description": "Paginated OEE snapshots"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "lineId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to a specific weld line"
+          },
+          {
+            "in": "query",
+            "name": "maxAgeSeconds",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only return snapshots newer than this many seconds"
+          }
+        ],
+        "description": "Returns the most recent OEE snapshot per weld line as received from OpCenter via GraphQL subscription. Data age is included so consumers can detect staleness. Supports filtering by lineId.",
+        "operationId": "listOeeSnapshots"
+      }
+    },
+    "/sequence/jobs": {
+      "get": {
+        "summary": "List sequence publish sync jobs with their current status",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncJobListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of sync jobs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque pagination cursor"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "published",
+                "queued",
+                "retrying",
+                "failed",
+                "rejected_by_opcenter"
+              ],
+              "type": "string"
+            },
+            "description": "Filter by job status"
+          }
+        ],
+        "description": "Returns paginated list of sync jobs. Planners use this to monitor 'Pending Publish' status. Supports filtering by status.",
+        "operationId": "listSyncJobs"
+      }
+    },
+    "/sequence/publish": {
+      "post": {
+        "summary": "Publish a locked VIN sequence to Siemens OpCenter 10.2",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePublishResponse"
+                }
+              }
+            },
+            "description": "Sequence already published (idempotent replay) — returns cached response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequencePublishResponse"
+                }
+              }
+            },
+            "description": "Sequence accepted — either published to OpCenter (status=published) or queued for retry (status=queued)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing or invalid JWT"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller does not have sequence-publish role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflicting publish in progress for the same sequencePlanId"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "OpCenter rejected the sequence (e.g., unsigned upload, invalid VIN)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "description": "Accepts a finalised VIN sequence from planning-cockpit, signs it with the Planning Cockpit API key, and forwards it to OpCenter via HTTPS/REST. If OpCenter is unavailable, the job is queued with 30-second retry. Source field is always 'planning-cockpit'. Idempotent on idempotencyKey.",
+        "operationId": "publishSequenceToOpCenter",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SequencePublishRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/andon/alerts/{alertId}": {
+      "get": {
+        "summary": "Get a specific Andon alert by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndonAlert"
+                }
+              }
+            },
+            "description": "Andon alert detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getAndonAlert"
+      }
+    },
+    "/sequence/jobs/{syncJobId}": {
+      "get": {
+        "summary": "Get a specific sequence publish sync job by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncJob"
+                }
+              }
+            },
+            "description": "Sync job detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Sync job not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "syncJobId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getSyncJob"
+      }
+    },
+    "/gate-results/{gateResultId}": {
+      "get": {
+        "summary": "Get a specific gate result by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateResult"
+                }
+              }
+            },
+            "description": "Gate result detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Gate result not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gateResultId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getGateResult"
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "servers": [
+    {
+      "url": "https://opcenter-sync.internal.bmw-horizon.eu/v1",
+      "description": "Internal ARO service endpoint (private subnet, mTLS required)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SyncJob": {
+        "type": "object",
+        "required": [
+          "syncJobId",
+          "sequencePlanId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "published",
+              "queued",
+              "retrying",
+              "failed",
+              "rejected_by_opcenter"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "syncJobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextRetryAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastAttemptAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "opcenterError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw error message from OpCenter if rejected"
+          },
+          "plannerUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequencePlanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "opcenterSequenceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AndonAlert": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "stationId",
+          "lineId",
+          "alertType",
+          "predictedFailureType",
+          "minutesToPredictedFailure",
+          "recommendedAction",
+          "status",
+          "detectedAt"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved",
+              "false_positive"
+            ],
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertType": {
+            "enum": [
+              "predictive",
+              "reactive"
+            ],
+            "type": "string",
+            "description": "predictive = threshold-rule based from Beckhoff PLC trace; reactive = post-failure"
+          },
+          "stationId": {
+            "type": "string",
+            "description": "Station identifier (station-level, not operator-level per GDPR/BetrVG)"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "acknowledgedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "opcenterEventId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source event ID from OpCenter GraphQL subscription"
+          },
+          "recommendedAction": {
+            "type": "string"
+          },
+          "predictedFailureType": {
+            "type": "string",
+            "description": "e.g., electrode_wear, press_die_overrun, agv_delay"
+          },
+          "minutesToPredictedFailure": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Countdown in minutes; null for reactive alerts"
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "GateResult": {
+        "type": "object",
+        "required": [
+          "gateResultId",
+          "vin",
+          "gateId",
+          "gateType",
+          "result",
+          "measurements",
+          "measuredAt",
+          "receivedFromOpcenterAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "gateId": {
+            "type": "string",
+            "description": "e.g., GATE-DIM, GATE-LEAK, GATE-ELEC, GATE-NVH, GATE-ADAS"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "conditional_pass",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "gateType": {
+            "enum": [
+              "dimensional",
+              "leak",
+              "electrical",
+              "nvh",
+              "adas"
+            ],
+            "type": "string"
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of measurement in OpCenter"
+          },
+          "gateResultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateMeasurement"
+            }
+          },
+          "opcenterEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receivedFromOpcenterAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when this service received the event from OpCenter"
+          }
+        }
+      },
+      "OeeSnapshot": {
+        "type": "object",
+        "required": [
+          "lineId",
+          "oeePercent",
+          "availability",
+          "performance",
+          "quality",
+          "measuredAt",
+          "dataAgeSeconds"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "description": "Weld line identifier (e.g., WELD-LINE-1)"
+          },
+          "quality": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the OEE measurement in OpCenter"
+          },
+          "oeePercent": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "performance": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "availability": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "dataAgeSeconds": {
+            "type": "integer",
+            "description": "Seconds since measuredAt; consumers use this to detect staleness"
+          }
+        }
+      },
+      "GateMeasurement": {
+        "type": "object",
+        "required": [
+          "measurementId",
+          "name",
+          "value",
+          "unit",
+          "toleranceLow",
+          "toleranceHigh",
+          "withinTolerance"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          },
+          "toleranceLow": {
+            "type": "number",
+            "format": "double"
+          },
+          "measurementId": {
+            "type": "string"
+          },
+          "toleranceHigh": {
+            "type": "number",
+            "format": "double"
+          },
+          "withinTolerance": {
+            "type": "boolean"
+          },
+          "reworkThresholdLow": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "reworkThresholdHigh": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "VinSequenceItem": {
+        "type": "object",
+        "required": [
+          "vin",
+          "position",
+          "optionCodes"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$",
+            "description": "17-character VIN"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based position in the production sequence"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "BMW option codes for this VIN"
+          }
+        }
+      },
+      "SyncHealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "opcenterConnected",
+          "kafkaProducerHealthy",
+          "lastOeeEventAt",
+          "lastAndonEventAt",
+          "lastGateResultAt",
+          "pendingPublishCount",
+          "checkedAt"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ],
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastOeeEventAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastAndonEventAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastGateResultAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "opcenterConnected": {
+            "type": "boolean",
+            "description": "Whether the GraphQL subscription to OpCenter is active"
+          },
+          "pendingPublishCount": {
+            "type": "integer",
+            "description": "Number of sequence publish jobs in queued/retrying state"
+          },
+          "kafkaProducerHealthy": {
+            "type": "boolean"
+          },
+          "opcenterApiKeyRotationDue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Date when the OpCenter API key must be rotated (90-day max)"
+          }
+        }
+      },
+      "SyncJobListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyncJob"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "AndonAlertListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AndonAlert"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "GateResultListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GateResult"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "SequencePublishRequest": {
+        "type": "object",
+        "required": [
+          "sequencePlanId",
+          "vinSequence",
+          "source",
+          "lockedAt"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string",
+            "description": "Must always be 'planning-cockpit' — OpCenter rejects any other value"
+          },
+          "lockedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 UTC timestamp when the planner locked the sequence"
+          },
+          "vinSequence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VinSequenceItem"
+            },
+            "minItems": 1
+          },
+          "plannerUserId": {
+            "type": "string",
+            "description": "BMW Entra ID subject of the planner who locked the sequence"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-supplied idempotency key; duplicate submissions with same key return the cached response"
+          },
+          "sequencePlanId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the VIN sequence plan from postgresql-citus vinsequenceplan table"
+          }
+        }
+      },
+      "OeeSnapshotListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OeeSnapshot"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "SequencePublishResponse": {
+        "type": "object",
+        "required": [
+          "syncJobId",
+          "opcenterSequenceId",
+          "status",
+          "source",
+          "publishedAt"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "published",
+              "queued",
+              "failed"
+            ],
+            "type": "string",
+            "description": "published = confirmed by OpCenter; queued = OpCenter unavailable, retry pending; failed = permanent error"
+          },
+          "syncJobId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Internal sync job ID for tracking"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of successful OpCenter confirmation; null if queued"
+          },
+          "auditEventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the immutable audit log entry for this publish action"
+          },
+          "retryScheduledAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Next retry timestamp when status=queued"
+          },
+          "opcenterSequenceId": {
+            "type": "string",
+            "description": "Sequence ID returned by Siemens OpCenter 10.2 API"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

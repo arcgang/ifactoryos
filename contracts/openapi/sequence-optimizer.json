@@ -1,0 +1,1817 @@
+{
+  "info": {
+    "title": "Sequence Optimizer API",
+    "version": "1.0.0",
+    "description": "Monte Carlo VIN sequence optimisation service for BMW Munich i4 line. Provides optimisation runs, constraint explanation, override logging, disruption alerting, and MY26 configuration management."
+  },
+  "paths": {
+    "/alerts": {
+      "get": {
+        "summary": "List active and recent constraint breach alerts (cursor-paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated alert list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "active",
+                "acknowledged",
+                "resolved",
+                "all"
+              ],
+              "type": "string",
+              "default": "active"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listAlerts"
+      }
+    },
+    "/optimize": {
+      "post": {
+        "summary": "Trigger a 50-run Monte Carlo optimisation and return a ranked VIN sequence",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizeResponse"
+                }
+              }
+            },
+            "description": "Optimisation completed (Monte Carlo or heuristic fallback)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Constraint model validation failure (e.g. unknown option code)"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Optimisation timed out; heuristic fallback was not available"
+          }
+        },
+        "description": "Accepts a list of VINs and live constraint snapshot. Executes 50 Monte Carlo runs via KServe. Returns ranked sequence within 45 s; falls back to rule-based heuristic if timeout or model error occurs.",
+        "operationId": "runOptimizer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptimizeRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/overrides": {
+      "get": {
+        "summary": "List override log entries for a given week (cursor-paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideListResponse"
+                }
+              }
+            },
+            "description": "Paginated override log"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "weekIso",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+            },
+            "required": false,
+            "description": "ISO week string e.g. 2025-W30; defaults to current week"
+          },
+          {
+            "in": "query",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listOverrides"
+      },
+      "post": {
+        "summary": "Record a manual VIN position override with planner justification",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideRecord"
+                }
+              }
+            },
+            "description": "Override recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error (e.g. justification < 10 chars)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          }
+        },
+        "operationId": "createOverride",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/resequence": {
+      "post": {
+        "summary": "Trigger a targeted Monte Carlo re-sequence for a subset of affected VINs (mid-week disruption)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizeResponse"
+                }
+              }
+            },
+            "description": "Re-sequence result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          }
+        },
+        "operationId": "runTargetedResequence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResequenceRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/my26/config": {
+      "get": {
+        "summary": "Retrieve the current MY26 constraint model configuration",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/My26Config"
+                }
+              }
+            },
+            "description": "MY26 configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No MY26 config exists yet"
+          }
+        },
+        "operationId": "getMy26Config"
+      }
+    },
+    "/model/health": {
+      "get": {
+        "summary": "Return KServe model health, active model version, and shadow-mode heuristic status",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelHealth"
+                }
+              }
+            },
+            "description": "Model health status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "operationId": "getModelHealth"
+      }
+    },
+    "/my26/config/save": {
+      "post": {
+        "summary": "Save a validated MY26 configuration; activates for subsequent optimizer runs",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/My26Config"
+                }
+              }
+            },
+            "description": "MY26 configuration saved and activated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation failed; config not saved"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict — unresolved validation errors must be fixed before saving"
+          }
+        },
+        "operationId": "saveMy26Config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/My26ConfigDraft"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/optimize/{runId}": {
+      "get": {
+        "summary": "Retrieve a previously completed optimisation run by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizeResponse"
+                }
+              }
+            },
+            "description": "Optimisation run result"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Run not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getOptimizeRun"
+      }
+    },
+    "/overrides/export": {
+      "get": {
+        "summary": "Export override log for a given week as PDF (for Plant Director review)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "description": "PDF binary"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid week parameter"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "weekIso",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "exportOverridesPdf"
+      }
+    },
+    "/my26/config/validate": {
+      "post": {
+        "summary": "Validate new MY26 option codes and paint palette against the constraint model without saving",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/My26ValidationResult"
+                }
+              }
+            },
+            "description": "Validation result with any conflicts or missing mappings"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Malformed payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "operationId": "validateMy26Config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/My26ConfigDraft"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/constraints/thresholds": {
+      "get": {
+        "summary": "List all configurable constraint warning thresholds (cursor-paginated)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThresholdListResponse"
+                }
+              }
+            },
+            "description": "Paginated threshold list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listConstraintThresholds"
+      },
+      "put": {
+        "summary": "Create or update a constraint warning threshold",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintThreshold"
+                }
+              }
+            },
+            "description": "Threshold saved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient role"
+          }
+        },
+        "operationId": "upsertConstraintThreshold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConstraintThreshold"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/overrides/{overrideId}": {
+      "get": {
+        "summary": "Retrieve a single override record",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideRecord"
+                }
+              }
+            },
+            "description": "Override record"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Override not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "overrideId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getOverride"
+      }
+    },
+    "/alerts/{alertId}/acknowledge": {
+      "post": {
+        "summary": "Acknowledge a constraint breach alert",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstraintAlert"
+                }
+              }
+            },
+            "description": "Alert acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "acknowledgeAlert"
+      }
+    },
+    "/optimize/{runId}/explain/{vin}": {
+      "get": {
+        "summary": "Return top-3 constraint factors driving a VIN's position in a given run",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VinExplanation"
+                }
+              }
+            },
+            "description": "Constraint contribution explanation for the VIN"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Run or VIN not found"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "vin",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "explainVinPosition"
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "servers": [
+    {
+      "url": "https://sequence-optimizer.internal.bmw.azure-de.com/api/v1",
+      "description": "Production (ARO Germany West Central)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "VinInput": {
+        "type": "object",
+        "required": [
+          "vin"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "modelYear": {
+            "enum": [
+              "MY25",
+              "MY26"
+            ],
+            "type": "string"
+          },
+          "paintCode": {
+            "type": "string"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vipPriority": {
+            "type": "boolean",
+            "default": false
+          },
+          "regulatoryHold": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "RankedVin": {
+        "type": "object",
+        "required": [
+          "vin",
+          "position",
+          "constraintScore"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "vipPriority": {
+            "type": "boolean"
+          },
+          "regulatoryHold": {
+            "type": "boolean"
+          },
+          "constraintScore": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "My26Config": {
+        "type": "object",
+        "required": [
+          "configId",
+          "version",
+          "status",
+          "optionCodes",
+          "paintPalette",
+          "createdAt",
+          "createdBy"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "draft",
+              "validated",
+              "active",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "description": "Semantic version string e.g. 1.0.0"
+          },
+          "configId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "activatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptionCodeEntry"
+            }
+          },
+          "kittingRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "paintPalette": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaintPaletteEntry"
+            }
+          }
+        }
+      },
+      "ModelHealth": {
+        "type": "object",
+        "required": [
+          "monteCarloPrimary",
+          "heuristicShadow",
+          "activeModelVersion",
+          "my26ConfigVersion"
+        ],
+        "properties": {
+          "kserveEndpoint": {
+            "type": "string"
+          },
+          "heuristicShadow": {
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "lastHealthCheckAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "monteCarloPrimary": {
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "my26ConfigVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activeModelVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "OverrideRecord": {
+        "type": "object",
+        "required": [
+          "overrideId",
+          "runId",
+          "vin",
+          "originalPosition",
+          "newPosition",
+          "justification",
+          "plannerId",
+          "createdAt"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "plannerId": {
+            "type": "string",
+            "description": "Entra ID subject claim of the planner"
+          },
+          "overrideId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "newPosition": {
+            "type": "integer"
+          },
+          "justification": {
+            "type": "string"
+          },
+          "originalPosition": {
+            "type": "integer"
+          }
+        }
+      },
+      "VinExplanation": {
+        "type": "object",
+        "required": [
+          "runId",
+          "vin",
+          "position",
+          "topFactors"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "topFactors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConstraintFactor"
+            },
+            "maxItems": 3,
+            "minItems": 1
+          }
+        }
+      },
+      "ConstraintAlert": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "constraintType",
+          "currentValue",
+          "thresholdValue",
+          "affectedVins",
+          "status",
+          "detectedAt"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "active",
+              "acknowledged",
+              "resolved"
+            ],
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "affectedVins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+            }
+          },
+          "currentValue": {
+            "type": "number",
+            "format": "double"
+          },
+          "acknowledgedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "acknowledgedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "constraintType": {
+            "enum": [
+              "paint_capacity",
+              "body_wip_queue",
+              "kitting_readiness",
+              "maintenance_window",
+              "agv_delay",
+              "press_die_overrun"
+            ],
+            "type": "string"
+          },
+          "thresholdValue": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "My26ConfigDraft": {
+        "type": "object",
+        "required": [
+          "optionCodes",
+          "paintPalette"
+        ],
+        "properties": {
+          "optionCodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptionCodeEntry"
+            }
+          },
+          "kittingRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "Kitting rule overrides for MY26 variants"
+          },
+          "paintPalette": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaintPaletteEntry"
+            }
+          }
+        }
+      },
+      "OptimizeRequest": {
+        "type": "object",
+        "required": [
+          "weekIso",
+          "vins",
+          "constraintSnapshot"
+        ],
+        "properties": {
+          "vins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VinInput"
+            },
+            "maxItems": 500,
+            "minItems": 1
+          },
+          "weekIso": {
+            "type": "string",
+            "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-supplied idempotency key; same key returns cached result within 10 minutes"
+          },
+          "monteCarloRuns": {
+            "type": "integer",
+            "default": 50,
+            "maximum": 50,
+            "minimum": 1
+          },
+          "my26ConfigVersion": {
+            "type": "string",
+            "description": "MY26 config version UUID if applicable"
+          },
+          "constraintSnapshot": {
+            "$ref": "#/components/schemas/ConstraintSnapshot"
+          }
+        }
+      },
+      "OptionCodeEntry": {
+        "type": "object",
+        "required": [
+          "code",
+          "description"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "constraintMappings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Constraint model keys this option code maps to"
+          }
+        }
+      },
+      "OverrideRequest": {
+        "type": "object",
+        "required": [
+          "runId",
+          "vin",
+          "originalPosition",
+          "newPosition",
+          "justification"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "newPosition": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 10
+          },
+          "originalPosition": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ConstraintFactor": {
+        "type": "object",
+        "required": [
+          "factorName",
+          "weightedScore",
+          "dataSource"
+        ],
+        "properties": {
+          "rawValue": {
+            "type": "number",
+            "format": "double"
+          },
+          "dataSource": {
+            "type": "string",
+            "description": "UNS topic or constraint model field that supplied this factor"
+          },
+          "factorName": {
+            "enum": [
+              "paint_batch_conflict",
+              "changeover_penalty",
+              "maintenance_window",
+              "kitting_gap",
+              "vip_priority",
+              "regulatory_hold"
+            ],
+            "type": "string"
+          },
+          "weightedScore": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "OptimizeResponse": {
+        "type": "object",
+        "required": [
+          "runId",
+          "weekIso",
+          "resultType",
+          "rankedSequence",
+          "completedAt",
+          "durationMs",
+          "confidenceScore",
+          "my26ConfigVersion"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "weekIso": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "resultType": {
+            "enum": [
+              "monte_carlo",
+              "heuristic_fallback"
+            ],
+            "type": "string",
+            "description": "Indicates whether the result is from Monte Carlo optimisation or the rule-based heuristic fallback"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rankedSequence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedVin"
+            }
+          },
+          "confidenceScore": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "my26ConfigVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "constraintSnapshotTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConstraintAlert"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "MaintenanceWindow": {
+        "type": "object",
+        "required": [
+          "windowId",
+          "stationId",
+          "startsAt",
+          "endsAt"
+        ],
+        "properties": {
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "PaintPaletteEntry": {
+        "type": "object",
+        "required": [
+          "paintCode",
+          "batchGroup"
+        ],
+        "properties": {
+          "paintCode": {
+            "type": "string"
+          },
+          "batchGroup": {
+            "type": "string"
+          },
+          "changeoverPenaltyMinutes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ResequenceRequest": {
+        "type": "object",
+        "required": [
+          "alertId",
+          "affectedVins",
+          "constraintSnapshot"
+        ],
+        "properties": {
+          "alertId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Alert that triggered this re-sequence"
+          },
+          "affectedVins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VinInput"
+            },
+            "maxItems": 500,
+            "minItems": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "constraintSnapshot": {
+            "$ref": "#/components/schemas/ConstraintSnapshot"
+          }
+        }
+      },
+      "ConstraintSnapshot": {
+        "type": "object",
+        "required": [
+          "snapshotTimestamp",
+          "paintCapacityUtilisation",
+          "bodyWipQueueDepth",
+          "kittingReadinessPct"
+        ],
+        "properties": {
+          "unsLatencyMs": {
+            "type": "integer",
+            "description": "UNS p99 latency at snapshot time in ms"
+          },
+          "bodyWipQueueDepth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "snapshotTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maintenanceWindows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceWindow"
+            }
+          },
+          "kittingReadinessPct": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "paintCapacityUtilisation": {
+            "type": "number",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0
+          }
+        },
+        "description": "Live constraint values fetched from UNS at the time of the optimisation request"
+      },
+      "ConstraintThreshold": {
+        "type": "object",
+        "required": [
+          "thresholdId",
+          "constraintType",
+          "warningLevel",
+          "criticalLevel",
+          "unit"
+        ],
+        "properties": {
+          "unit": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "thresholdId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warningLevel": {
+            "type": "number",
+            "format": "double"
+          },
+          "criticalLevel": {
+            "type": "number",
+            "format": "double"
+          },
+          "constraintType": {
+            "enum": [
+              "paint_capacity",
+              "body_wip_queue",
+              "kitting_readiness",
+              "maintenance_window",
+              "agv_delay",
+              "press_die_overrun"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "My26ValidationIssue": {
+        "type": "object",
+        "required": [
+          "severity",
+          "field",
+          "message"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "My26ValidationResult": {
+        "type": "object",
+        "required": [
+          "valid",
+          "issues"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/My26ValidationIssue"
+            }
+          }
+        }
+      },
+      "OverrideListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OverrideRecord"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ThresholdListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConstraintThreshold"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

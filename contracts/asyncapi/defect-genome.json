@@ -1,0 +1,353 @@
+{
+  "info": {
+    "title": "DefectGenome Async Events",
+    "version": "1.0.0",
+    "description": "Events published and consumed by the defect-genome component via the UNS Kafka backbone"
+  },
+  "servers": {
+    "kafka-uns": {
+      "host": "uns-backbone.internal.bmw-factory-os.eu:9093",
+      "protocol": "kafka-secure",
+      "description": "On-premises UNS Kafka cluster with mTLS SPIFFE/SPIRE authentication"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "defect-events-inbound": {
+      "address": "bmw.munich.paint.defect.events.v1",
+      "messages": {
+        "PaintDefectDetectedMessage": {
+          "$ref": "#/components/messages/PaintDefectDetected"
+        }
+      },
+      "description": "Inbound defect scan events from the AI visual inspection tunnel via UNS backbone"
+    },
+    "cluster-alert-outbound": {
+      "address": "bmw.munich.defectgenome.cluster.alerts.v1",
+      "messages": {
+        "DefectClusterAlertMessage": {
+          "$ref": "#/components/messages/DefectClusterAlert"
+        }
+      },
+      "description": "Outbound cluster alert events published when 3+ VINs share a root-cause signature above 80% confidence within a 4-hour window"
+    },
+    "corrective-action-outbound": {
+      "address": "bmw.munich.defectgenome.corrective.actions.v1",
+      "messages": {
+        "CorrectiveActionCreatedMessage": {
+          "$ref": "#/components/messages/CorrectiveActionCreated"
+        }
+      },
+      "description": "Outbound corrective action events when a Jira ticket is created from a cluster"
+    },
+    "cluster-query-result-outbound": {
+      "address": "bmw.munich.defectgenome.query.results.v1",
+      "messages": {
+        "ClusterQueryResultMessage": {
+          "$ref": "#/components/messages/ClusterQueryResult"
+        }
+      },
+      "description": "Outbound cluster query results for async consumers (Quality Studio push)"
+    }
+  },
+  "components": {
+    "schemas": {
+      "ClusterQueryResultPayload": {
+        "type": "object",
+        "required": [
+          "query_id",
+          "cluster_id",
+          "defect_class",
+          "model_confidence",
+          "low_confidence",
+          "affected_vin_count",
+          "queried_at",
+          "schema_version"
+        ],
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "queried_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "defect_class": {
+            "enum": [
+              "dust",
+              "orange_peel",
+              "run",
+              "crater",
+              "pinhole"
+            ],
+            "type": "string"
+          },
+          "low_confidence": {
+            "type": "boolean"
+          },
+          "schema_version": {
+            "type": "string",
+            "default": "1.0"
+          },
+          "model_confidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "affected_vin_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "DefectClusterAlertPayload": {
+        "type": "object",
+        "required": [
+          "alert_id",
+          "cluster_id",
+          "defect_class",
+          "affected_vin_count",
+          "root_cause_signature",
+          "confidence_score",
+          "most_recent_vin",
+          "process_replay_url",
+          "triggered_at",
+          "schema_version"
+        ],
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "defect_class": {
+            "enum": [
+              "dust",
+              "orange_peel",
+              "run",
+              "crater",
+              "pinhole"
+            ],
+            "type": "string"
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "schema_version": {
+            "type": "string",
+            "default": "1.0"
+          },
+          "most_recent_vin": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "double"
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 3
+          },
+          "process_replay_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "root_cause_signature": {
+            "type": "string"
+          }
+        }
+      },
+      "PaintDefectDetectedPayload": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "vin",
+          "defect_class",
+          "station_id",
+          "detected_at",
+          "schema_version"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string"
+          },
+          "booth_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prep_stage": {
+            "type": "integer",
+            "maximum": 14,
+            "minimum": 1
+          },
+          "station_id": {
+            "type": "string",
+            "description": "Station-level identifier (anonymised per GDPR)"
+          },
+          "detected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "defect_class": {
+            "enum": [
+              "dust",
+              "orange_peel",
+              "run",
+              "crater",
+              "pinhole"
+            ],
+            "type": "string"
+          },
+          "raw_sensor_ref": {
+            "type": "string",
+            "description": "Reference to raw sensor data in TimescaleDB"
+          },
+          "schema_version": {
+            "type": "string",
+            "default": "1.0"
+          },
+          "severity_score": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "CorrectiveActionCreatedPayload": {
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "jira_ticket_id",
+          "assigned_root_cause_factor",
+          "engineer_user_id",
+          "created_at",
+          "schema_version"
+        ],
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "jira_ticket_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "string",
+            "default": "1.0"
+          },
+          "jira_ticket_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "engineer_user_id": {
+            "type": "string"
+          },
+          "assigned_root_cause_factor": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "messages": {
+      "ClusterQueryResult": {
+        "name": "ClusterQueryResult",
+        "title": "Cluster Query Result",
+        "payload": {
+          "$ref": "#/components/schemas/ClusterQueryResultPayload"
+        },
+        "summary": "Published when a cluster query completes, enabling Quality Studio to push results to the engineer's session",
+        "contentType": "application/json"
+      },
+      "DefectClusterAlert": {
+        "name": "DefectClusterAlert",
+        "title": "Defect Cluster Alert",
+        "payload": {
+          "$ref": "#/components/schemas/DefectClusterAlertPayload"
+        },
+        "summary": "Published when DefectGenome detects 3+ VINs with the same root-cause signature above 80% confidence within a 4-hour window",
+        "contentType": "application/json"
+      },
+      "PaintDefectDetected": {
+        "name": "PaintDefectDetected",
+        "title": "Paint Defect Detected",
+        "payload": {
+          "$ref": "#/components/schemas/PaintDefectDetectedPayload"
+        },
+        "summary": "Emitted by the AI visual inspection tunnel when a paint defect is detected on a VIN",
+        "contentType": "application/json"
+      },
+      "CorrectiveActionCreated": {
+        "name": "CorrectiveActionCreated",
+        "title": "Corrective Action Created",
+        "payload": {
+          "$ref": "#/components/schemas/CorrectiveActionCreatedPayload"
+        },
+        "summary": "Published when a Jira corrective action ticket is created from a DefectGenome cluster",
+        "contentType": "application/json"
+      }
+    }
+  },
+  "operations": {
+    "publishClusterQueryResult": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/cluster-query-result-outbound"
+      },
+      "summary": "Publish cluster query results for Quality Studio push notification",
+      "messages": [
+        {
+          "$ref": "#/channels/cluster-query-result-outbound/messages/ClusterQueryResultMessage"
+        }
+      ]
+    },
+    "publishDefectClusterAlert": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/cluster-alert-outbound"
+      },
+      "summary": "Publish a cluster alert when the 3-VIN / 80% confidence / 4-hour window threshold is crossed",
+      "messages": [
+        {
+          "$ref": "#/channels/cluster-alert-outbound/messages/DefectClusterAlertMessage"
+        }
+      ]
+    },
+    "consumePaintDefectDetected": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/defect-events-inbound"
+      },
+      "summary": "Consume paint defect detection events from the UNS backbone for real-time cluster analysis",
+      "messages": [
+        {
+          "$ref": "#/channels/defect-events-inbound/messages/PaintDefectDetectedMessage"
+        }
+      ]
+    },
+    "publishCorrectiveActionCreated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/corrective-action-outbound"
+      },
+      "summary": "Publish corrective action created event for audit log and dashboard update",
+      "messages": [
+        {
+          "$ref": "#/channels/corrective-action-outbound/messages/CorrectiveActionCreatedMessage"
+        }
+      ]
+    }
+  }
+}

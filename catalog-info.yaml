@@ -1,0 +1,299 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: planning-cockpit
+  description: planning-cockpit — React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/apps/planning-cockpit
+    sdlc.io/lld-component: cmp:planning-cockpit
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: website
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: line-command
+  description: line-command — React 18, TypeScript, Microsoft HoloLens 2 (WebXR),
+    iPad Pro (ARKit), OpenTelemetry SDK, BMW Entra ID OIDC
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/apps/line-command
+    sdlc.io/lld-component: cmp:line-command
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: website
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: quality-studio
+  description: quality-studio — React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/apps/quality-studio
+    sdlc.io/lld-component: cmp:quality-studio
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: website
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: opcenter-sync-service
+  description: opcenter-sync-service — Rust, Siemens OpCenter 10.2 REST/GraphQL
+    API, Kafka producer, SPIFFE/SPIRE mTLS
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/opcenter-sync-service
+    sdlc.io/lld-component: cmp:opcenter-sync-service
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: sequence-optimizer
+  description: sequence-optimizer — KServe, Python, scikit-optimize, MLflow,
+    watsonx.governance
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/sequence-optimizer
+    sdlc.io/lld-component: cmp:sequence-optimizer
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: defect-genome
+  description: defect-genome — KServe, Python, scikit-learn, DBSCAN, XGBoost,
+    MLflow, watsonx.governance
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/defect-genome
+    sdlc.io/lld-component: cmp:defect-genome
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: hyperledger-fabric
+  description: hyperledger-fabric — Hyperledger Fabric 2.5, Go chaincode
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/services/hyperledger-fabric
+    sdlc.io/lld-component: cmp:hyperledger-fabric
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: service
+  lifecycle: experimental
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: api-gateway
+  description: api-gateway — IBM API Connect, IBM DataPower Gateway, OAuth 2.0 / OIDC
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/api-gateway
+    sdlc.io/lld-component: cmp:api-gateway
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: uns-backbone
+  description: uns-backbone — Confluent Kafka, Confluent Schema Registry (Avro),
+    MQTT Broker (HiveMQ/EMQX), Dead-Letter Queue
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/uns-backbone
+    sdlc.io/lld-component: cmp:uns-backbone
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: edge-gateways
+  description: edge-gateways — Siemens SIMATIC IPC, Beckhoff ADS/ADS-UDP, MQTT
+    Sparkplug B, SPIFFE/SPIRE SVID
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/edge-gateways
+    sdlc.io/lld-component: cmp:edge-gateways
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: vin-digital-thread
+  description: vin-digital-thread — Neo4j 5.x, Cypher, RFID correlation_id injection
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/vin-digital-thread
+    sdlc.io/lld-component: cmp:vin-digital-thread
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: bmw-entra-id
+  description: bmw-entra-id — Azure Active Directory / Entra ID, OIDC, OAuth 2.0
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/bmw-entra-id
+    sdlc.io/lld-component: cmp:bmw-entra-id
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: spiffe-spire
+  description: spiffe-spire — SPIFFE/SPIRE, X.509 SVIDs, mTLS
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/spiffe-spire
+    sdlc.io/lld-component: cmp:spiffe-spire
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: hashicorp-vault
+  description: hashicorp-vault — HashiCorp Vault, Vault Agent Injector, Kubernetes
+    auth method
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/hashicorp-vault
+    sdlc.io/lld-component: cmp:hashicorp-vault
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: immutable-audit-log
+  description: immutable-audit-log — Azure Blob Storage (WORM/Object Lock),
+    AES-256 encryption
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/immutable-audit-log
+    sdlc.io/lld-component: cmp:immutable-audit-log
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: observability-stack
+  description: observability-stack — Prometheus, Grafana, OpenTelemetry, IBM Instana
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/observability-stack
+    sdlc.io/lld-component: cmp:observability-stack
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: timescaledb
+  description: timescaledb — TimescaleDB 2.x, PostgreSQL 15
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/timescaledb
+    sdlc.io/lld-component: cmp:timescaledb
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: postgresql-citus
+  description: postgresql-citus — PostgreSQL 15, Citus 12.x
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/postgresql-citus
+    sdlc.io/lld-component: cmp:postgresql-citus
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: jira-integration
+  description: jira-integration — Jira REST API v3, OAuth 2.0
+  annotations:
+    github.com/project-slug: arcgang/ifactoryos
+    backstage.io/source-location: url:https://github.com/arcgang/ifactoryos/tree/main/platform/jira-integration
+    sdlc.io/lld-component: cmp:jira-integration
+    sdlc.io/archos-generation: f50f5685-9aea-40e3-836f-5d0da3b6384e
+spec:
+  type: infrastructure
+  owner: arcgang
+  system: ifactoryos

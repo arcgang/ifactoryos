@@ -1,0 +1,388 @@
+{
+  "info": {
+    "title": "Sequence Optimizer Events",
+    "version": "1.0.0",
+    "description": "Events published and consumed by the sequence-optimizer component via the UNS Kafka backbone"
+  },
+  "servers": {
+    "uns-kafka": {
+      "host": "uns-kafka.internal.bmw.munich:9093",
+      "protocol": "kafka-secure",
+      "description": "On-premises UNS Kafka cluster; SASL/SCRAM + mTLS SPIFFE SVID"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "sequence.optimized": {
+      "address": "bmw.munich.i4.sequence.optimized.v1",
+      "messages": {
+        "SequenceOptimizedEvent": {
+          "$ref": "#/components/messages/SequenceOptimizedEvent"
+        }
+      },
+      "description": "Published when a Monte Carlo or heuristic optimisation run completes"
+    },
+    "uns.constraints.live": {
+      "address": "bmw.munich.i4.uns.constraints.live.v1",
+      "messages": {
+        "LiveConstraintTelemetry": {
+          "$ref": "#/components/messages/LiveConstraintTelemetry"
+        }
+      },
+      "description": "Consumed — live constraint telemetry from UNS (paint capacity, body WIP, kitting readiness, maintenance windows)"
+    },
+    "sequence.constraint.alert": {
+      "address": "bmw.munich.i4.sequence.constraint.alert.v1",
+      "messages": {
+        "ConstraintAlertEvent": {
+          "$ref": "#/components/messages/ConstraintAlertEvent"
+        }
+      },
+      "description": "Published when a constraint value crosses a configured warning threshold"
+    },
+    "sequence.override.applied": {
+      "address": "bmw.munich.i4.sequence.override.applied.v1",
+      "messages": {
+        "SequenceOverrideAppliedEvent": {
+          "$ref": "#/components/messages/SequenceOverrideAppliedEvent"
+        }
+      },
+      "description": "Published when a planner applies a manual VIN position override"
+    },
+    "sequence.resequence.triggered": {
+      "address": "bmw.munich.i4.sequence.resequence.triggered.v1",
+      "messages": {
+        "ResequenceTriggeredEvent": {
+          "$ref": "#/components/messages/ResequenceTriggeredEvent"
+        }
+      },
+      "description": "Published when a targeted mid-week re-sequence run completes"
+    },
+    "sequence.my26.config.activated": {
+      "address": "bmw.munich.i4.sequence.my26.config.activated.v1",
+      "messages": {
+        "My26ConfigActivatedEvent": {
+          "$ref": "#/components/messages/My26ConfigActivatedEvent"
+        }
+      },
+      "description": "Published when a MY26 configuration is saved and activated"
+    }
+  },
+  "components": {
+    "messages": {
+      "ConstraintAlertEvent": {
+        "name": "ConstraintAlertEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "alertId",
+            "constraintType",
+            "currentValue",
+            "thresholdValue",
+            "affectedVins",
+            "occurredAt"
+          ],
+          "properties": {
+            "alertId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "affectedVins": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "currentValue": {
+              "type": "number",
+              "format": "double"
+            },
+            "constraintType": {
+              "type": "string"
+            },
+            "thresholdValue": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "SequenceOptimizedEvent": {
+        "name": "SequenceOptimizedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "runId",
+            "weekIso",
+            "resultType",
+            "rankedSequenceCount",
+            "confidenceScore",
+            "my26ConfigVersion",
+            "occurredAt"
+          ],
+          "properties": {
+            "runId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "weekIso": {
+              "type": "string"
+            },
+            "durationMs": {
+              "type": "integer"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "resultType": {
+              "enum": [
+                "monte_carlo",
+                "heuristic_fallback"
+              ],
+              "type": "string"
+            },
+            "confidenceScore": {
+              "type": "number",
+              "format": "double"
+            },
+            "my26ConfigVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rankedSequenceCount": {
+              "type": "integer"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "LiveConstraintTelemetry": {
+        "name": "LiveConstraintTelemetry",
+        "payload": {
+          "type": "object",
+          "required": [
+            "tagId",
+            "constraintType",
+            "value",
+            "unit",
+            "measuredAt"
+          ],
+          "properties": {
+            "unit": {
+              "type": "string"
+            },
+            "tagId": {
+              "type": "string"
+            },
+            "value": {
+              "type": "number",
+              "format": "double"
+            },
+            "measuredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "constraintType": {
+              "type": "string"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "My26ConfigActivatedEvent": {
+        "name": "My26ConfigActivatedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "configId",
+            "version",
+            "activatedBy",
+            "occurredAt"
+          ],
+          "properties": {
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version": {
+              "type": "string"
+            },
+            "configId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "activatedBy": {
+              "type": "string"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "ResequenceTriggeredEvent": {
+        "name": "ResequenceTriggeredEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "runId",
+            "alertId",
+            "affectedVinCount",
+            "resultType",
+            "source",
+            "occurredAt"
+          ],
+          "properties": {
+            "runId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source": {
+              "enum": [
+                "planning-cockpit"
+              ],
+              "type": "string",
+              "description": "Audit attribution for OpCenter sequence version diff"
+            },
+            "alertId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "resultType": {
+              "enum": [
+                "monte_carlo",
+                "heuristic_fallback"
+              ],
+              "type": "string"
+            },
+            "affectedVinCount": {
+              "type": "integer"
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "SequenceOverrideAppliedEvent": {
+        "name": "SequenceOverrideAppliedEvent",
+        "payload": {
+          "type": "object",
+          "required": [
+            "eventId",
+            "overrideId",
+            "runId",
+            "vin",
+            "originalPosition",
+            "newPosition",
+            "plannerId",
+            "occurredAt"
+          ],
+          "properties": {
+            "vin": {
+              "type": "string"
+            },
+            "runId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "eventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "plannerId": {
+              "type": "string"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "overrideId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "newPosition": {
+              "type": "integer"
+            },
+            "originalPosition": {
+              "type": "integer"
+            }
+          }
+        },
+        "contentType": "application/json"
+      }
+    }
+  },
+  "operations": {
+    "consumeLiveConstraints": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/uns.constraints.live"
+      },
+      "summary": "Consume live constraint telemetry from UNS to feed threshold monitoring and optimisation runs"
+    },
+    "publishConstraintAlert": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/sequence.constraint.alert"
+      },
+      "summary": "Publish constraint breach alert within 2 minutes of threshold crossing"
+    },
+    "publishSequenceOptimized": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/sequence.optimized"
+      },
+      "summary": "Publish ranked VIN sequence result after optimisation completes"
+    },
+    "publishMy26ConfigActivated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/sequence.my26.config.activated"
+      },
+      "summary": "Publish MY26 config activation for downstream consumers (opcenter-sync-service)"
+    },
+    "publishResequenceTriggered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/sequence.resequence.triggered"
+      },
+      "summary": "Publish targeted re-sequence result attributed to planning-cockpit"
+    },
+    "publishSequenceOverrideApplied": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/sequence.override.applied"
+      },
+      "summary": "Publish override event for audit log and downstream consumers"
+    }
+  }
+}

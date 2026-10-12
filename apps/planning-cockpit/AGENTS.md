@@ -1,0 +1,134 @@
+# planning-cockpit
+
+LLD component `cmp:planning-cockpit` · React 18, TypeScript, OpenTelemetry SDK, BMW Entra ID OIDC · seeded from the React template
+
+Role-based console for Production Planners — sequence optimisation, constraint monitoring, OpCenter publish authority
+
+## Stories
+
+- `US-001`
+- `US-002`
+- `US-003`
+- `US-004`
+- `US-005`
+- `US-006`
+- `US-019`
+- `US-022`
+- `US-023`
+- `US-024`
+- `US-025`
+
+## Endpoints
+
+- `POST /api/v1/sequence/optimize`
+- `POST /api/v1/sequence/publish`
+- `GET /api/v1/constraints`
+
+## Acceptance criteria
+
+- AC-680aba58 (US-001): Given the planner opens Constraint Radar on any Monday between 05:00 and 06:17, when the page loads, then paint capacity utilisation, body WIP queue depth, kitting readiness, and all scheduled maintenance windows for the next 7 days are displayed with data timestamps no older than 60 seconds from the UNS
+- AC-4c26c424 (US-001): Given a constraint value crosses a configurable warning threshold, when the planner is viewing Constraint Radar, then the affected constraint is highlighted in amber with the threshold value and current value displayed side by side
+- AC-64b0a4bb (US-001): Given the UNS latency exceeds 1,000ms p99, when Constraint Radar is open, then a staleness indicator is shown on each affected data tile with the last-known-good timestamp
+- AC-1848ffb5 (US-002): Given the planner clicks 'Run Optimizer' in Sequence Builder, when the SequenceOptimizer completes 50 Monte Carlo runs, then the ranked VIN sequence is displayed within 45 seconds of the click (leaving 15 seconds for review before the 60-second total target)
+- AC-c9b64630 (US-002): Given the optimizer run completes, when the planner views the ranked sequence, then each VIN in the top-ranked sequence shows its position, the constraint score driving its rank, and any mandatory override flags (VIP priority, regulatory hold)
+- AC-40a058cb (US-002): Given the optimizer run fails or times out after 45 seconds, when the planner is waiting, then a fallback rule-based heuristic sequence is presented with a clear label indicating it is the heuristic result, not the Monte Carlo optimum
+- AC-06b604aa (US-003): Given the optimizer returns a ranked sequence, when the planner selects any VIN in the sequence, then a constraint contribution panel shows the top 3 constraint factors driving that VIN's position with their weighted scores and the data source for each factor
+- AC-f214c397 (US-003): Given the planner applies a manual override to move a VIN, when the override is saved, then the Override Log records the VIN ID, original position, new position, planner's typed justification (minimum 10 characters), and timestamp
+- AC-970d2dfa (US-003): Given the planner has applied overrides, when they view the Override Log, then all overrides for the current week are listed and exportable as a PDF for Plant Director review
+- AC-bb537d8f (US-004): Given the planner clicks 'Publish to OpCenter' on a finalised sequence, when the publish completes, then a confirmation message shows the OpCenter sequence ID, the timestamp, and the source field value 'planning-cockpit' within 5 seconds
+- AC-70528fee (US-004): Given a sequence upload is attempted via any method other than the Planning Cockpit API key, when OpCenter receives the upload, then OpCenter rejects it with an error code and the rejection is logged in the Planning Cockpit audit trail
+- AC-b3df1a1d (US-004): Given the OpCenter API is unavailable at publish time, when the planner clicks Publish, then the sequence is queued locally with a visible 'Pending Publish' status and automatically retried every 30 seconds until confirmed, with the planner notified of the delay
+- AC-5e06b8e5 (US-005): Given a constraint value (e.g., kitting readiness for a specific VIN) drops below a configurable threshold after the Monday sequence lock, when the threshold is crossed, then the planner receives an in-app alert in Constraint Radar within 2 minutes of the threshold breach, identifying the affected VINs and the constraint causing the breach
+- AC-f0232f64 (US-005): Given the planner receives a mid-week disruption alert, when they click 'Re-sequence Affected VINs', then Scenario Lab pre-loads only the affected VINs and their downstream dependencies for a targeted Monte Carlo run, not the full weekly sequence
+- AC-de48ca50 (US-005): Given a re-sequence is published mid-week, when the OpCenter sequence version diff is queried, then the re-sequenced VINs are attributed to 'planning-cockpit' in the audit log
+- AC-aa5496da (US-006): Given the planner opens the MY26 Configuration Wizard before Week 30, when they import new option codes and paint palette definitions, then the wizard validates each entry against the SequenceOptimizer constraint model and flags any conflicts or missing constraint mappings before saving
+- AC-2d79a38d (US-006): Given the MY26 configuration is saved, when the planner runs the SequenceOptimizer with a MY26 VIN, then the optimizer applies the new option codes and paint codes without error and the sequence output reflects the updated constraints
+- AC-5550bb81 (US-006): Given the MY26 configuration is active, when the planner publishes a sequence containing MY26 VINs to OpCenter, then OpCenter accepts the sequence and the audit log records the MY26 config version used
+- AC-4167263e (US-019): Given any planner performs a session action (login, optimizer run, override, publish), when the action completes, then an event is emitted to the instrumentation layer within 1 second containing the user ID, action type, session ID, and timestamp
+- AC-8d26ecac (US-019): Given the Gate 1 measurement window (Nov 1–28, 2025), when the Product Ops Analyst queries the instrumentation layer, then WAU, sequence lock %, and override rate are available as pre-built queries with no manual data extraction required
+- AC-7f3009e7 (US-019): Given a planner session lasts less than 10 minutes without a meaningful action (optimizer run, override, or publish), when the WAU calculation runs, then that session is excluded from the active user count per the Gate 1 measurement definition
+- AC-5abf4071 (US-022): Given a user with the 'Production Planner' role attempts to access Line Command or Quality Studio, when the access request is made, then the system returns a 403 Forbidden response and logs the unauthorised access attempt in the audit trail
+- AC-639e34c8 (US-022): Given a user with the 'Assembly Associate' role logs into Line Command, when they access the AR Workbench, then they can view and interact with AR work instructions and torque logging but cannot access Command Center OEE data or Handover Builder
+- AC-9303b18b (US-022): Given a new user is provisioned, when their role is assigned in the identity provider, then their console access is enforced within 5 minutes of role assignment without requiring a platform restart
+- AC-04d1d046 (US-023): Given any user action that mutates a production sequence, quality certificate, or VIN digital record, when the action is committed, then an audit log entry is written within 1 second containing the user ID, action type, affected entity ID, before/after state hash, and UTC timestamp
+- AC-094f88b4 (US-023): Given an audit log entry is written, when the log is queried at any future time, then the entry cannot be modified or deleted—any query returning a modified entry is treated as a system integrity failure
+- AC-a3d97564 (US-023): Given the audit log retention policy, when log entries are older than the configured retention period (minimum 7 years for regulatory compliance), then entries are archived to cold storage rather than deleted, and remain queryable within 24 hours of an archive retrieval request
+- AC-edd6ce81 (US-024): Given a user's browser or device language is set to German (de-DE), when they open any console, then all UI labels, alert messages, error messages, and work instruction text are displayed in German
+- AC-e41c448a (US-024): Given a user switches their language preference from German to English within the console settings, when the preference is saved, then all UI content updates to English within 2 seconds without requiring a page reload
+- AC-1a65ae08 (US-024): Given a new alert or work instruction is added to the system, when it is published, then both German and English translations must be present before the content is visible to end users—content with only one language translation is blocked from publication
+- AC-0b8836b3 (US-025): Given a DR drill is executed at M9 (Sep 30, 2025), when the drill simulates a full platform failure, then full operational service (all 3 consoles, UNS backbone, AI model serving) is restored within 4 hours as measured from failure declaration to service confirmation
+- AC-dd2e2a1c (US-025): Given the DR drill is executed, when the data recovery is assessed, then the most recent recoverable data point is no older than 15 minutes before the simulated failure, verified by comparing the last UNS message timestamp before failure with the first message timestamp after recovery
+- AC-3be880af (US-025): Given the DR drill completes, when the runbook is reviewed, then a documented test report is produced showing actual RTO, actual RPO, steps executed, and any deviations from the runbook, signed off by the Platform Lead
+
+## Non-functional requirements
+
+- availability: ≥ 99.95% monthly availability (≤ 21.9 minutes downtime per month)
+- latency: < 1,000 ms p99 edge-to-Kafka-consumer latency
+- scalability: Onboarding a new plant namespace to the UNS requires ≤ 5 configuration files and ≤ 2 weeks of integration work (no core platform code changes); validated by architecture review at M3
+- performance: < 1,000 ms p99 edge-to-Kafka-consumer latency
+- availability: ≥ 99.95% monthly availability (≤ 21.9 minutes downtime per month)
+- availability: ≥ 99.9% monthly availability per console (≤ 43.8 minutes downtime per month)
+- performance: < 2.0 s p75 cold-start LCP for all three consoles
+- performance: < 100 ms p99 inference latency per model invocation (KServe metrics)
+- security: Zero critical findings in IEC 62443 SL2 external audit (T6); zero critical/high CVEs in container images at Gate 1 snapshot
+- reliability: AR Workbench must serve cached instructions for the next 10 VINs during a network outage; torque logs must be queued locally and published within 60 seconds of reconnection; zero data loss for cached events
+- data_management: ≥ 95% data quality score across 500 critical tags, measured by automated profiler (completeness + timeliness + schema_validity)
+- compliance: 100% of data storage and processing on EU-located infrastructure (Azure EU Central or on-prem Munich); zero cross-border personal data transfers
+- reliability: RTO ≤ 4 hours; RPO ≤ 15 minutes; both validated by a documented DR drill at M9 (Sep 30, 2025)
+- observability: 100% of UNS, console, and AI model components instrumented with Prometheus metrics and OpenTelemetry traces; SLO dashboards for T1–T5 available in Grafana with ≤ 60-second data lag
+- scalability: Onboarding a new plant namespace to the UNS requires ≤ 5 configuration files and ≤ 2 weeks of integration work (no core platform code changes); validated by architecture review at M3
+- usability: VIN-specific AR overlay loads within 5 seconds of RFID read at Marriage and Final stations, measured at the 95th percentile
+- maintainability: All APIs versioned per semantic versioning; breaking changes require new major version; previous major version supported for minimum 6 months after deprecation notice
+- accessibility: WCAG 2.1 Level AA compliance for all console web interfaces, verified by automated axe-core scan with zero critical violations at release
+- integration: OpCenter OEE and Andon events available to Line Command consumers within 5 seconds of the event occurring in OpCenter, measured at p95
+- privacy: Zero operator-identifiable data in predictive alert analytics exports or AR session aggregate reports; all analytics aggregated at station or shift level minimum
+- observability: All 7 adoption metrics (A1–A7) queryable from the instrumentation layer as pre-built queries with ≤ 1-hour data lag; data retained for minimum 13 months
+
+## Settled decisions
+
+- **hosting: aro azure germany west central** → Deploy all cloud workloads on Azure Red Hat OpenShift (ARO) in Azure Germany West Central region with multi-AZ pod scheduling (`aro-azure-germany-west-central`)
+- **security: spiffe spire mtls ot it boundary** → Use SPIFFE/SPIRE workload identity fabric with mutual TLS for all OT-to-IT cross-zone data flows; no unauthenticated or unencrypted cross-zone connection permitted (`spiffe-spire-mtls-ot-it-boundary`)
+- **security: gdpr station level anonymisation** → Anonymise all predictive monitoring and AR session data to station level (not operator level) in analytics exports and audit outputs; retain operator-linked data only in the restricted-access immutable audit log (`gdpr-station-level-anonymisation`)
+- **nfr: active passive dr germany north secondary** → Active-Passive DR strategy with pre-provisioned secondary environment in Azure Germany North; RTO ≤ 4 hours, RPO ≤ 15 minutes; validated by full DR drill at M9 (`active-passive-dr-germany-north-secondary`)
+- **security: immutable audit log azure blob object lock** → Implement immutable audit log as append-only Azure Blob Storage with Object Lock (WORM); 7-year retention for regulatory records; no deletion permitted (`immutable-audit-log-azure-blob-object-lock`)
+- **data: data classification ontology mapping** → Map all data entities to the organisation ontology classification values: pii (operator-adjacent data), confidential (VIN thread, gate results, certificates, audit log), internal (OT telemetry, shift handovers, schema registry), public (none in this solution) (`data-classification-ontology-mapping`)
+- **data: gdpr pii anonymisation station level** → All analytics exports and aggregate reports anonymised to station/shift level minimum — no operator-identifiable data in any export, dashboard, or AI model input (`gdpr-pii-anonymisation-station-level`)
+- **ai pattern: kserve model serving mvp** → Deploy SequenceOptimizer and DefectGenome on KServe (model serving on OpenShift) with rule-based fallbacks pre-deployed in shadow mode from M2 (`kserve-model-serving-mvp`)
+- **hosting: azure openshift aro it layer** → Host all console applications, AI model serving (KServe), and IT-layer services on Azure Red Hat OpenShift 4.16 (ARO) in Azure EU Central region (`azure-openshift-aro-it-layer`)
+- **security: mtls spiffe spire ot it boundary** → All OT-to-IT cross-zone data flows use mutual TLS with SPIFFE/SPIRE-issued certificates; no unauthenticated or unencrypted cross-zone connection permitted (`mtls-spiffe-spire-ot-it-boundary`)
+- **auth: bmw entra id console rbac exception dec004** → Integrate with BMW Entra ID (Azure AD) for console-level RBAC; exception to dec-004 (Okta) required as dec-004 applies to Nestlé applications, not BMW Group initiatives (`bmw-entra-id-console-rbac-exception-dec004`)
+- **ai pattern: kserve custom ml models not watsonx llm** → Deploy SequenceOptimizer and DefectGenome as custom-trained ML models on KServe (OpenShift) — not watsonx.ai foundation models or LLMs (`kserve-custom-ml-models-not-watsonx-llm`)
+- **security: hashicorp vault secrets management** → HashiCorp Vault on ARO as the enterprise secret store; Vault agent injector for Kubernetes workload secret injection; no hardcoded credentials anywhere in the platform (`hashicorp-vault-secrets-management`)
+- **hosting: hybrid aro plus onprem uns** → Deploy IT-layer on Azure Red Hat OpenShift (ARO) in Azure West Europe; deploy UNS backbone and primary data stores on-premises at Munich plant (`hybrid-aro-plus-onprem-uns`)
+- **other: p2 active passive dr not p1 active active** → Classify solution as P2 (Active-Passive hot standby, RTO ≤4h, RPO ≤15min) rather than P1 (Active-Active, RTO <1h, RPO <15min) (`p2-active-passive-dr-not-p1-active-active`)
+- **security: spiffe spire ot it workload identity** → Use SPIFFE/SPIRE for workload identity across OT and IT zones; mTLS with SPIFFE-issued X.509 SVIDs for all cross-zone data flows (`spiffe-spire-ot-it-workload-identity`)
+- **auth: bmw entra id exception dec004** → Use BMW Entra ID (Azure AD) as IdP for console RBAC; formal exception to dec-004 (Okta) required — dec-004 applies to Nestlé applications, not BMW Group initiatives (`bmw-entra-id-exception-dec004`)
+- **nfr: eu data residency hard constraint azure west europe** → EU data residency is a hard architectural constraint: all storage and compute on Azure West Europe or on-premises Munich; zero cross-border personal data transfers (`eu-data-residency-hard-constraint-azure-west-europe`)
+- **auth: bmw entra id mfa oidc all consoles** → BMW Entra ID (Azure AD) with OIDC Authorization Code + PKCE and mandatory MFA via Conditional Access for all three consoles (`bmw-entra-id-mfa-oidc-all-consoles`)
+- **security: spiffe spire workload identity all cross zone** → SPIFFE/SPIRE-issued X.509 SVIDs for all OT-to-IT cross-zone mTLS — automated rotation, no human-managed certificates at zone boundaries (`spiffe-spire-workload-identity-all-cross-zone`)
+- **security: hashicorp vault primary secrets store** → HashiCorp Vault on ARO as the primary enterprise secret store for all application-layer credentials; Azure Key Vault for Azure platform credentials only (`hashicorp-vault-primary-secrets-store`)
+- **security: console level rbac field level deferred** → Console-level RBAC enforced at IBM API Connect gateway in MVP; field-level security deferred to Horizon 2 (`console-level-rbac-field-level-deferred`)
+- **security: obo token flow user context propagation** → OAuth 2.0 On-Behalf-Of (OBO) token flow for all user-context API calls to preserve user identity for audit trail and RBAC enforcement downstream (`obo-token-flow-user-context-propagation`)
+- **security: iec 62443 sl2 three zone network model** → Three-zone network security model (OT Zone / On-Prem IT Zone / Cloud IT Zone) with mTLS SPIFFE at every zone boundary, satisfying IEC 62443 SL2 zone-and-conduit requirements (`iec-62443-sl2-three-zone-network-model`)
+- **Should planning-cockpit define its own HTTP API endpoints or database tables?** → No. planning-cockpit is a 'client' kind component (React 18 SPA). It owns no server-side HTTP API and no database tables. All data persistence is delegated to backend services (sequence-optimizer, opcenter-sync-service, postgresql-citus, immutable-audit-log, observability-stack). The openapi block is empty ({}) and ddl_pg is empty string. (`client-owns-no-api-no-tables`)
+- **How does the SPA authenticate users and propagate identity to backend services?** → OIDC Authorization Code + PKCE flow against BMW Entra ID. The SPA obtains an access token and uses the OAuth 2.0 On-Behalf-Of (OBO) flow so that the user's identity is propagated in every downstream API call through the api-gateway. MFA via Conditional Access is mandatory for all interactive sessions. (`oidc-pkce-obo-token-flow`)
+- **Where is RBAC enforced — in the SPA, at the API gateway, or both?** → Console-level RBAC is enforced at the api-gateway using the roles claim in the JWT. The SPA also reads the roles claim to hide/show UI features, but the authoritative enforcement is at the gateway. Field-level security is deferred to Horizon 2 per the console-level-rbac-field-level-deferred decision. (`console-level-rbac-at-gateway`)
+- **How does the SPA receive the optimizer result — WebSocket push, SSE, or polling?** → Short-poll GET /optimize/{runId} every 2 seconds for up to 45 seconds. If no terminal status is received within 45 seconds, the SPA renders the heuristic fallback sequence from the response payload's fallback field. (`optimizer-polling-strategy`)
+- **How is the 'Pending Publish' retry queue implemented in a stateless SPA?** → The SPA stores the pending publish payload in browser localStorage with a 'pending_publish' key. A setInterval fires every 30 seconds to retry POST /sequence/publish via the api-gateway. On tab close/reload, the pending state is restored from localStorage on mount. The planner sees a persistent 'Pending Publish' banner until the publish is confirmed. (`pending-publish-local-queue`)
+- **How does the React SPA consume live UNS Kafka constraint data for Constraint Radar?** → The SPA connects to a WebSocket or SSE endpoint exposed by the api-gateway that bridges the UNS Kafka topics (paint capacity, WIP, kitting, maintenance windows). The SPA does not connect to Kafka directly. Data freshness is validated client-side: if the message timestamp is older than 60 seconds, the staleness indicator is shown. (`uns-kafka-websocket-bridge`)
+- **How is the staleness indicator triggered when UNS latency exceeds 1000ms p99?** → Each Constraint Radar tile stores the last-received message timestamp. The SPA computes the age of each tile's data on every render tick (100ms interval). If age > 60 seconds, the staleness indicator is shown with the last-known-good timestamp. The 1000ms p99 UNS latency threshold is a system NFR; the SPA reacts to data age, not to the latency metric directly. (`staleness-indicator-client-logic`)
+- **How are session events (login, optimizer_run, override_applied, publish_confirmed) emitted to the instrumentation layer?** → The SPA uses the OpenTelemetry SDK (browser) to emit structured span events to the observability-stack collector endpoint via OTLP/HTTP. Each meaningful action creates a span with attributes: userId, sessionId, actionType, role, timestamp. The observability-stack's adoptionevent table stores these for Gate 1 queries. (`session-event-emission-otel`)
+- **How is the 10-minute / meaningful-action WAU filter enforced for planners?** → The SPA emits a session_start event on login and a session_end event on unload/visibility-hidden with session duration. The observability-stack pre-built WAU query filters sessions where: (session_duration_minutes >= 10) OR (meaningful_action_count > 0 where meaningful_action IN ['optimizer_run','override_applied','publish_confirmed']). Login-only sessions under 10 minutes are excluded. (`wau-meaningful-action-filter`)
+- **How is German/English localisation implemented in the React SPA?** → react-i18next with i18next is used for all UI strings, alert messages, and error messages. The locale is initialised from the browser's navigator.language (de-DE default). Language preference is stored in localStorage and applied via i18next.changeLanguage() without page reload (satisfying AC-e41c448a's 2-second switch requirement). All translation keys must have both 'de' and 'en' values; a CI lint step blocks builds with missing translations. (`i18n-german-english`)
+- **How is the Override Log PDF export generated — server-side or client-side?** → The SPA calls GET /overrides/export which returns a PDF binary from the backend (postgresql-citus data rendered server-side). The SPA triggers a browser download via a Blob URL. Client-side PDF generation (e.g., jsPDF) is not used because the PDF must be reproducible and auditable from server-side data. (`override-log-pdf-export`)
+- **How does the MY26 Configuration Wizard surface validation errors before saving?** → The wizard calls POST /my26/config/validate on each import action (not on save). The response includes a conflicts array and missingMappings array. The SPA renders each conflict inline next to the affected option code with the reason. The 'Save' button is disabled until POST /my26/config/validate returns {valid:true}. Saving calls POST /my26/config/save which records the configVersion in the audit log. (`my26-wizard-validation-ux`)
+- **How does the planner configure warning thresholds for Constraint Radar alerts?** → The SPA calls GET /constraints/thresholds to load current thresholds and PUT /constraints/thresholds to update them. Threshold values are stored in the backend (sequence-optimizer or a dedicated config store). The SPA renders an editable threshold panel in Constraint Radar settings. Changes take effect on the next Kafka message evaluation. (`constraint-threshold-configuration`)
+- **What EU data residency obligations apply to the planning-cockpit SPA?** → The SPA itself is a static asset served from ARO in Azure Germany West Central. No personal data is stored in the browser beyond the OIDC session token (in memory, not localStorage) and the pending-publish payload (localStorage, contains sequenceId only — no PII). All PII-adjacent data (userId in session events) is transmitted only to the observability-stack and immutable-audit-log, both of which are EU-resident. (`eu-data-residency-client-side`)
+- **How is the heuristic fallback sequence visually distinguished from the Monte Carlo result?** → When the optimizer response includes resultType:'heuristic', the SPA renders a persistent amber banner above the sequence table reading 'HEURISTIC SEQUENCE — Rule-based fallback. Monte Carlo optimisation did not complete within 45 seconds.' The banner cannot be dismissed. The Publish button remains available but requires an additional confirmation modal acknowledging the heuristic result. (`heuristic-fallback-label`)
+- **How are AI confidence scores and completeness indicators surfaced in the UI?** → The optimizer run result includes a confidenceScore (0.0–1.0) and a completenessIndicator (percentage of VINs with full constraint data). The SPA renders these in the Sequence Builder header. If confidenceScore < 0.70, an amber warning is shown. If completenessIndicator < 100%, affected VINs are flagged with a data-gap icon. These satisfy the human-in-the-loop control (AOS-AI-001). (`confidence-score-display`)
+- **How is WCAG 2.1 Level AA compliance ensured for the planning-cockpit SPA?** → axe-core is integrated into the CI pipeline as a Playwright accessibility test suite. Zero critical violations are required to pass the build gate. Colour contrast ratios meet AA standards (amber threshold indicators use text labels in addition to colour). All interactive elements have ARIA labels. The constraint contribution panel is keyboard-navigable. (`wcag-accessibility`)
+- **How does the SPA meet the <2.0s p75 cold-start LCP requirement?** → The React 18 SPA is built with code-splitting per route (React.lazy + Suspense). The Constraint Radar route is the primary entry point and is pre-loaded. Static assets are served from Azure CDN (Germany West Central). The initial bundle is <200KB gzipped. Web Vitals LCP is measured by synthetic k6 monitoring in the observability-stack. (`cold-start-lcp-performance`)
+
+## Contract
+
+The endpoints, schemas, tables and events above are defined in `contracts/` in this repository. Implement them as written; a change to the contract is a change to the design.

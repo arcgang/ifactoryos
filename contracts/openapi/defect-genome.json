@@ -1,0 +1,1361 @@
+{
+  "info": {
+    "title": "DefectGenome API",
+    "version": "1.0.0",
+    "description": "Paint defect clustering, root-cause probability distribution, cluster alert management, and rule-based fallback advisor for the BMW Intelligent Factory OS."
+  },
+  "paths": {
+    "/alerts": {
+      "get": {
+        "summary": "List cluster alerts for the current user's Quality Studio session",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of cluster alerts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "$ref": "#/components/schemas/AlertStatus"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listClusterAlerts"
+      }
+    },
+    "/defect/clusters": {
+      "get": {
+        "summary": "List defect clusters with optional filters",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterListResponse"
+                }
+              }
+            },
+            "description": "Paginated list of defect clusters"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "defectClass",
+            "schema": {
+              "$ref": "#/components/schemas/DefectClass"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "$ref": "#/components/schemas/ClusterStatus"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1
+            },
+            "required": false
+          }
+        ],
+        "operationId": "listClusters"
+      }
+    },
+    "/models/feedback": {
+      "post": {
+        "summary": "Submit engineer feedback on a root-cause assignment to improve the DefectGenome model",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelFeedbackAck"
+                }
+              }
+            },
+            "description": "Feedback accepted for model retraining pipeline"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid feedback payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "submitModelFeedback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/alerts/{alertId}": {
+      "get": {
+        "summary": "Get a specific cluster alert by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterAlert"
+                }
+              }
+            },
+            "description": "Cluster alert detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getClusterAlert"
+      }
+    },
+    "/defect/cluster-query": {
+      "post": {
+        "summary": "Run a DefectGenome cluster query for a defect class and return root-cause probability distribution",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterQueryResult"
+                }
+              }
+            },
+            "description": "Cluster query result with root-cause probability distribution"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable entity — defect class not supported"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "runClusterQuery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterQueryRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/defect/clusters/{clusterId}": {
+      "get": {
+        "summary": "Get a specific defect cluster by ID",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefectCluster"
+                }
+              }
+            },
+            "description": "Defect cluster detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Cluster not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clusterId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "getCluster"
+      }
+    },
+    "/models/confidence-threshold": {
+      "get": {
+        "summary": "Get the current configurable confidence threshold for low-confidence badge display",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfidenceThresholdConfig"
+                }
+              }
+            },
+            "description": "Current confidence threshold configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "getConfidenceThreshold"
+      },
+      "put": {
+        "summary": "Update the configurable confidence threshold (admin only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfidenceThresholdConfig"
+                }
+              }
+            },
+            "description": "Threshold updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid threshold value"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden — admin role required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "operationId": "updateConfidenceThreshold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfidenceThresholdConfig"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/alerts/{alertId}/acknowledge": {
+      "post": {
+        "summary": "Acknowledge a cluster alert and optionally assign a corrective action",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterAlert"
+                }
+              }
+            },
+            "description": "Alert acknowledged and status updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alert already acknowledged"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "acknowledgeClusterAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgeAlertRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/defect/clusters/{clusterId}/corrective-action": {
+      "post": {
+        "summary": "Pre-populate and submit a Jira corrective action ticket for a cluster",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectiveActionResult"
+                }
+              }
+            },
+            "description": "Corrective action Jira ticket created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorised"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Cluster not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Corrective action already exists for this cluster"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clusterId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "operationId": "createCorrectiveAction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectiveActionRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "servers": [
+    {
+      "url": "https://defect-genome.internal.bmw-factory-os.eu/api/v1",
+      "description": "Production (ARO Germany West Central)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "correlation_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CursorPage": {
+        "type": "object",
+        "required": [
+          "next_cursor",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque; null on the last page"
+          }
+        }
+      },
+      "AlertStatus": {
+        "enum": [
+          "new",
+          "acknowledged",
+          "in_progress",
+          "resolved"
+        ],
+        "type": "string",
+        "description": "Lifecycle status of a cluster alert"
+      },
+      "DefectClass": {
+        "enum": [
+          "dust",
+          "orange_peel",
+          "run",
+          "crater",
+          "pinhole"
+        ],
+        "type": "string",
+        "description": "Supported paint defect classes"
+      },
+      "ClusterAlert": {
+        "type": "object",
+        "required": [
+          "alert_id",
+          "cluster_id",
+          "defect_class",
+          "status",
+          "affected_vin_count",
+          "root_cause_signature",
+          "confidence_score",
+          "most_recent_vin",
+          "process_replay_url",
+          "triggered_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/AlertStatus"
+          },
+          "alert_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "most_recent_vin": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 3
+          },
+          "process_replay_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "root_cause_signature": {
+            "type": "string"
+          },
+          "acknowledged_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "corrective_action_jira_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ClusterStatus": {
+        "enum": [
+          "open",
+          "in_progress",
+          "resolved"
+        ],
+        "type": "string",
+        "description": "Lifecycle status of a defect cluster"
+      },
+      "DefectCluster": {
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "defect_class",
+          "status",
+          "root_cause_signature",
+          "confidence_score",
+          "affected_vin_count",
+          "most_recent_vin",
+          "detected_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ClusterStatus"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "top_factors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RootCauseFactor"
+            }
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "most_recent_vin": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "process_replay_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Deep link to Process Replay for most recent affected VIN"
+          },
+          "root_cause_signature": {
+            "type": "string",
+            "description": "Canonical root-cause signature string"
+          },
+          "corrective_action_jira_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdvisorV1Result": {
+        "type": "object",
+        "required": [
+          "rule_id",
+          "rule_description",
+          "recommended_action"
+        ],
+        "properties": {
+          "rule_id": {
+            "type": "string"
+          },
+          "rule_description": {
+            "type": "string"
+          },
+          "matched_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_action": {
+            "type": "string"
+          }
+        }
+      },
+      "RootCauseFactor": {
+        "type": "object",
+        "required": [
+          "rank",
+          "factor_name",
+          "factor_category",
+          "probability_score",
+          "supporting_vin_count"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "maximum": 5,
+            "minimum": 1
+          },
+          "factor_name": {
+            "type": "string",
+            "description": "Human-readable factor label, e.g. 'e-coat voltage drop at stage 6'"
+          },
+          "factor_category": {
+            "enum": [
+              "prep_stage",
+              "booth_parameter",
+              "climate_condition"
+            ],
+            "type": "string",
+            "description": "Category of the contributing factor"
+          },
+          "probability_score": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "supporting_vin_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ModelFeedbackAck": {
+        "type": "object",
+        "required": [
+          "feedback_id",
+          "accepted_at"
+        ],
+        "properties": {
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedback_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AlertListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClusterAlert"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ClusterQueryResult": {
+        "type": "object",
+        "required": [
+          "query_id",
+          "defect_class",
+          "cluster_id",
+          "model_confidence",
+          "low_confidence",
+          "top_factors",
+          "affected_vin_count",
+          "queried_at"
+        ],
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "queried_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "top_factors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RootCauseFactor"
+            },
+            "maxItems": 5,
+            "minItems": 1
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "affected_vins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of affected VINs (anonymised to station level in exports)"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "low_confidence": {
+            "type": "boolean",
+            "description": "True when model_confidence < configured threshold"
+          },
+          "model_confidence": {
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "affected_vin_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "advisor_v1_fallback": {
+            "$ref": "#/components/schemas/AdvisorV1Result",
+            "description": "Present when low_confidence is true"
+          }
+        }
+      },
+      "ClusterListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "page"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DefectCluster"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        }
+      },
+      "ClusterQueryRequest": {
+        "type": "object",
+        "required": [
+          "defect_class"
+        ],
+        "properties": {
+          "vin_filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of VINs to scope the query; omit for all recent VINs"
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-supplied idempotency key; same key returns cached result within 5 minutes"
+          },
+          "time_window_hours": {
+            "type": "integer",
+            "default": 4,
+            "maximum": 168,
+            "minimum": 1,
+            "description": "Rolling time window in hours for cluster detection"
+          }
+        }
+      },
+      "ModelFeedbackRequest": {
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "query_id",
+          "engineer_user_id",
+          "accepted_factor_rank",
+          "defect_class"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "query_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "defect_class": {
+            "$ref": "#/components/schemas/DefectClass"
+          },
+          "engineer_user_id": {
+            "type": "string"
+          },
+          "override_root_cause": {
+            "type": "string",
+            "description": "Free-text override if engineer disagrees with all top-5 factors"
+          },
+          "accepted_factor_rank": {
+            "type": "integer",
+            "maximum": 5,
+            "minimum": 1
+          }
+        }
+      },
+      "CorrectiveActionResult": {
+        "type": "object",
+        "required": [
+          "jira_ticket_id",
+          "jira_ticket_url",
+          "cluster_id",
+          "created_at"
+        ],
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "jira_ticket_id": {
+            "type": "string"
+          },
+          "jira_ticket_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "prepopulated_summary": {
+            "type": "string"
+          }
+        }
+      },
+      "AcknowledgeAlertRequest": {
+        "type": "object",
+        "required": [
+          "acknowledged_by_user_id"
+        ],
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "acknowledged_by_user_id": {
+            "type": "string"
+          },
+          "corrective_action_jira_id": {
+            "type": "string",
+            "description": "Jira ticket ID if corrective action already created"
+          }
+        }
+      },
+      "CorrectiveActionRequest": {
+        "type": "object",
+        "required": [
+          "assigned_root_cause_factor_rank",
+          "confirmed_by_user_id"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "additional_notes": {
+            "type": "string"
+          },
+          "confirmed_by_user_id": {
+            "type": "string",
+            "description": "BMW Entra ID subject claim of the confirming engineer"
+          },
+          "assigned_root_cause_factor_rank": {
+            "type": "integer",
+            "maximum": 5,
+            "minimum": 1
+          }
+        }
+      },
+      "ConfidenceThresholdConfig": {
+        "type": "object",
+        "required": [
+          "low_confidence_threshold",
+          "cluster_alert_threshold"
+        ],
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cluster_alert_min_vins": {
+            "type": "integer",
+            "default": 3,
+            "minimum": 1,
+            "description": "Minimum number of VINs sharing a root-cause signature to trigger an alert"
+          },
+          "cluster_alert_threshold": {
+            "type": "number",
+            "format": "double",
+            "default": 0.8,
+            "maximum": 1,
+            "minimum": 0,
+            "description": "Minimum confidence for a cluster to trigger a real-time alert"
+          },
+          "low_confidence_threshold": {
+            "type": "number",
+            "format": "double",
+            "default": 0.6,
+            "maximum": 1,
+            "minimum": 0,
+            "description": "Below this score a Low Confidence badge is shown and Advisor v1 fallback is displayed"
+          },
+          "cluster_alert_window_hours": {
+            "type": "integer",
+            "default": 4,
+            "minimum": 1,
+            "description": "Rolling window in hours for cluster alert detection"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

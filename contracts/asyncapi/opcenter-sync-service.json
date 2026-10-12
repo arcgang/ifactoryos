@@ -1,0 +1,563 @@
+{
+  "info": {
+    "title": "OpCenter Sync Service Event Streams",
+    "version": "1.0.0",
+    "description": "Kafka events published by opcenter-sync-service to the UNS backbone. All topics use Avro schemas registered in the UNS schema registry. Produced within 5s p95 of the originating OpCenter event."
+  },
+  "servers": {
+    "uns-kafka": {
+      "host": "kafka.uns.bmw-horizon.internal:9093",
+      "protocol": "kafka-secure",
+      "security": [
+        {
+          "saslScram": []
+        }
+      ],
+      "description": "On-premises UNS Kafka cluster; SASL/SCRAM + TLS 1.3; credentials rotated every 90 days via HashiCorp Vault"
+    }
+  },
+  "asyncapi": "3.0.0",
+  "channels": {
+    "opcenterAndonAlert": {
+      "address": "bmw.munich.opcenter.andon.alert",
+      "messages": {
+        "AndonAlertEvent": {
+          "$ref": "#/components/messages/AndonAlertEvent"
+        }
+      },
+      "description": "Published for each Andon alert event (raised/updated/resolved) from OpCenter GraphQL subscription. Consumed by line-command (Command Center alert queue). Station-level only — no operator ID."
+    },
+    "opcenterOeeUpdated": {
+      "address": "bmw.munich.opcenter.oee.updated",
+      "messages": {
+        "OeeEvent": {
+          "$ref": "#/components/messages/OeeEvent"
+        }
+      },
+      "description": "Published for each OEE snapshot received from OpCenter GraphQL subscription. Consumed by line-command (Command Center OEE tiles) and observability-stack. Target: within 5s p95 of OpCenter event."
+    },
+    "opcenterSequencePublished": {
+      "address": "bmw.munich.opcenter.sequence.published",
+      "messages": {
+        "SequencePublished": {
+          "$ref": "#/components/messages/SequencePublished"
+        }
+      },
+      "description": "Published when a VIN sequence is successfully confirmed by OpCenter. Consumed by planning-cockpit (confirmation), observability-stack (adoption metric A3), and immutable-audit-log."
+    },
+    "opcenterGateResultReceived": {
+      "address": "bmw.munich.opcenter.gate_result.received",
+      "messages": {
+        "GateResultEvent": {
+          "$ref": "#/components/messages/GateResultEvent"
+        }
+      },
+      "description": "Published when a gate result is received from OpCenter. Consumed by quality-studio (Gate Command health score aggregation) and vin-digital-thread. Target: within 5s p95."
+    },
+    "opcenterSequencePublishFailed": {
+      "address": "bmw.munich.opcenter.sequence.publish_failed",
+      "messages": {
+        "SequencePublishFailed": {
+          "$ref": "#/components/messages/SequencePublishFailed"
+        }
+      },
+      "description": "Published when a sequence publish attempt fails permanently or is queued for retry. Consumed by planning-cockpit for 'Pending Publish' status display."
+    }
+  },
+  "components": {
+    "schemas": {
+      "OeeEventPayload": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "lineId",
+          "oeePercent",
+          "availability",
+          "performance",
+          "quality",
+          "measuredAt",
+          "receivedAt",
+          "correlationId"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quality": {
+            "type": "number",
+            "format": "double"
+          },
+          "eventType": {
+            "type": "string",
+            "const": "opcenter.oee.updated"
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "oeePercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "performance": {
+            "type": "number",
+            "format": "double"
+          },
+          "availability": {
+            "type": "number",
+            "format": "double"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AndonAlertEventPayload": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "alertId",
+          "stationId",
+          "lineId",
+          "alertType",
+          "predictedFailureType",
+          "minutesToPredictedFailure",
+          "recommendedAction",
+          "status",
+          "detectedAt",
+          "receivedAt",
+          "correlationId"
+        ],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved",
+              "false_positive"
+            ],
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertType": {
+            "enum": [
+              "predictive",
+              "reactive"
+            ],
+            "type": "string"
+          },
+          "eventType": {
+            "enum": [
+              "opcenter.andon.alert_raised",
+              "opcenter.andon.alert_updated",
+              "opcenter.andon.alert_resolved"
+            ],
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string",
+            "description": "Station-level only — no operator ID per BetrVG §87"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "opcenterEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recommendedAction": {
+            "type": "string"
+          },
+          "predictedFailureType": {
+            "type": "string"
+          },
+          "minutesToPredictedFailure": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "GateResultEventPayload": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "gateResultId",
+          "vin",
+          "gateId",
+          "gateType",
+          "result",
+          "measurements",
+          "measuredAt",
+          "receivedAt",
+          "correlationId"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          },
+          "gateId": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "conditional_pass",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gateType": {
+            "enum": [
+              "dimensional",
+              "leak",
+              "electrical",
+              "nvh",
+              "adas"
+            ],
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string",
+            "const": "opcenter.gate_result.received"
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "gateResultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "measurementId",
+                "name",
+                "value",
+                "unit",
+                "toleranceLow",
+                "toleranceHigh",
+                "withinTolerance"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "toleranceLow": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "measurementId": {
+                  "type": "string"
+                },
+                "toleranceHigh": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "withinTolerance": {
+                  "type": "boolean"
+                },
+                "reworkThresholdLow": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double"
+                },
+                "reworkThresholdHigh": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double"
+                }
+              }
+            }
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "opcenterEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SequencePublishedPayload": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "sequencePlanId",
+          "opcenterSequenceId",
+          "source",
+          "plannerUserId",
+          "vinCount",
+          "publishedAt",
+          "correlationId"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vinCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "eventType": {
+            "type": "string",
+            "const": "sequence.published"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plannerUserId": {
+            "type": "string"
+          },
+          "sequencePlanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "opcenterSequenceId": {
+            "type": "string"
+          }
+        }
+      },
+      "SequencePublishFailedPayload": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "sequencePlanId",
+          "source",
+          "failureReason",
+          "attemptCount",
+          "nextRetryAt",
+          "correlationId"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "planning-cockpit"
+            ],
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventType": {
+            "type": "string",
+            "const": "sequence.publish_failed"
+          },
+          "nextRetryAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "opcenterError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequencePlanId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "messages": {
+      "OeeEvent": {
+        "name": "OeeEvent",
+        "title": "OEE snapshot received from OpCenter and forwarded to UNS",
+        "payload": {
+          "$ref": "#/components/schemas/OeeEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "AndonAlertEvent": {
+        "name": "AndonAlertEvent",
+        "title": "Andon alert event received from OpCenter and forwarded to UNS",
+        "payload": {
+          "$ref": "#/components/schemas/AndonAlertEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "GateResultEvent": {
+        "name": "GateResultEvent",
+        "title": "Gate result received from OpCenter and forwarded to UNS",
+        "payload": {
+          "$ref": "#/components/schemas/GateResultEventPayload"
+        },
+        "contentType": "application/json"
+      },
+      "SequencePublished": {
+        "name": "SequencePublished",
+        "title": "Sequence successfully published to OpCenter",
+        "payload": {
+          "$ref": "#/components/schemas/SequencePublishedPayload"
+        },
+        "contentType": "application/json"
+      },
+      "SequencePublishFailed": {
+        "name": "SequencePublishFailed",
+        "title": "Sequence publish to OpCenter failed (permanent or queued for retry)",
+        "payload": {
+          "$ref": "#/components/schemas/SequencePublishFailedPayload"
+        },
+        "contentType": "application/json"
+      }
+    },
+    "securitySchemes": {
+      "saslScram": {
+        "type": "scramSha512",
+        "description": "Kafka SASL/SCRAM-SHA-512; credentials injected by Vault agent; max 90-day rotation"
+      }
+    }
+  },
+  "operations": {
+    "publishOeeEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/opcenterOeeUpdated"
+      },
+      "summary": "Forward OEE snapshot from OpCenter GraphQL subscription to UNS Kafka",
+      "messages": [
+        {
+          "$ref": "#/channels/opcenterOeeUpdated/messages/OeeEvent"
+        }
+      ]
+    },
+    "publishAndonAlertEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/opcenterAndonAlert"
+      },
+      "summary": "Forward Andon alert event from OpCenter GraphQL subscription to UNS Kafka",
+      "messages": [
+        {
+          "$ref": "#/channels/opcenterAndonAlert/messages/AndonAlertEvent"
+        }
+      ]
+    },
+    "publishGateResultEvent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/opcenterGateResultReceived"
+      },
+      "summary": "Forward gate result from OpCenter GraphQL subscription to UNS Kafka",
+      "messages": [
+        {
+          "$ref": "#/channels/opcenterGateResultReceived/messages/GateResultEvent"
+        }
+      ]
+    },
+    "publishSequencePublished": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/opcenterSequencePublished"
+      },
+      "summary": "Emit sequence.published event after OpCenter confirms the sequence",
+      "messages": [
+        {
+          "$ref": "#/channels/opcenterSequencePublished/messages/SequencePublished"
+        }
+      ]
+    },
+    "publishSequencePublishFailed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/opcenterSequencePublishFailed"
+      },
+      "summary": "Emit sequence.publish_failed event on OpCenter rejection or permanent failure",
+      "messages": [
+        {
+          "$ref": "#/channels/opcenterSequencePublishFailed/messages/SequencePublishFailed"
+        }
+      ]
+    }
+  }
+}

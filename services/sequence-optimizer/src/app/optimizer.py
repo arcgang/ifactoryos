@@ -24,6 +24,8 @@ from typing import Protocol
 import asyncpg
 
 from app.models import (
+    ConstraintFactor,
+    ConstraintFactorName,
     ConstraintSnapshot,
     OptimizeRequest,
     OptimizeResponse,
@@ -425,6 +427,134 @@ def _emit_otel_span(name: str, attributes: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# VIN explanation persistence
+# ---------------------------------------------------------------------------
+
+
+def _derive_constraint_factors(
+    ranked_vin: RankedVin,
+    snapshot: ConstraintSnapshot,
+    vin_input: VinInput | None,
+) -> list[ConstraintFactor]:
+    """Derive up to 3 ConstraintFactor entries for a ranked VIN.
+
+    Uses the same logic as score_vin_heuristic to determine which factors
+    contributed most significantly to this VIN's position.
+    """
+    factors: list[tuple[float, ConstraintFactor]] = []
+
+    if vin_input is not None and vin_input.regulatoryHold:
+        factors.append((
+            1000.0,
+            ConstraintFactor(
+                factorName=ConstraintFactorName.regulatory_hold,
+                weightedScore=1000.0,
+                dataSource="optimizer_run.ranked_sequence",
+                rawValue=1.0,
+            ),
+        ))
+
+    if vin_input is not None and vin_input.vipPriority:
+        factors.append((
+            500.0,
+            ConstraintFactor(
+                factorName=ConstraintFactorName.vip_priority,
+                weightedScore=500.0,
+                dataSource="optimizer_run.ranked_sequence",
+                rawValue=1.0,
+            ),
+        ))
+
+    kitting = snapshot.kittingReadinessPct
+    if kitting < _KITTING_THRESHOLD:
+        penalty = (_KITTING_THRESHOLD - kitting) * _KITTING_PENALTY_FACTOR
+        factors.append((
+            penalty,
+            ConstraintFactor(
+                factorName=ConstraintFactorName.kitting_gap,
+                weightedScore=penalty,
+                dataSource="uns.kitting_readiness",
+                rawValue=kitting,
+            ),
+        ))
+
+    if snapshot.maintenanceWindows:
+        factors.append((
+            float(_MAINTENANCE_PENALTY),
+            ConstraintFactor(
+                factorName=ConstraintFactorName.maintenance_window,
+                weightedScore=float(_MAINTENANCE_PENALTY),
+                dataSource="uns.maintenance_windows",
+                rawValue=float(len(snapshot.maintenanceWindows)),
+            ),
+        ))
+
+    if snapshot.paintCapacityUtilisation > 85.0:
+        score = (snapshot.paintCapacityUtilisation - 85.0) * 10.0
+        factors.append((
+            score,
+            ConstraintFactor(
+                factorName=ConstraintFactorName.paint_batch_conflict,
+                weightedScore=score,
+                dataSource="uns.paint_capacity",
+                rawValue=snapshot.paintCapacityUtilisation,
+            ),
+        ))
+
+    if vin_input is not None and vin_input.paintCode is not None:
+        factors.append((
+            float(_PAINT_CHANGE_PENALTY),
+            ConstraintFactor(
+                factorName=ConstraintFactorName.changeover_penalty,
+                weightedScore=float(_PAINT_CHANGE_PENALTY),
+                dataSource="uns.paint_sequence",
+                rawValue=None,
+            ),
+        ))
+
+    factors.sort(key=lambda t: -t[0])
+    return [f for _, f in factors[:3]] or [
+        ConstraintFactor(
+            factorName=ConstraintFactorName.kitting_gap,
+            weightedScore=ranked_vin.constraintScore,
+            dataSource="optimizer_run.ranked_sequence",
+            rawValue=ranked_vin.constraintScore,
+        )
+    ]
+
+
+async def _store_vin_explanations(
+    pool: asyncpg.Pool,
+    response: OptimizeResponse,
+    request: OptimizeRequest,
+) -> None:
+    """Persist top-3 ConstraintFactor rows per VIN into vin_constraint_explanation."""
+    from app.explain import store_explanation
+
+    vin_inputs: dict[str, VinInput] = {v.vin: v for v in request.vins}
+
+    async with pool.acquire() as conn:
+        for ranked_vin in response.rankedSequence:
+            vin_input = vin_inputs.get(ranked_vin.vin)
+            top_factors = _derive_constraint_factors(ranked_vin, request.constraintSnapshot, vin_input)
+            try:
+                await store_explanation(
+                    run_id=response.runId,
+                    vin=ranked_vin.vin,
+                    position=ranked_vin.position,
+                    top_factors=top_factors,
+                    conn=conn,
+                )
+            except Exception as exc:  # noqa: BLE001 — best-effort: don't fail the run
+                logger.exception(
+                    "Failed to store explanation for run=%s vin=%s: %s",
+                    response.runId,
+                    ranked_vin.vin,
+                    exc,
+                )
+
+
+# ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
 
@@ -536,6 +666,7 @@ async def run_optimize(
 
     constraint_snapshot_json = json.dumps(request.constraintSnapshot.model_dump(mode="json"))
     await _store_run(pool, response, request.idempotencyKey, constraint_snapshot_json)
+    await _store_vin_explanations(pool, response, request)
 
     _emit_otel_span(
         "optimizer.run",

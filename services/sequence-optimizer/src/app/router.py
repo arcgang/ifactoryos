@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from typing import Any
 
@@ -31,6 +33,21 @@ from app.models import (
     ThresholdListResponse,
     VinExplanation,
 )
+
+_logger = logging.getLogger(__name__)
+
+
+def _emit_otel_span(name: str, attributes: dict) -> None:
+    try:
+        from opentelemetry import trace
+
+        tracer = trace.get_tracer("sequence-optimizer")
+        with tracer.start_as_current_span(name) as span:
+            for k, v in attributes.items():
+                span.set_attribute(k, v)
+    except ImportError:
+        _logger.debug("OTel span %s skipped (SDK not installed)", name)
+
 
 router = APIRouter(tags=["Constraints"])
 
@@ -207,6 +224,15 @@ async def explain_vin_position(
                 "correlation_id": str(uuid.uuid4()),
             },
         )
+    _emit_otel_span(
+        "explain.vin_position",
+        {
+            "run_id": str(runId),
+            "vin": vin,
+            "position": result.position,
+            "factor_count": len(result.topFactors),
+        },
+    )
     return result
 
 
@@ -361,13 +387,22 @@ async def list_overrides(
 ) -> OverrideListResponse:
     from app.overrides import list_overrides as _list_overrides
 
-    return await _list_overrides(
+    result = await _list_overrides(
         pool=pool,
         week_iso=weekIso,
         run_id=runId,
         cursor=cursor,
         limit=limit,
     )
+    _emit_otel_span(
+        "overrides.list",
+        {
+            "week_iso": weekIso or "",
+            "limit": limit,
+            "result_count": len(result.data),
+        },
+    )
+    return result
 
 
 @overrides_router.post(
@@ -381,10 +416,21 @@ async def create_override(
     payload: dict[str, Any] = Depends(require_override_writer),
     pool: asyncpg.Pool = Depends(_get_pool),
 ) -> OverrideRecord:
-    from app.overrides import create_override as _create_override
+    from app.overrides import create_override as _create_override, publish_override_event
 
     planner_id = caller_subject(payload)
-    return await _create_override(request=body, planner_id=planner_id, pool=pool)
+    record = await _create_override(request=body, planner_id=planner_id, pool=pool)
+    asyncio.create_task(publish_override_event(record))
+    _emit_otel_span(
+        "overrides.create",
+        {
+            "override_id": str(record.overrideId),
+            "run_id": str(record.runId),
+            "vin": record.vin,
+            "planner_id": record.plannerId,
+        },
+    )
+    return record
 
 
 @overrides_router.get(
@@ -417,6 +463,10 @@ async def export_overrides_pdf(
         page = resp.page
 
     pdf_bytes = build_override_pdf(all_records, weekIso)
+    _emit_otel_span(
+        "overrides.export_pdf",
+        {"week_iso": weekIso, "record_count": len(all_records)},
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -448,4 +498,5 @@ async def get_override(
                 "correlation_id": str(uuid.uuid4()),
             },
         )
+    _emit_otel_span("overrides.get", {"override_id": str(overrideId)})
     return record

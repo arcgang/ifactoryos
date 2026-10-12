@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
+import logging
 import uuid
 from typing import Any
 
 import asyncpg
 
 from app.models import CursorPage, OverrideListResponse, OverrideRecord, OverrideRequest
+
+logger = logging.getLogger(__name__)
 
 
 async def create_override(
@@ -90,8 +94,8 @@ async def list_overrides(
             )
             params.extend([cursor_ts, cursor_id])
             idx += 2
-        except Exception:
-            pass  # malformed cursor — ignore, return from start
+        except (ValueError, IndexError, UnicodeDecodeError) as exc:
+            logger.debug("Malformed pagination cursor ignored: %s", exc)
 
     where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -123,6 +127,55 @@ async def list_overrides(
         data=[_row_to_record(r) for r in page_rows],
         page=CursorPage(next_cursor=next_cursor, limit=limit),
     )
+
+
+async def publish_override_event(record: OverrideRecord) -> None:
+    """Publish SequenceOverrideAppliedEvent to Kafka — best-effort, logged on failure."""
+    try:
+        import aiokafka
+
+        from app.config import get_settings
+
+        cfg = get_settings()
+        producer = aiokafka.AIOKafkaProducer(
+            bootstrap_servers=cfg.kafka_bootstrap_servers,
+            request_timeout_ms=5000,
+        )
+        await producer.start()
+        try:
+            event_payload = {
+                "overrideId": str(record.overrideId),
+                "runId": str(record.runId),
+                "vin": record.vin,
+                "originalPosition": record.originalPosition,
+                "newPosition": record.newPosition,
+                "plannerId": record.plannerId,
+                "createdAt": record.createdAt,
+            }
+            await asyncio.wait_for(
+                producer.send(
+                    cfg.sequence_override_applied_topic,
+                    value=json.dumps(event_payload).encode(),
+                ),
+                timeout=5.0,
+            )
+            logger.info(
+                "Published SequenceOverrideAppliedEvent overrideId=%s vin=%s",
+                record.overrideId,
+                record.vin,
+            )
+        finally:
+            await producer.stop()
+    except ImportError as exc:
+        logger.exception(
+            "aiokafka not available for override event overrideId=%s: %s", record.overrideId, exc
+        )
+    except Exception as exc:  # noqa: BLE001 — fire-and-forget: must not raise
+        logger.exception(
+            "Failed to publish SequenceOverrideAppliedEvent overrideId=%s: %s",
+            record.overrideId,
+            exc,
+        )
 
 
 def build_override_pdf(records: list[OverrideRecord], week_iso: str) -> bytes:

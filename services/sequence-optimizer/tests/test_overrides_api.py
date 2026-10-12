@@ -460,3 +460,241 @@ def test_explain_vin_401_when_no_bearer_token() -> None:
     assert resp.status_code == 401
     body = resp.json()
     assert body["code"] == "MISSING_TOKEN"
+
+
+# ---------------------------------------------------------------------------
+# POST /overrides — justification boundary: exactly 9 chars → 400
+# ---------------------------------------------------------------------------
+
+
+def test_create_override_400_when_justification_is_exactly_9_chars() -> None:
+    """9-char justification is one below the 10-char minimum — must reject with 400."""
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    client = TestClient(application, raise_server_exceptions=False)
+    payload = {
+        "runId": str(_RUN_ID),
+        "vin": _VIN,
+        "originalPosition": 5,
+        "newPosition": 2,
+        "justification": "123456789",  # exactly 9 chars
+    }
+    resp = client.post(
+        "/overrides",
+        json=payload,
+        headers={"Authorization": _BEARER},
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == "VALIDATION_ERROR"
+    assert "correlation_id" in body
+
+
+# ---------------------------------------------------------------------------
+# POST /overrides — justification boundary: exactly 10 chars → 201
+# ---------------------------------------------------------------------------
+
+
+def test_create_override_201_when_justification_is_exactly_10_chars() -> None:
+    """10-char justification is the minimum allowed length — must return 201."""
+    import app.overrides as overrides_mod
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    record_with_10_char = OverrideRecord(
+        overrideId=_OVERRIDE_ID,
+        runId=_RUN_ID,
+        vin=_VIN,
+        originalPosition=5,
+        newPosition=2,
+        justification="1234567890",  # exactly 10 chars
+        plannerId="planner@bmwgroup.net",
+        createdAt=_FIXED_TS,
+    )
+    original = overrides_mod.create_override
+
+    async def _mock_create(request: Any, planner_id: Any, pool: Any) -> OverrideRecord:
+        return record_with_10_char
+
+    overrides_mod.create_override = _mock_create
+    try:
+        client = TestClient(application, raise_server_exceptions=False)
+        payload = {
+            "runId": str(_RUN_ID),
+            "vin": _VIN,
+            "originalPosition": 5,
+            "newPosition": 2,
+            "justification": "1234567890",  # exactly 10 chars
+        }
+        resp = client.post(
+            "/overrides",
+            json=payload,
+            headers={"Authorization": _BEARER},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["justification"] == "1234567890"
+    finally:
+        overrides_mod.create_override = original
+
+
+# ---------------------------------------------------------------------------
+# GET /overrides — weekIso edge cases: W01 and W53
+# ---------------------------------------------------------------------------
+
+
+def test_list_overrides_accepts_week_iso_w01() -> None:
+    """weekIso=2026-W01 is a valid ISO week string and must return 200."""
+    import app.overrides as overrides_mod
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    list_response = OverrideListResponse(
+        data=[],
+        page=CursorPage(next_cursor=None, limit=50),
+    )
+    original = overrides_mod.list_overrides
+
+    async def _mock_list(
+        pool: Any,
+        week_iso: Any = None,
+        run_id: Any = None,
+        cursor: Any = None,
+        limit: Any = 50,
+    ) -> OverrideListResponse:
+        return list_response
+
+    overrides_mod.list_overrides = _mock_list
+    try:
+        client = TestClient(application, raise_server_exceptions=False)
+        resp = client.get(
+            "/overrides?weekIso=2026-W01",
+            headers={"Authorization": _BEARER},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["data"] == []
+        assert body["page"]["next_cursor"] is None
+    finally:
+        overrides_mod.list_overrides = original
+
+
+def test_list_overrides_accepts_week_iso_w53() -> None:
+    """weekIso=2026-W53 is a valid ISO week string and must return 200."""
+    import app.overrides as overrides_mod
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    list_response = OverrideListResponse(
+        data=[],
+        page=CursorPage(next_cursor=None, limit=50),
+    )
+    original = overrides_mod.list_overrides
+
+    async def _mock_list(
+        pool: Any,
+        week_iso: Any = None,
+        run_id: Any = None,
+        cursor: Any = None,
+        limit: Any = 50,
+    ) -> OverrideListResponse:
+        return list_response
+
+    overrides_mod.list_overrides = _mock_list
+    try:
+        client = TestClient(application, raise_server_exceptions=False)
+        resp = client.get(
+            "/overrides?weekIso=2026-W53",
+            headers={"Authorization": _BEARER},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["data"] == []
+    finally:
+        overrides_mod.list_overrides = original
+
+
+def test_list_overrides_rejects_week_iso_w00() -> None:
+    """weekIso=2026-W00 is an invalid ISO week string and must return 422."""
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    client = TestClient(application, raise_server_exceptions=False)
+    resp = client.get(
+        "/overrides?weekIso=2026-W00",
+        headers={"Authorization": _BEARER},
+    )
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /overrides/export — PDF row count matches input record count
+# ---------------------------------------------------------------------------
+
+
+def test_export_overrides_pdf_row_count_matches_db_rows() -> None:
+    """PDF content must contain one row per override record returned from DB."""
+    import app.overrides as overrides_mod
+    from app.overrides import build_override_pdf
+    from app.router import _get_pool
+
+    # Build 3 records; PDF should include exactly 3 override lines
+    records = [
+        OverrideRecord(
+            overrideId=uuid.uuid4(),
+            runId=_RUN_ID,
+            vin=_VIN,
+            originalPosition=i + 1,
+            newPosition=i + 2,
+            justification=f"Justification for override {i + 1}",
+            plannerId="planner@bmwgroup.net",
+            createdAt=_FIXED_TS,
+        )
+        for i in range(3)
+    ]
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    list_response = OverrideListResponse(
+        data=records,
+        page=CursorPage(next_cursor=None, limit=200),
+    )
+    original = overrides_mod.list_overrides
+
+    async def _mock_list(
+        pool: Any,
+        week_iso: Any = None,
+        run_id: Any = None,
+        cursor: Any = None,
+        limit: Any = 50,
+    ) -> OverrideListResponse:
+        return list_response
+
+    overrides_mod.list_overrides = _mock_list
+    try:
+        client = TestClient(application, raise_server_exceptions=False)
+        resp = client.get(
+            "/overrides/export?weekIso=2026-W42",
+            headers={"Authorization": _BEARER},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        # Verify row count by reconstructing the PDF independently
+        pdf_bytes = build_override_pdf(records, "2026-W42")
+        assert pdf_bytes[:4] == b"%PDF"
+        assert resp.content[:4] == b"%PDF"
+        # The PDF built from the same 3 records must be identical byte-for-byte
+        assert resp.content == pdf_bytes
+    finally:
+        overrides_mod.list_overrides = original

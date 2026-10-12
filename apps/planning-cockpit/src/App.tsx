@@ -1,16 +1,54 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { ConstraintRadarPage } from "./components/ConstraintRadarPage";
 import { SequenceBuilderPage } from "./components/SequenceBuilderPage";
 import { My26WizardPage } from "./components/My26WizardPage";
 import { OverrideLogPage } from "./components/OverrideLogPage";
+import {
+  emitLoginEvent,
+  emitSessionEndEvent,
+  initSession,
+} from "./instrumentation/sessionEvents";
 
 type ActivePage = "sequence-builder" | "constraint-radar" | "my26-wizard" | "override-log";
+
+// Resolve the authenticated user's ID from the stored JWT sub claim.
+function resolveUserId(): string {
+  try {
+    const token = localStorage.getItem("ifos_planning_cockpit_token");
+    if (!token) return "anonymous";
+    const payload = token.split(".")[1];
+    if (!payload) return "anonymous";
+    const decoded = JSON.parse(atob(payload)) as { sub?: string };
+    return decoded.sub ?? "anonymous";
+  } catch {
+    return "anonymous";
+  }
+}
 
 export function App() {
   const { t } = useTranslation();
   const [activePage, setActivePage] = useState<ActivePage>("sequence-builder");
+
+  useEffect(() => {
+    const userId = resolveUserId();
+    initSession(userId);
+    emitLoginEvent(userId);
+
+    const handleUnload = () => emitSessionEndEvent();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") emitSessionEndEvent();
+    };
+
+    window.addEventListener("beforeunload", handleUnload);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   return (
     <div className="page-shell">

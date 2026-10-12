@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { acknowledgeAlert, getMy26Config, postResequence, publishSequence } from "../services/api";
 import type { ConstraintAlertRecord } from "../types/alerts";
 import type { OptimizeResponse, RankedVin } from "../types/optimizer";
+import { emitPublishConfirmedEvent } from "../instrumentation/sessionEvents";
 
 const CONSTRAINT_TYPE_LABELS: Record<string, string> = {
   paint_capacity: "Paint Capacity",
@@ -18,13 +19,6 @@ function emitAdoptionEvent(
   detail: Record<string, unknown>,
 ): void {
   const event = { action, ...detail, timestamp: new Date().toISOString() };
-  if (
-    typeof window !== "undefined" &&
-    typeof (window as Window & { otelClient?: { track: (e: unknown) => void } }).otelClient
-      ?.track === "function"
-  ) {
-    (window as Window & { otelClient: { track: (e: unknown) => void } }).otelClient.track(event);
-  }
   window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
 }
 
@@ -219,6 +213,7 @@ function AlertCard({ alert, onDismissed }: AlertCardProps) {
           }
         }
         await publishSequence({ sequenceId, isResequence: true, my26ConfigVersion });
+        emitPublishConfirmedEvent();
         emitAdoptionEvent("resequence_published", { sequenceId, my26ConfigVersion });
         setPublished(true);
       } catch (err) {

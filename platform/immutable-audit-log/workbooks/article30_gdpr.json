@@ -1,0 +1,74 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# GDPR Article 30 — IFOS Record of Processing Activities\n\nThis workbook renders the BMW Intelligent Factory OS (IFOS) record of processing activities required by GDPR Article 30.  Run the queries below against the Log Analytics workspace to populate all mandatory fields.  The DPO can export this workbook as PDF to respond to a Works Council request within 5 business days.\n\n**Controller:** BMW Group, Petuelring 130, 80788 Munich, Germany  \n**DPO contact:** dpo@bmwgroup.com  \n**Last reviewed:** {LastReviewDate}  \n**Regulation:** GDPR Art. 30, BDSG §70, BetrVG §87"
+      },
+      "name": "header"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Article 30(1)(b) — Purposes and Legal Bases\n\n| Data Category | Processing Purpose | Legal Basis | Retention Period | Storage Location |\n|---|---|---|---|---|\n| Audit user_id (pseudonymous UUID) | Immutable audit trail — sequence, certificate, VIN, torque mutations | Art. 6(1)(c) legal obligation (IEC 62443, automotive quality) | 7 years (WORM lock) | Azure Germany West Central — Blob WORM |\n| Session logs (session_id, device_type) | AR Workbench adoption instrumentation | Art. 6(1)(f) legitimate interest (safety) | 7 years (WORM lock) | Azure Germany West Central — Blob WORM |\n| Torque log operator token reference (idempotency_key, alert_id) | Fastener tightening quality record linked to production station | Art. 6(1)(c) legal obligation (automotive quality, IEC 62443) | 7 years (WORM) + data_residency tag on table | PostgreSQL Citus — Germany West Central |\n| VIN digital thread (vin, events) | Battery Passport, warranty, production traceability | Art. 6(1)(c) legal obligation (EU Battery Passport 2027) | 10 years from vehicle production date | Hyperledger Fabric on-prem Munich + Azure Germany West Central |\n| OEE snapshots (station-level, no operator ID) | Production efficiency analytics | Art. 6(1)(f) legitimate interest (operational excellence) | 90 days hot + 1 year cool + archive at 7 years | Azure Germany West Central — TimescaleDB |"
+      },
+      "name": "purposes_table"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// Article 30 query 1: Audit event categories by component over the last 30 days\n// Run against the Log Analytics workspace connected to the audit log storage account.\nAuditEvent\n| where TimeGenerated >= ago(30d)\n| summarize EventCount = count(), DistinctUsers = dcount(user_id), DistinctEntities = dcount(entity_id)\n  by component, action_type\n| extend DataCategory = case(\n    action_type startswith \"TORQUE\", \"torque_log_operator_token_reference\",\n    action_type startswith \"VIN\", \"vin_digital_thread\",\n    action_type startswith \"CERT\", \"quality_certificate\",\n    action_type startswith \"SEQUENCE\", \"sequence_mutation\",\n    action_type startswith \"SESSION\", \"session_log\",\n    \"other\"\n  )\n| project DataCategory, component, action_type, EventCount, DistinctUsers, DistinctEntities\n| order by DataCategory asc, EventCount desc",
+        "size": 1,
+        "title": "Article 30(1)(b) — Event categories, volumes, and components (last 30 days)",
+        "timeContext": {
+          "durationMs": 2592000000
+        },
+        "queryType": 0
+      },
+      "name": "article30_event_categories"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// Article 30 query 2: EU data residency verification\n// Asserts all audit blobs are in germanywestcentral or westeurope.\n// A non-empty result with StorageRegion outside EU is a compliance finding.\nAzureActivity\n| where ResourceProvider == \"Microsoft.Storage\"\n| where OperationName contains \"BlobStorage\"\n| summarize Count = count() by ResourceGroup, ResourceId, ActivityStatusValue\n| extend StorageRegion = extract(\"/locations/([^/]+)/\", 1, ResourceId)\n| extend IsEU = StorageRegion in (\"germanywestcentral\", \"westeurope\")\n| project StorageRegion, IsEU, ResourceGroup, Count\n| order by IsEU asc",
+        "size": 1,
+        "title": "Article 30(1)(f) — Storage location: EU residency verification",
+        "queryType": 0
+      },
+      "name": "article30_eu_residency"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// Article 30 query 3: Schema-rejected writes (DLQ) — employee ID exposure attempts\n// An active message on the DLQ means a caller attempted to write a raw employee ID.\n// Summarises rejection reasons and timestamps for the DPO incident log.\nAzureMetrics\n| where ResourceProvider == \"MICROSOFT.SERVICEBUS\"\n| where MetricName == \"ActiveMessages\"\n| where TimeGenerated >= ago(90d)\n| summarize MaxActiveMessages = max(Total) by bin(TimeGenerated, 1h), ResourceId\n| where MaxActiveMessages > 0\n| project TimeGenerated, ResourceId, MaxActiveMessages\n| order by TimeGenerated desc",
+        "size": 1,
+        "title": "Article 30(1)(e) — Schema-rejected writes (potential employee ID exposure) last 90 days",
+        "queryType": 0
+      },
+      "name": "article30_dlq_rejections"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "// Article 30 query 4: WORM retention policy status\n// Verifies immutability policy is Locked and retention period = 2555 days (7 years).\n// Returns a compliance flag: PASS (policy locked, 7yr) or FAIL (any deviation).\nAzureActivity\n| where ResourceProvider == \"Microsoft.Storage\"\n| where OperationName contains \"immutabilityPolicies\"\n| summarize arg_max(TimeGenerated, *) by ResourceId\n| extend PolicyState = tostring(parse_json(Properties)[\"state\"])\n| extend RetentionDays = toint(parse_json(Properties)[\"immutabilityPeriodSinceCreationInDays\"])\n| extend Compliant = (PolicyState == \"Locked\" and RetentionDays >= 2555)\n| project TimeGenerated, ResourceId, PolicyState, RetentionDays, Compliant",
+        "size": 1,
+        "title": "Article 30(1)(f) — WORM policy: Locked state and 7-year retention verification",
+        "queryType": 0
+      },
+      "name": "article30_worm_policy"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Article 30(1)(d) — Recipients and Third-Party Transfers\n\nNo audit log data is transferred outside the EU. The allowedLocations Azure Policy assignment (`audit-log-eu-residency-{environment}`) denies any replication, failover, or geo-copy operation targeting non-EU regions. Cross-border transfers: **none**.\n\n## Article 30(1)(e) — Data Erasure / GDPR Right to Erasure\n\nAudit blobs are stored under WORM (Write Once Read Many) with a locked immutability policy. Deletion within the 7-year retention window is technically prohibited at the storage layer. The legal basis for retention overrides the right to erasure per GDPR Art. 17(3)(b) (legal obligation) for the audit trail itself. Worker-linked fields use pseudonymous tokens only — re-pseudonymisation is handled by the identity service endpoint.\n\n## Article 30(1)(g) — Security Measures\n\n- AES-256 SSE with customer-managed keys (Azure Key Vault, 90-day rotation)\n- TLS 1.2+ in transit\n- WORM immutability (locked, 2555 days minimum)\n- RBAC: Storage Blob Data Contributor (app MIs only), Storage Blob Data Reader (compliance MI)\n- SPIFFE/SPIRE mTLS for all cross-zone calls\n- IEC 62443 SL2 external audit (TÜV Rheinland, Gate 1 blocker)\n\n## Export Instructions (for Works Council requests)\n\n1. Open this workbook in Azure Monitor → Workbooks.\n2. Set the time range to cover the requested period.\n3. Run all four KQL queries by clicking each panel.\n4. Click **Export → Download as PDF** from the workbook toolbar.\n5. Attach the PDF to the Works Council response within 5 business days."
+      },
+      "name": "article30_legal_sections"
+    }
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

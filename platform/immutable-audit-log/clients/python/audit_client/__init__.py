@@ -9,6 +9,6 @@ Environment variables required:
   AUDIT_CONTAINER_NAME   — Blob container name (default: audit-events)
 """
 
-from audit_client._client import AuditClient, write_event
+from audit_client._client import AuditClient, EmployeeIdRejected, write_event
 
-__all__ = ["AuditClient", "write_event"]
+__all__ = ["AuditClient", "EmployeeIdRejected", "write_event"]

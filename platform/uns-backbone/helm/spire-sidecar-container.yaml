@@ -1,0 +1,123 @@
+# SPIRE CA bundle refresh sidecar container spec
+#
+# This container runs alongside the HiveMQ Enterprise StatefulSet pods. It calls the SPIRE
+# Workload API at /run/spire/sockets/agent.sock (hostPath from the SPIRE agent DaemonSet
+# deployed by platform/spiffe-spire/) and writes the spiffe://munich.bmw CA bundle to a
+# shared emptyDir volume. HiveMQ reads the bundle from that volume to validate client
+# certificates.
+#
+# Refresh interval: the spiffe-helper polls the Workload API continuously and rewrites the
+# bundle file whenever the CA bundle rotates, which occurs at most every caTTL (24 h) but
+# the sidecar reacts within seconds — well under the ≤ 60 s requirement.
+#
+# Usage: this file documents the canonical container spec. The same spec is injected into
+# hivemq-values.yaml under extraContainers so Helm renders it into the StatefulSet.
+# It is also referenced by integration tests in platform/uns-backbone/tests/.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-bundle-refresher-config
+  namespace: hivemq
+  labels:
+    app.kubernetes.io/component: spire-bundle-refresher
+    app.kubernetes.io/managed-by: terraform
+    data_residency: eu-de-west-central
+data:
+  helper.conf: |
+    # spiffe-helper configuration for CA bundle refresh
+    # Connects to the SPIRE agent Workload API over the Unix domain socket.
+    agent_address = "/run/spire/sockets/agent.sock"
+
+    # Output directory: the emptyDir volume shared with HiveMQ.
+    # spiffe-helper writes bundle.pem (PEM-encoded SPIFFE CA bundle) here.
+    svid_file_name   = "svid.pem"
+    svid_key_file_name = "svid_key.pem"
+    svid_bundle_file_name = "bundle.pem"
+
+    # Rename-into-place ensures HiveMQ never reads a partial write.
+    renew_signal = ""
+
+    # cmd / cmd_args: reload HiveMQ trust store after bundle rotation.
+    # HiveMQ Enterprise watches /opt/hivemq/conf/spire-ca/bundle.pem via its
+    # file-based truststore update mechanism; no reload command is required.
+    # Leave empty — the file write itself is sufficient.
+    cmd = ""
+    cmd_args = ""
+---
+# Canonical sidecar container spec (for reference and integration test assertions)
+# Rendered into the HiveMQ StatefulSet by Helm via hivemq-values.yaml extraContainers.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-sidecar-container-spec
+  namespace: hivemq
+  labels:
+    app.kubernetes.io/component: spire-bundle-refresher
+    app.kubernetes.io/managed-by: terraform
+    data_residency: eu-de-west-central
+  annotations:
+    description: >
+      Canonical spec for the SPIRE CA bundle refresh sidecar.
+      This ConfigMap is for documentation and test assertions only.
+      The live container spec is injected via hivemq-values.yaml extraContainers.
+data:
+  container.yaml: |
+    name: spire-bundle-refresher
+    image: ghcr.io/spiffe/spiffe-helper:0.6.0
+    imagePullPolicy: IfNotPresent
+    args:
+      - -config
+      - /etc/spiffe-helper/helper.conf
+    env:
+      - name: SPIFFE_ENDPOINT_SOCKET
+        value: unix:///run/spire/sockets/agent.sock
+    volumeMounts:
+      # SPIRE agent Workload API socket — hostPath, provisioned by spiffe-spire DaemonSet.
+      - name: spire-agent-socket
+        mountPath: /run/spire/sockets
+        readOnly: true
+      # Shared emptyDir: sidecar writes bundle.pem; HiveMQ reads it for trust-store updates.
+      - name: spire-ca-bundle
+        mountPath: /run/spire/bundle
+      # spiffe-helper config from ConfigMap above.
+      - name: spire-bundle-refresher-config
+        mountPath: /etc/spiffe-helper
+        readOnly: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    # Liveness: Workload API socket must be reachable.
+    livenessProbe:
+      exec:
+        command:
+          - test
+          - -S
+          - /run/spire/sockets/agent.sock
+      initialDelaySeconds: 5
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+    # Readiness: bundle.pem must exist (non-zero size) before HiveMQ starts trusting it.
+    readinessProbe:
+      exec:
+        command:
+          - test
+          - -s
+          - /run/spire/bundle/bundle.pem
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3

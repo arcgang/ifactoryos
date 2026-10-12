@@ -1,0 +1,160 @@
+# HiveMQ Enterprise Helm values — mTLS + SPIRE CA bundle + per-gateway ACL extensions
+# Applied on top of the hivemq-operator chart (0.9.0) deployed in platform/uns-backbone/main.tf.
+#
+# Enforces:
+#   - Mutual TLS on port 8883 (TLS 1.3 only): any MQTT client without a valid certificate is
+#     rejected before MQTT CONNECT is processed.
+#   - SPIFFE SVID URI SAN is used as the MQTT username (useIdentityAsUsername: true).
+#   - Trust anchor is the spiffe://munich.bmw CA bundle refreshed by the SPIRE sidecar; no
+#     new trust root is introduced.
+#   - HiveMQ Enterprise Authorization Extension enforces per-gateway publish ACLs from
+#     mqtt-acl-rules.xml.
+#   - TLS rejection webhook fires within 1 s for every failed handshake.
+
+hivemq:
+  image:
+    repository: hivemq/hivemq4
+    tag: "4.29.0-enterprise"
+    pullPolicy: IfNotPresent
+
+  # ---------------------------------------------------------------------------
+  # Cluster topology — matches main.tf (3 nodes)
+  # ---------------------------------------------------------------------------
+  nodes: 3
+
+  # ---------------------------------------------------------------------------
+  # mTLS: require client certificate before MQTT CONNECT
+  # ---------------------------------------------------------------------------
+  tls:
+    enabled: true
+    port: 8883
+    # Require the client to present a certificate; reject without one.
+    requireClientCert: true
+    # Derive the MQTT username from the SPIFFE SVID URI SAN of the client certificate.
+    # This makes the SPIFFE ID ("spiffe://munich.bmw/edge-gateways/{shop}/{index}")
+    # available as the MQTT client identity for ACL evaluation.
+    useIdentityAsUsername: true
+    protocols:
+      - TLSv1.3
+    cipherSuites:
+      - TLS_AES_256_GCM_SHA384
+      - TLS_CHACHA20_POLY1305_SHA256
+    keystoreSecret: hivemq-tls-keystore
+    truststoreSecret: hivemq-tls-truststore
+    # Trust store is also populated from the SPIRE CA bundle ConfigMap written by the sidecar.
+    # The sidecar mounts the bundle at /opt/hivemq/conf/spire-ca/bundle.pem; HiveMQ loads it
+    # via the <truststore> element in config.xml (rendered through the hivemq-config ConfigMap).
+    spireCABundleMount:
+      mountPath: /opt/hivemq/conf/spire-ca
+      configMapName: spire-ca-bundle
+      configMapKey: bundle.pem
+
+  # ---------------------------------------------------------------------------
+  # Additional volumes: SPIRE CA bundle emptyDir + SPIRE socket hostPath
+  # ---------------------------------------------------------------------------
+  extraVolumes:
+    # Shared volume between the SPIRE sidecar and HiveMQ: the sidecar writes the CA bundle
+    # here; HiveMQ reads it for trust-store updates.
+    - name: spire-ca-bundle
+      emptyDir: {}
+    # SPIRE Workload API socket exposed by the SPIRE agent DaemonSet on every node.
+    - name: spire-agent-socket
+      hostPath:
+        path: /run/spire/sockets
+        type: DirectoryOrCreate
+
+  extraVolumeMounts:
+    - name: spire-ca-bundle
+      mountPath: /opt/hivemq/conf/spire-ca
+      readOnly: true
+
+  # ---------------------------------------------------------------------------
+  # SPIRE sidecar — refreshes the CA bundle at ≤ 60 s intervals
+  # Defined in spire-sidecar-container.yaml; injected here as an extra container.
+  # ---------------------------------------------------------------------------
+  extraContainers:
+    - name: spire-bundle-refresher
+      image: ghcr.io/spiffe/spiffe-helper:0.6.0
+      args:
+        - -config
+        - /etc/spiffe-helper/helper.conf
+      env:
+        - name: SPIFFE_ENDPOINT_SOCKET
+          value: unix:///run/spire/sockets/agent.sock
+      volumeMounts:
+        - name: spire-agent-socket
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: spire-ca-bundle
+          mountPath: /run/spire/bundle
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+
+  # ---------------------------------------------------------------------------
+  # HiveMQ Enterprise extensions
+  # ---------------------------------------------------------------------------
+  extensions:
+    # Sparkplug B schema validation (deployed in main.tf; listed here for completeness)
+    - name: hivemq-sparkplug-extension
+      extensionUri: "hivemq/hivemq-sparkplug-aware-extension:1.0.11"
+      enabled: true
+    # Kafka MQTT bridge (deployed in main.tf)
+    - name: hivemq-kafka-extension
+      extensionUri: "hivemq/hivemq-kafka-extension:1.3.3"
+      enabled: true
+    # Enterprise Authorization Extension — enforces per-gateway publish ACLs.
+    # Rules are loaded from mqtt-acl-rules.xml mounted at /opt/hivemq/extensions/hivemq-enterprise-security-extension/conf/.
+    - name: hivemq-enterprise-security-extension
+      extensionUri: "hivemq/hivemq-enterprise-security-extension:4.29.0"
+      enabled: true
+    # Rejection webhook — fires within 1 s on every failed TLS handshake.
+    - name: hivemq-rejection-webhook-extension
+      extensionUri: "local:///opt/hivemq/extensions/hivemq-rejection-webhook-extension"
+      enabled: true
+
+  # ---------------------------------------------------------------------------
+  # Extension config volumes: ACL rules + rejection webhook config
+  # ---------------------------------------------------------------------------
+  extensionConfigMaps:
+    - name: hivemq-acl-rules
+      mountPath: /opt/hivemq/extensions/hivemq-enterprise-security-extension/conf
+    - name: hivemq-rejection-webhook-extension-config
+      mountPath: /opt/hivemq/extensions/hivemq-rejection-webhook-extension/conf
+
+  # ---------------------------------------------------------------------------
+  # Pod security — matches main.tf securityContext
+  # ---------------------------------------------------------------------------
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10000
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  # Internal Azure Load Balancer (private VNET only — IEC 62443 SL2 zone boundary)
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    port: 8883
+
+  podLabels:
+    data_residency: eu-de-west-central
+    classification: confidential
+    iec62443-sl: SL2

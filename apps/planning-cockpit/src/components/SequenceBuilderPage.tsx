@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { postOptimize, getOptimizeRun } from "../services/api";
+import { postOptimize, getOptimizeRun, createOverride } from "../services/api";
 import type {
   OptimizeResponse,
   RankedVin,
@@ -8,10 +8,13 @@ import type {
   VinInput,
   ConstraintSnapshot,
 } from "../types/optimizer";
+import type { OverrideRecord } from "../types/overrides";
+import { VinExplainPanel } from "./VinExplainPanel";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 45_000;
 const MONTE_CARLO_RUNS = 50;
+const JUSTIFICATION_MIN_LEN = 10;
 
 type RunState =
   | { phase: "idle" }
@@ -19,11 +22,15 @@ type RunState =
   | { phase: "done"; result: OptimizeResponse }
   | { phase: "error"; message: string };
 
+interface SelectedVin {
+  vin: string;
+  position: number;
+}
+
 function generateIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Fallback for environments without crypto.randomUUID
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
@@ -34,6 +41,26 @@ function generateIdempotencyKey(): string {
 function emitOptimizerRunEvent(userId: string, sessionId: string): void {
   const event = {
     action: "optimizer_run",
+    userId,
+    sessionId,
+    timestamp: new Date().toISOString(),
+  };
+  if (
+    typeof window !== "undefined" &&
+    typeof (
+      window as Window & { otelClient?: { track: (e: unknown) => void } }
+    ).otelClient?.track === "function"
+  ) {
+    (
+      window as Window & { otelClient: { track: (e: unknown) => void } }
+    ).otelClient.track(event);
+  }
+  window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
+}
+
+function emitOverrideAppliedEvent(userId: string, sessionId: string): void {
+  const event = {
+    action: "override_applied",
     userId,
     sessionId,
     timestamp: new Date().toISOString(),
@@ -86,9 +113,27 @@ function ConstraintScoreBar({ score }: { score: number }) {
   );
 }
 
-function RankedSequenceTable({ rows }: { rows: RankedVin[] }) {
+interface RankedSequenceTableProps {
+  rows: RankedVin[];
+  runId: string;
+  overrides: OverrideRecord[];
+  onSelectVin: (vin: string, position: number) => void;
+  selectedVin: string | null;
+  onOpenOverride: (vin: string, position: number) => void;
+}
+
+function RankedSequenceTable({
+  rows,
+  runId,
+  overrides,
+  onSelectVin,
+  selectedVin,
+  onOpenOverride,
+}: RankedSequenceTableProps) {
   const { t } = useTranslation();
   const sorted = [...rows].sort((a, b) => a.position - b.position);
+  const overriddenVins = new Set(overrides.map((o) => o.vin));
+
   return (
     <div className="seq-table-wrap">
       <table className="seq-table" aria-label={t("sequenceBuilder.rankedSequenceLabel")}>
@@ -98,49 +143,268 @@ function RankedSequenceTable({ rows }: { rows: RankedVin[] }) {
             <th scope="col">{t("sequence.columns.vin")}</th>
             <th scope="col">{t("sequence.columns.constraintScore")}</th>
             <th scope="col">{t("sequenceBuilder.overrideFlagsCol")}</th>
+            <th scope="col"><span className="sr-only">{t("sequenceBuilder.actionsCol")}</span></th>
           </tr>
         </thead>
         <tbody>
-          {sorted.map((row) => (
-            <tr key={row.vin}>
-              <td>
-                <span
-                  className={`rank-badge${row.position <= 2 ? " rank-badge--top" : ""}`}
-                  aria-label={t("sequenceBuilder.positionLabel", { pos: row.position })}
-                >
-                  {row.position}
-                </span>
-              </td>
-              <td>
-                <span className="vin-mono">{row.vin}</span>
-              </td>
-              <td>
-                <ConstraintScoreBar score={row.constraintScore} />
-              </td>
-              <td>
-                {row.vipPriority && (
-                  <span className="flag-badge flag-badge--vip" aria-label={t("sequenceBuilder.vipFlag")}>
-                    {t("sequenceBuilder.vipFlag")}
-                  </span>
-                )}
-                {row.regulatoryHold && (
+          {sorted.map((row) => {
+            const isSelected = row.vin === selectedVin;
+            const isOverridden = overriddenVins.has(row.vin);
+            return (
+              <tr
+                key={row.vin}
+                className={`seq-table-row${isSelected ? " seq-table-row--selected" : ""}${isOverridden ? " seq-table-row--overridden" : ""}`}
+                aria-selected={isSelected}
+              >
+                <td>
                   <span
-                    className="flag-badge flag-badge--reg"
-                    aria-label={t("sequenceBuilder.regHoldFlag")}
+                    className={`rank-badge${row.position <= 2 ? " rank-badge--top" : ""}`}
+                    aria-label={t("sequenceBuilder.positionLabel", { pos: row.position })}
                   >
-                    {t("sequenceBuilder.regHoldFlag")}
+                    {row.position}
                   </span>
-                )}
-                {!row.vipPriority && !row.regulatoryHold && (
-                  <span className="flag-none" aria-hidden="true">
-                    —
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="vin-select-btn"
+                    onClick={() => onSelectVin(row.vin, row.position)}
+                    aria-label={t("sequenceBuilder.selectVinLabel", { vin: row.vin })}
+                    aria-pressed={isSelected}
+                    data-testid={`vin-row-btn-${row.vin}`}
+                  >
+                    <span className="vin-mono">{row.vin}</span>
+                  </button>
+                  {isOverridden && (
+                    <span className="override-applied-chip" aria-label={t("sequenceBuilder.overriddenLabel")}>
+                      {t("sequenceBuilder.overriddenChip")}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <ConstraintScoreBar score={row.constraintScore} />
+                </td>
+                <td>
+                  {row.vipPriority && (
+                    <span className="flag-badge flag-badge--vip" aria-label={t("sequenceBuilder.vipFlag")}>
+                      {t("sequenceBuilder.vipFlag")}
+                    </span>
+                  )}
+                  {row.regulatoryHold && (
+                    <span
+                      className="flag-badge flag-badge--reg"
+                      aria-label={t("sequenceBuilder.regHoldFlag")}
+                    >
+                      {t("sequenceBuilder.regHoldFlag")}
+                    </span>
+                  )}
+                  {!row.vipPriority && !row.regulatoryHold && (
+                    <span className="flag-none" aria-hidden="true">
+                      —
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-secondary wiz-btn-sm"
+                    onClick={() => onOpenOverride(row.vin, row.position)}
+                    aria-label={t("sequenceBuilder.overrideVinLabel", { vin: row.vin })}
+                    data-testid={`override-btn-${row.vin}`}
+                  >
+                    {t("sequenceBuilder.overrideButton")}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+interface OverrideFormProps {
+  runId: string;
+  vin: string;
+  originalPosition: number;
+  onSaved: (record: OverrideRecord) => void;
+  onCancel: () => void;
+}
+
+function OverrideForm({ runId, vin, originalPosition, onSaved, onCancel }: OverrideFormProps) {
+  const { t } = useTranslation();
+  const [newPosition, setNewPosition] = useState<string>(String(originalPosition));
+  const [justification, setJustification] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showToast, setShowToast] = useState(false);
+  const justificationError =
+    justification.length > 0 && justification.length < JUSTIFICATION_MIN_LEN
+      ? t("sequenceBuilder.justificationTooShort", { min: JUSTIFICATION_MIN_LEN })
+      : null;
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (justification.length < JUSTIFICATION_MIN_LEN) return;
+      const newPos = parseInt(newPosition, 10);
+      if (isNaN(newPos) || newPos < 1) return;
+
+      setSubmitting(true);
+      setSubmitError(null);
+
+      try {
+        const record = await createOverride({
+          runId,
+          vin,
+          originalPosition,
+          newPosition: newPos,
+          justification,
+        });
+        emitOverrideAppliedEvent("anonymous", `session-${runId.slice(0, 8)}`);
+        setShowToast(true);
+        setTimeout(() => {
+          onSaved(record);
+        }, 1200);
+      } catch (err) {
+        setSubmitError(err instanceof Error ? err.message : t("errors.requestFailed"));
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [runId, vin, originalPosition, newPosition, justification, onSaved, t],
+  );
+
+  const justificationId = `justification-${vin}`;
+  const newPositionId = `new-position-${vin}`;
+
+  return (
+    <div className="override-form-wrap" role="dialog" aria-modal="true" aria-label={t("sequenceBuilder.overrideFormLabel", { vin })}>
+      <form onSubmit={(e) => void handleSubmit(e)} className="override-form" noValidate>
+        <div className="override-form-header">
+          <h3 className="override-form-title">{t("sequenceBuilder.overrideFormTitle")}</h3>
+          <span className="vin-mono">{vin}</span>
+          <button
+            type="button"
+            className="btn btn-secondary explain-close-btn"
+            onClick={onCancel}
+            aria-label={t("sequenceBuilder.cancelOverride")}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="override-form-fields">
+          <div className="override-form-field">
+            <label className="wiz-label" htmlFor={`orig-pos-${vin}`}>
+              {t("sequenceBuilder.originalPosition")}
+            </label>
+            <input
+              id={`orig-pos-${vin}`}
+              className="wiz-input wiz-input--narrow"
+              type="number"
+              value={originalPosition}
+              readOnly
+              aria-readonly="true"
+            />
+          </div>
+
+          <div className="override-form-field">
+            <label className="wiz-label" htmlFor={newPositionId}>
+              {t("sequenceBuilder.newPosition")}
+            </label>
+            <input
+              id={newPositionId}
+              className="wiz-input wiz-input--narrow"
+              type="number"
+              min={1}
+              value={newPosition}
+              onChange={(e) => setNewPosition(e.target.value)}
+              aria-label={t("sequenceBuilder.newPositionLabel")}
+              data-testid="override-new-pos-input"
+            />
+          </div>
+        </div>
+
+        <div className="override-form-justification">
+          <label className="wiz-label" htmlFor={justificationId}>
+            {t("sequenceBuilder.justificationLabel")}
+          </label>
+          <textarea
+            id={justificationId}
+            className="wiz-textarea"
+            rows={3}
+            value={justification}
+            onChange={(e) => setJustification(e.target.value)}
+            maxLength={2000}
+            aria-describedby={justificationError ? `${justificationId}-error` : undefined}
+            aria-invalid={justificationError ? "true" : undefined}
+            placeholder={t("sequenceBuilder.justificationPlaceholder")}
+            data-testid="override-justification-input"
+          />
+          <div className="override-justification-footer">
+            {justificationError ? (
+              <span
+                id={`${justificationId}-error`}
+                className="field-error"
+                role="alert"
+                data-testid="justification-error"
+              >
+                {justificationError}
+              </span>
+            ) : (
+              <span className="wiz-field-hint">
+                {t("sequenceBuilder.justificationMinHint", { min: JUSTIFICATION_MIN_LEN })}
+              </span>
+            )}
+            <span className="override-char-counter" aria-live="polite" aria-label={t("sequenceBuilder.charCountLabel", { count: justification.length })}>
+              {justification.length}/2000
+            </span>
+          </div>
+        </div>
+
+        {submitError && (
+          <div className="wiz-alert wiz-alert--err" role="alert">
+            <span className="wiz-alert-icon" aria-hidden="true">!</span>
+            {submitError}
+          </div>
+        )}
+
+        {showToast && (
+          <div className="override-toast" role="status" aria-live="assertive" data-testid="override-toast">
+            <span className="toast-icon" aria-hidden="true">✓</span>
+            {t("sequenceBuilder.overrideSaved")}
+          </div>
+        )}
+
+        <div className="wiz-btn-group">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={
+              submitting ||
+              justification.length < JUSTIFICATION_MIN_LEN ||
+              !newPosition ||
+              isNaN(parseInt(newPosition, 10))
+            }
+            aria-disabled={
+              submitting ||
+              justification.length < JUSTIFICATION_MIN_LEN
+            }
+            data-testid="override-submit-btn"
+          >
+            {submitting ? t("sequenceBuilder.overrideSaving") : t("sequenceBuilder.overrideSave")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+          >
+            {t("sequenceBuilder.cancelOverride")}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -218,6 +482,10 @@ export function SequenceBuilderPage() {
   const startMsRef = useRef<number>(0);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [selectedVin, setSelectedVin] = useState<SelectedVin | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<SelectedVin | null>(null);
+  const [overrides, setOverrides] = useState<OverrideRecord[]>([]);
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
       clearInterval(pollTimerRef.current);
@@ -238,6 +506,9 @@ export function SequenceBuilderPage() {
   const handleRunOptimizer = useCallback(async () => {
     stopPolling();
     idempotencyKeyRef.current = generateIdempotencyKey();
+    setSelectedVin(null);
+    setOverrideTarget(null);
+    setOverrides([]);
 
     emitOptimizerRunEvent("anonymous", "session-" + idempotencyKeyRef.current.slice(0, 8));
 
@@ -257,7 +528,6 @@ export function SequenceBuilderPage() {
 
       runId = initial.runId;
 
-      // If POST returned a completed result (idempotent hit or synchronous response)
       if (initial.rankedSequence && initial.rankedSequence.length > 0) {
         setRunState({ phase: "done", result: initial });
         return;
@@ -315,7 +585,23 @@ export function SequenceBuilderPage() {
     setRunState({ phase: "idle" });
   }, []);
 
+  const handleSelectVin = useCallback((vin: string, position: number) => {
+    setSelectedVin((prev) => (prev?.vin === vin ? null : { vin, position }));
+    setOverrideTarget(null);
+  }, []);
+
+  const handleOpenOverride = useCallback((vin: string, position: number) => {
+    setOverrideTarget({ vin, position });
+    setSelectedVin(null);
+  }, []);
+
+  const handleOverrideSaved = useCallback((record: OverrideRecord) => {
+    setOverrides((prev) => [...prev, record]);
+    setOverrideTarget(null);
+  }, []);
+
   const isRunnable = runState.phase === "idle" || runState.phase === "done" || runState.phase === "error";
+  const runId = runState.phase === "done" ? runState.result.runId : runState.phase === "running" ? runState.runId : "";
 
   return (
     <main className="main-content" id="sequence-builder">
@@ -356,7 +642,7 @@ export function SequenceBuilderPage() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={handleRunOptimizer}
+            onClick={() => void handleRunOptimizer()}
             disabled={!isRunnable}
             aria-label={t("sequenceBuilder.runButtonLabel")}
             data-testid="run-optimizer-btn"
@@ -453,7 +739,37 @@ export function SequenceBuilderPage() {
               {t("sequenceBuilder.emptySequence")}
             </div>
           ) : (
-            <RankedSequenceTable rows={runState.result.rankedSequence} />
+            <div className="seq-results-layout">
+              <div className="seq-table-col">
+                <RankedSequenceTable
+                  rows={runState.result.rankedSequence}
+                  runId={runId}
+                  overrides={overrides}
+                  onSelectVin={handleSelectVin}
+                  selectedVin={selectedVin?.vin ?? null}
+                  onOpenOverride={handleOpenOverride}
+                />
+              </div>
+
+              {selectedVin && (
+                <VinExplainPanel
+                  runId={runId}
+                  vin={selectedVin.vin}
+                  position={selectedVin.position}
+                  onClose={() => setSelectedVin(null)}
+                />
+              )}
+
+              {overrideTarget && (
+                <OverrideForm
+                  runId={runId}
+                  vin={overrideTarget.vin}
+                  originalPosition={overrideTarget.position}
+                  onSaved={handleOverrideSaved}
+                  onCancel={() => setOverrideTarget(null)}
+                />
+              )}
+            </div>
           )}
 
           <div className="seq-run-meta">

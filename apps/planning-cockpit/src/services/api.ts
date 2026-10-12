@@ -8,6 +8,12 @@ import type {
   PublishSequenceRequest,
 } from "../types/alerts";
 import type { My26Config, My26ConfigDraft, My26ValidationResult } from "../types/my26";
+import type {
+  VinExplanation,
+  OverrideRecord,
+  OverrideRequest,
+  OverrideListResponse,
+} from "../types/overrides";
 
 const TOKEN_KEY = "ifos_planning_cockpit_token";
 
@@ -139,4 +145,49 @@ export async function postAuditEvent(body: AuditEventRequest): Promise<void> {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export async function explainVinPosition(
+  runId: string,
+  vin: string,
+): Promise<VinExplanation> {
+  return request<VinExplanation>(
+    `/optimize/${encodeURIComponent(runId)}/explain/${encodeURIComponent(vin)}`,
+  );
+}
+
+export async function listOverrides(params: {
+  weekIso?: string;
+  runId?: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<OverrideListResponse> {
+  const p = new URLSearchParams();
+  if (params.weekIso) p.set("weekIso", params.weekIso);
+  if (params.runId) p.set("runId", params.runId);
+  if (params.cursor) p.set("cursor", params.cursor);
+  if (params.limit !== undefined) p.set("limit", String(params.limit));
+  const qs = p.toString();
+  return request<OverrideListResponse>(`/overrides${qs ? `?${qs}` : ""}`);
+}
+
+export async function createOverride(body: OverrideRequest): Promise<OverrideRecord> {
+  return request<OverrideRecord>("/overrides", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getOverride(overrideId: string): Promise<OverrideRecord> {
+  return request<OverrideRecord>(`/overrides/${encodeURIComponent(overrideId)}`);
+}
+
+export async function exportOverridesPdf(weekIso: string): Promise<Blob> {
+  const res = await requestRaw(
+    `/overrides/export?weekIso=${encodeURIComponent(weekIso)}`,
+  );
+  if (!res.ok) {
+    throw new Error((await res.text()) || "Export failed");
+  }
+  return res.blob();
 }

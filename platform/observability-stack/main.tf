@@ -599,7 +599,54 @@ resource "kubectl_manifest" "uns_availability_dashboard" {
 }
 
 # ---------------------------------------------------------------------------
-# 9. Outputs
+# 9. Grafana dashboard — DR T10 SLO (RTO ≤4 h, RPO ≤15 min)  US-025 / BR-16
+# ---------------------------------------------------------------------------
+
+resource "kubectl_manifest" "dr_t10_slo_dashboard" {
+  depends_on = [helm_release.kube_prometheus_stack]
+
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: dr-t10-slo-dashboard
+      namespace: ${local.grafana_namespace}
+      labels:
+        grafana_dashboard: "1"
+    data:
+      dr-t10-slo.json: |
+        ${indent(8, file("${path.module}/dashboards/dr-t10-slo.json"))}
+  YAML
+}
+
+# ---------------------------------------------------------------------------
+# 10. PrometheusRule — DR RPO / RTO alerting rules  US-025 / BR-16
+#
+# Fires DRRPOBreached when the delta between last UNS message timestamp before
+# failure and first after recovery exceeds 15 minutes during a declared drill.
+# Fires DRRTOBreached when RTO exceeds 240 minutes during a declared drill.
+# Fires DRUNSKafkaOffsetStaleDuringDrill as a leading RPO indicator.
+# ---------------------------------------------------------------------------
+
+resource "kubectl_manifest" "dr_rpo_rule" {
+  depends_on = [helm_release.kube_prometheus_stack]
+
+  yaml_body = <<-YAML
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: dr-rpo-rto
+      namespace: ${local.prometheus_namespace}
+      labels:
+        prometheus: kube-prometheus
+        role: alert-rules
+    spec:
+      ${indent(6, file("${path.module}/alerts/dr-rpo.yaml"))}
+  YAML
+}
+
+# ---------------------------------------------------------------------------
+# 11. Outputs
 # ---------------------------------------------------------------------------
 
 output "prometheus_namespace" {
@@ -612,7 +659,17 @@ output "grafana_dashboard_configmap" {
   value       = "uns-availability-dashboard"
 }
 
+output "dr_t10_slo_dashboard_configmap" {
+  description = "ConfigMap name provisioning the DR T10 SLO Grafana dashboard"
+  value       = "dr-t10-slo-dashboard"
+}
+
 output "uns_slo_rule_name" {
   description = "PrometheusRule resource name for the UNS availability SLO"
   value       = "uns-availability-slo"
+}
+
+output "dr_rpo_rule_name" {
+  description = "PrometheusRule resource name for the DR RPO/RTO alerting rules"
+  value       = "dr-rpo-rto"
 }

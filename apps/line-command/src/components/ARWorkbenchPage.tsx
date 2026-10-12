@@ -5,7 +5,10 @@ import {
   type ArInstructionResponse,
   type ArInstructionFallbackResponse,
 } from "./ARWorkInstructions";
+import { TorqueStepIndicator } from "./TorqueStepIndicator";
+import type { TorqueOotPayload } from "./TorqueOutOfToleranceToast";
 import { apiRequest, ForbiddenError } from "../services/api";
+import { useTorqueStream } from "../hooks/useTorqueStream";
 
 // ---------------------------------------------------------------------------
 // Station config — resolved from the device's station configuration store.
@@ -101,6 +104,8 @@ interface Props {
   vin: string;
   userId: string;
   onForbidden: (resource: string) => void;
+  /** Called when an out-of-tolerance event arrives — forwarded to Command Center for Shift Lead. */
+  onOutOfTolerance?: (payload: TorqueOotPayload) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,12 +120,30 @@ interface Props {
  * On first successful render an AR_SESSION_START OTel span is emitted and
  * POST /api/v1/ar/sessions is called (idempotent, failures are swallowed).
  * A 504 or 10 s timeout yields the fallback panel with VIN + PDF QR code.
+ *
+ * The SSE stream at GET /api/v1/torque/stream?stationId={id} drives the
+ * TorqueStepIndicator: neutral → green/red/amber as PLC events arrive.
+ * Out-of-tolerance events are forwarded to the parent via onOutOfTolerance.
  */
-export function ARWorkbenchPage({ vin, userId, onForbidden }: Props) {
+export function ARWorkbenchPage({ vin, userId, onForbidden, onOutOfTolerance }: Props) {
   const { t } = useTranslation();
 
   // Record the RFID-read moment so the 5 s render SLA warning can measure latency.
   const rfidReadAtRef = useRef<number | null>(null);
+
+  const torqueState = useTorqueStream(STATION_ID);
+
+  // Forward OOT events to parent (Command Center / Shift Lead view)
+  const onOutOfToleranceRef = useRef(onOutOfTolerance);
+  useEffect(() => {
+    onOutOfToleranceRef.current = onOutOfTolerance;
+  }, [onOutOfTolerance]);
+
+  useEffect(() => {
+    if (torqueState.kind !== "out_of_tolerance") return;
+    const { torqueLogId, vin: eventVin, fastenerPointId, torqueNm, specNm, toleranceNm, alertId, recordedAt } = torqueState;
+    onOutOfToleranceRef.current?.({ torqueLogId, vin: eventVin, fastenerPointId, torqueNm, specNm, toleranceNm, alertId, recordedAt });
+  }, [torqueState]);
 
   useEffect(() => {
     rfidReadAtRef.current = performance.now();
@@ -158,9 +181,20 @@ export function ARWorkbenchPage({ vin, userId, onForbidden }: Props) {
     [userId, onForbidden],
   );
 
+  const handleTorqueConfirmationViewed = useCallback(
+    (torqueLogId: string) => {
+      emitOtelSpan("TORQUE_CONFIRMATION_VIEWED", { vin, stationId: STATION_ID, torqueLogId });
+    },
+    [vin],
+  );
+
   return (
     <div className="ar-workbench-page">
       <h2 className="ar-workbench-heading">{t("ar_workbench.title")}</h2>
+      <TorqueStepIndicator
+        state={torqueState}
+        onTorqueConfirmationViewed={handleTorqueConfirmationViewed}
+      />
       <ARWorkInstructions
         vin={vin}
         stationId={STATION_ID}

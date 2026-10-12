@@ -111,6 +111,33 @@
     "save": "Speichern",
     "saved": "Einstellungen gespeichert."
   },
+  "torque": {
+    "indicator": {
+      "neutral_label": "Warten auf Drehmomentverschraubungsbestätigung",
+      "neutral_text": "Warte auf Verschraubung…",
+      "in_tolerance_label": "Drehmoment bestätigt — {{torqueNm}} Nm — in digitalem Thread protokolliert ({{torqueLogId}})",
+      "in_tolerance_title": "Im digitalen Thread protokolliert",
+      "in_tolerance_sub": "{{torqueNm}} Nm — innerhalb der Toleranz ✓",
+      "log_id_label": "Protokoll-ID",
+      "oot_label": "DREHMOMENT AUSSERHALB DER TOLERANZ — {{vin}} Schraubpunkt {{fastenerPointId}}: {{torqueNm}} Nm (Vorgabe {{specNm}} Nm)",
+      "oot_title": "DREHMOMENT AUSSERHALB DER TOLERANZ",
+      "oot_sub": "{{torqueNm}} Nm gemessen · Vorgabe {{specNm}} Nm",
+      "alert_id_label": "Alarm-ID",
+      "hold_message": "STOP — Nicht fortfahren. Schichtleiter benachrichtigt.",
+      "pending_sync_label": "Synchronisation ausstehend — Edge-Gateway puffert Drehmomentsignale",
+      "pending_sync_title": "Synchronisation ausstehend",
+      "pending_sync_sub": "UNS vorübergehend offline. Daten werden im Edge-Gateway zwischengespeichert."
+    },
+    "oot_toast": {
+      "title": "Drehmoment außerhalb der Toleranz — Schichtleiter-Alarm",
+      "vin_label": "FIN",
+      "fastener_label": "Schraubpunkt",
+      "torque_label": "Drehmoment",
+      "spec_label": "Vorgabe",
+      "nm_unit": "Nm",
+      "alert_id_label": "Alarm-ID"
+    }
+  },
   "errors": {
     "generic": "Ein Fehler ist aufgetreten. Bitte Seite neu laden.",
     "not_found": "Seite nicht gefunden.",

@@ -26,11 +26,36 @@ def _error_body(code: str, message: str, details: list[Any] | None = None) -> di
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    import asyncio
+
     from app.config import settings  # validates at startup
 
-    _ = settings  # noqa: F841 — import triggers validation
+    consumer_task: asyncio.Task | None = None
+
+    if settings.torque_consumer_enabled:
+        from app.db import get_pool
+        from app.torque_consumer import run_torque_consumer
+
+        pool = await get_pool()
+        consumer_task = asyncio.create_task(
+            run_torque_consumer(
+                bootstrap_servers=settings.kafka_bootstrap_servers,
+                sasl_username=settings.kafka_sasl_username,
+                sasl_password=settings.kafka_sasl_password,
+                vdt_base_url=settings.vdt_base_url,
+                vdt_timeout_seconds=settings.vdt_timeout_seconds,
+                pool=pool,
+            )
+        )
 
     yield
+
+    if consumer_task is not None:
+        consumer_task.cancel()
+        try:
+            await consumer_task
+        except asyncio.CancelledError:
+            pass
 
     from app.db import close_pool
     from app.kafka_producer import stop_producer

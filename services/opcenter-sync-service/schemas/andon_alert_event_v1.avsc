@@ -1,0 +1,52 @@
+{
+  "type": "record",
+  "name": "AndonAlertEvent",
+  "namespace": "bmw.munich.opcenter",
+  "doc": "Andon alert event from OpCenter. Station-level only — no operator ID (BetrVG §87 / GDPR). Published to bmw.munich.opcenter.andon.alert within 5s p95.",
+  "fields": [
+    { "name": "eventId",       "type": "string", "doc": "UUID v4 — unique per event" },
+    {
+      "name": "eventType",
+      "type": {
+        "type": "enum",
+        "name": "AndonEventType",
+        "symbols": ["opcenter.andon.alert_raised", "opcenter.andon.alert_updated", "opcenter.andon.alert_resolved"]
+      }
+    },
+    { "name": "alertId",       "type": "string", "doc": "UUID v4 — alert_id from andon_alert table" },
+    { "name": "stationId",     "type": "string", "doc": "Station-level identifier only" },
+    { "name": "lineId",        "type": "string" },
+    {
+      "name": "alertType",
+      "type": {
+        "type": "enum",
+        "name": "AlertType",
+        "symbols": ["predictive", "reactive"]
+      }
+    },
+    { "name": "predictedFailureType",      "type": "string" },
+    {
+      "name": "minutesToPredictedFailure",
+      "type": ["null", "int"],
+      "default": null,
+      "doc": "Null for reactive alerts"
+    },
+    { "name": "recommendedAction",         "type": "string" },
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "AlertStatus",
+        "symbols": ["open", "acknowledged", "resolved", "false_positive"]
+      }
+    },
+    { "name": "detectedAt",    "type": "string", "doc": "ISO-8601 UTC" },
+    { "name": "receivedAt",    "type": "string", "doc": "ISO-8601 UTC" },
+    { "name": "correlationId", "type": "string", "doc": "UUID v4" },
+    {
+      "name": "opcenterEventId",
+      "type": ["null", "string"],
+      "default": null
+    }
+  ]
+}

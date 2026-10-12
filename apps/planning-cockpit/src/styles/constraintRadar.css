@@ -1207,3 +1207,432 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .running-progress-fill { transition: none; }
 }
+
+/* ══════════════════════════════════════════════════════
+   MY26 Configuration Wizard
+══════════════════════════════════════════════════════ */
+
+/* ── Wizard page header ── */
+.wiz-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+/* ── Wizard step nav ── */
+.wiz-steps {
+  display: flex;
+  gap: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.wiz-step {
+  flex: 1;
+  padding: 0.625rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  border-bottom: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: var(--bg-surface);
+}
+
+.wiz-step--done { color: var(--green); }
+.wiz-step--done .wiz-step-num { background: var(--green); color: #fff; }
+
+.wiz-step--active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+}
+.wiz-step--active .wiz-step-num { background: var(--accent-blue); color: #fff; }
+
+.wiz-step-num {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-tertiary);
+  font-size: 0.625rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ── Wizard body ── */
+.wiz-body {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 1.25rem;
+}
+
+/* ── Wizard card ── */
+.wiz-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.wiz-card-head {
+  background: var(--bg-surface);
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.wiz-card-head h3 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wiz-card-body { padding: 1rem; }
+
+.wiz-card-body--center {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.wiz-card-body--no-pad { padding: 0; }
+
+/* ── Two-column layout ── */
+.wiz-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 48rem) {
+  .wiz-two-col { grid-template-columns: 1fr; }
+}
+
+/* ── API field labels ── */
+.wiz-api-field {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.wiz-optional-note {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* ── Wizard table ── */
+.wiz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.wiz-table thead th {
+  background: var(--bg-surface);
+  padding: 0.375rem 0.75rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.wiz-table tbody tr { border-bottom: 1px solid var(--border-subtle); }
+.wiz-table tbody tr:last-child { border-bottom: none; }
+.wiz-table tbody tr:hover { background: var(--bg-card-hover); }
+.wiz-table tbody td { padding: 0.5rem 0.75rem; vertical-align: middle; }
+
+/* ── Wizard inputs ── */
+.wiz-input {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.5rem;
+}
+
+.wiz-input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.wiz-input--narrow { max-width: 6rem; }
+
+.wiz-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.375rem;
+}
+
+.wiz-textarea {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.5rem;
+  resize: vertical;
+  min-height: 5rem;
+}
+
+.wiz-textarea:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.wiz-field-hint {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 0.25rem;
+}
+
+/* ── Add-row button ── */
+.wiz-add-row-btn {
+  margin-top: 0.625rem;
+  font-size: 0.75rem;
+}
+
+.wiz-btn-sm {
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+/* ── Button group ── */
+.wiz-btn-group {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.wiz-step-info {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+
+/* ── Alert banners ── */
+.wiz-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.wiz-alert--ok {
+  background: var(--green-dim);
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.wiz-alert--err {
+  background: var(--red-dim);
+  border-left: 4px solid var(--red);
+  border: 1px solid var(--red-border);
+  color: var(--red);
+}
+
+.wiz-alert--warn {
+  background: var(--amber-dim);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
+}
+
+.wiz-alert--info {
+  background: var(--accent-blue-dim);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.wiz-alert-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.0625rem;
+}
+
+/* ── Chips ── */
+.wiz-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.wiz-chip--ok { background: var(--green-dim); color: var(--green); }
+.wiz-chip--err { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+.wiz-chip--warn { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); }
+.wiz-chip--info { background: var(--accent-blue-dim); color: var(--accent-blue); }
+
+.wiz-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wiz-dot--err { background: var(--red); }
+.wiz-dot--warn { background: var(--amber); }
+
+/* ── Code chip ── */
+.wiz-code {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  background: var(--bg-surface);
+  padding: 0.0625rem 0.375rem;
+  border-radius: 3px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ── Status badges ── */
+.wiz-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-left: 0.375rem;
+}
+
+.wiz-badge--draft { background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border); }
+.wiz-badge--validated { background: var(--accent-blue-dim); color: var(--accent-blue); }
+.wiz-badge--active { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
+.wiz-badge--superseded { background: var(--bg-surface); color: var(--text-tertiary); }
+
+/* ── KV rows ── */
+.wiz-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.875rem;
+}
+
+@media (max-width: 40rem) {
+  .wiz-kv-grid { grid-template-columns: 1fr; }
+}
+
+.wiz-kv-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.wiz-kv {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.wiz-kv-label {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  min-width: 9rem;
+  flex-shrink: 0;
+}
+
+.wiz-kv-val {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.wiz-mono {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* ── Progress bar (validation) ── */
+.wiz-progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 25rem;
+  margin: 0.5rem auto;
+}
+
+.wiz-progress-fill { height: 100%; border-radius: 2px; background: var(--accent-blue); }
+
+@keyframes wiz-progress-indeterminate {
+  0% { transform: translateX(-100%); width: 40%; }
+  100% { transform: translateX(350%); width: 40%; }
+}
+
+.wiz-progress-fill--indeterminate {
+  animation: wiz-progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+/* ── Spinner row ── */
+.wiz-spinner-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.wiz-spinner {
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: wiz-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes wiz-spin { to { transform: rotate(360deg); } }
+
+/* ── Config version in header ── */
+.wiz-config-version {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.wiz-no-config {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-left: 0.25rem;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .wiz-progress-fill--indeterminate { animation: none; width: 40%; }
+  .wiz-spinner { animation: none; }
+}

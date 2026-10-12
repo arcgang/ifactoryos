@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { acknowledgeAlert, postResequence, publishSequence } from "../services/api";
+import { acknowledgeAlert, getMy26Config, postResequence, publishSequence } from "../services/api";
 import type { ConstraintAlertRecord } from "../types/alerts";
 import type { OptimizeResponse, RankedVin } from "../types/optimizer";
 
@@ -205,8 +205,21 @@ function AlertCard({ alert, onDismissed }: AlertCardProps) {
       setPublishing(true);
       setPublishError(null);
       try {
-        await publishSequence({ sequenceId, isResequence: true });
-        emitAdoptionEvent("resequence_published", { sequenceId });
+        // Resolve my26ConfigVersion: prefer version from the resequence result,
+        // fall back to the currently active config.
+        let my26ConfigVersion: string | null = null;
+        if (reseqState.phase === "done" && reseqState.result.my26ConfigVersion) {
+          my26ConfigVersion = reseqState.result.my26ConfigVersion;
+        } else {
+          try {
+            const activeConfig = await getMy26Config();
+            my26ConfigVersion = activeConfig ? String(activeConfig.configId) : null;
+          } catch {
+            // best-effort
+          }
+        }
+        await publishSequence({ sequenceId, isResequence: true, my26ConfigVersion });
+        emitAdoptionEvent("resequence_published", { sequenceId, my26ConfigVersion });
         setPublished(true);
       } catch (err) {
         setPublishError(
@@ -216,7 +229,7 @@ function AlertCard({ alert, onDismissed }: AlertCardProps) {
         setPublishing(false);
       }
     },
-    [t],
+    [t, reseqState],
   );
 
   const handleDismiss = useCallback(async () => {

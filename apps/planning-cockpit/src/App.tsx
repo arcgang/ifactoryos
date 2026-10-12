@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { ConstraintRadarPage } from "./components/ConstraintRadarPage";
 import { SequenceBuilderPage } from "./components/SequenceBuilderPage";
+import { My26WizardPage } from "./components/My26WizardPage";
 
-type ActivePage = "sequence-builder" | "constraint-radar";
+type ActivePage = "sequence-builder" | "constraint-radar" | "my26-wizard";
 
 export function App() {
   const { t } = useTranslation();
@@ -37,10 +38,18 @@ export function App() {
           >
             {t("nav.constraintRadar")}
           </a>
+          <a
+            href="#my26-wizard"
+            aria-current={activePage === "my26-wizard" ? "page" : undefined}
+            onClick={(e) => { e.preventDefault(); setActivePage("my26-wizard"); }}
+          >
+            {t("nav.my26ConfigWizard")}
+          </a>
         </nav>
       </header>
       {activePage === "sequence-builder" && <SequenceBuilderPage />}
       {activePage === "constraint-radar" && <ConstraintRadarPage />}
+      {activePage === "my26-wizard" && <My26WizardPage />}
     </div>
   );
 }

@@ -37,4 +37,13 @@ export interface ResequenceRequest {
 export interface PublishSequenceRequest {
   sequenceId: string;
   isResequence: boolean;
+  my26ConfigVersion?: string | null;
+}
+
+export interface AuditEventRequest {
+  userId: string;
+  action: string;
+  configVersion?: string | null;
+  my26ConfigVersion?: string | null;
+  timestamp: string;
 }

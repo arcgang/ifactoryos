@@ -200,13 +200,14 @@ async def acknowledge_andon_alert(
         "disposition": body.disposition,
         "source": "line-command",
     }
-    # Publish AdoptionEvent
+    # Publish AdoptionEvent — sessionId is the JWT token ID (jti claim) per design decision
+    session_id = str(jwt_payload.get("jti") or uuid.uuid4())
     adoption_payload = {
         "eventId": event_id,
         "eventType": "maintenance_dispatch",
         "actionType": "maintenance_dispatch",
         "userId": user_id,
-        "sessionId": str(uuid.uuid4()),
+        "sessionId": session_id,
         "stationId": row["station_id"],
         "alertId": alertId,
         "lineId": row["line_id"],

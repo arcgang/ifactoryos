@@ -194,9 +194,12 @@ class TestAcknowledgeAlert:
 # ---------------------------------------------------------------------------
 
 # Build a minimal JWT for a given role list
-def _make_jwt(sub: str, roles: list[str]) -> str:
+def _make_jwt(sub: str, roles: list[str], jti: str | None = None) -> str:
     import base64
-    payload = json.dumps({"sub": sub, "roles": roles, "exp": 9_999_999_999}).encode()
+    claims: dict = {"sub": sub, "roles": roles, "exp": 9_999_999_999}
+    if jti is not None:
+        claims["jti"] = jti
+    payload = json.dumps(claims).encode()
     b64 = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
     return f"header.{b64}.sig"
 
@@ -458,6 +461,53 @@ class TestAcknowledgeAndonAlertEndpoint:
         assert adopt["actionType"] == "maintenance_dispatch"
         assert adopt["userId"] == "sl@bmwgroup.net"
         assert adopt["alertId"] == _ALERT_ID
+
+    def test_adoption_event_session_id_uses_jti_claim(self, monkeypatch):
+        """AdoptionEvent.sessionId must equal the JWT jti claim per design decision."""
+        from fastapi.testclient import TestClient
+        from app.main import create_app
+
+        app = create_app()
+        _jti = "test-jti-00000000-0000-0000-0000-000000000001"
+        jwt_with_jti = _make_jwt("sl@bmwgroup.net", ["ifos-shiftlead"], jti=_jti)
+        ack_time = datetime(2040, 6, 1, 7, 0, 0, tzinfo=timezone.utc)
+        published: list[tuple[str, dict]] = []
+
+        async def _mock_publish(topic: str, payload: dict) -> None:
+            published.append((topic, payload))
+
+        async def _ack_pool():
+            pool = MagicMock()
+            conn = AsyncMock()
+            conn.fetchrow = AsyncMock(side_effect=[
+                _OPEN_ALERT_ROW,
+                {"acknowledged_at": ack_time},
+            ])
+            pool.acquire = MagicMock(return_value=_async_cm(conn))
+            return pool
+
+        async def _ts_pool():
+            pool = MagicMock()
+            conn = AsyncMock()
+            conn.fetch = AsyncMock(return_value=[])
+            pool.acquire = MagicMock(return_value=_async_cm(conn))
+            return pool
+
+        monkeypatch.setattr("app.routers.andon_alerts.publish", _mock_publish)
+        monkeypatch.setattr("app.routers.andon_alerts.get_pool", _ack_pool)
+        monkeypatch.setattr("app.routers.andon_alerts.get_ts_pool", _ts_pool)
+
+        client = TestClient(app)
+        resp = client.post(
+            f"/andon/alerts/{_ALERT_ID}/acknowledge",
+            json={"disposition": "resolved"},
+            headers={"Authorization": f"Bearer {jwt_with_jti}"},
+        )
+        assert resp.status_code == 200
+
+        adoption_events = [p for t, p in published if "adoption" in t]
+        assert len(adoption_events) == 1
+        assert adoption_events[0]["sessionId"] == _jti
 
 
 # ---------------------------------------------------------------------------

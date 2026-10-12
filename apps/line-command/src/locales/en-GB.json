@@ -97,5 +97,23 @@
     "generic": "An error occurred. Please reload the page.",
     "not_found": "Page not found.",
     "unauthorized": "Unauthorised. Please sign in again."
+  },
+  "rbac": {
+    "forbidden_heading": "HTTP 403 Forbidden",
+    "forbidden_title": "Forbidden — Insufficient Role Permissions",
+    "forbidden_desc": "Your account does not have access to Line Command. Contact your IT administrator to request the correct role assignment.",
+    "meta_resource": "Requested Resource",
+    "meta_status": "HTTP Status",
+    "meta_user": "User Principal",
+    "meta_role": "Assigned Role",
+    "meta_scope": "Required Scope",
+    "audit_logged": "Audit event logged. Unauthorised access attempt recorded in Factory OS audit trail.",
+    "return_button": "← Return to Authorised Console",
+    "access_restricted_toast": "Access restricted to AR Workbench",
+    "toast_dismiss_label": "Dismiss notification",
+    "loading": "Verifying access…",
+    "nav_ar_workbench": "AR Workbench",
+    "nav_command_center_locked": "Command Centre (restricted)",
+    "nav_handover_locked": "Handover Builder (restricted)"
   }
 }

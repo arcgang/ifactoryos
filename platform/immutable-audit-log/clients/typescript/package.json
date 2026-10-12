@@ -1,0 +1,20 @@
+{
+  "name": "audit-client",
+  "version": "0.1.0",
+  "description": "Write SDK for the iFactoryOS immutable audit log (Azure Blob WORM)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.1",
+    "@azure/storage-blob": "^12.25.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

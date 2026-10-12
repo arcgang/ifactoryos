@@ -1,0 +1,561 @@
+asyncapi: 2.6.0
+info:
+  title: Line Command Events
+  version: 1.0.0
+  description: >
+    Events published by the line-command console (React 18, HoloLens 2 WebXR,
+    iPad Pro ARKit) covering AR sessions, expert calls, handovers, torque
+    submissions, and operator adoption signals.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  bmw.ifos.munich.line-command.adoption.v1:
+    description: Operator adoption signal (feature first-use) published via the ifos namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveLineCommandAdoptionIfos
+      summary: Receive a line-command adoption event (ifos namespace)
+      message:
+        $ref: '#/components/messages/AdoptionEvent'
+
+  factory.munich.line-command.adoption.v1:
+    description: Operator adoption signal published via the factory namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveLineCommandAdoptionFactory
+      summary: Receive a line-command adoption event (factory namespace)
+      message:
+        $ref: '#/components/messages/AdoptionEvent'
+
+  bmw.ifos.munich.line-command.ar-session.started.v1:
+    description: AR session started on HoloLens 2 or iPad Pro.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveArSessionStarted
+      summary: Receive an AR session started event
+      message:
+        $ref: '#/components/messages/ArSessionStarted'
+
+  factory.munich.line-command.ar-session.v1:
+    description: AR session lifecycle events (start, end, pause) via the factory namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveArSession
+      summary: Receive an AR session lifecycle event
+      message:
+        $ref: '#/components/messages/ArSessionEvent'
+
+  bmw.ifos.munich.line-command.expert-call.ended.v1:
+    description: Expert call session ended on the line command console.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveExpertCallEnded
+      summary: Receive an expert call ended event
+      message:
+        $ref: '#/components/messages/ExpertCallEnded'
+
+  factory.munich.line-command.expert-call.v1:
+    description: Expert call events via the factory namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveExpertCallFactory
+      summary: Receive an expert call event (factory namespace)
+      message:
+        $ref: '#/components/messages/ExpertCallEvent'
+
+  bmw.ifos.munich.line-command.handover.submitted.v1:
+    description: Shift handover submitted by an operator.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveHandoverSubmitted
+      summary: Receive a handover submitted event
+      message:
+        $ref: '#/components/messages/HandoverSubmitted'
+
+  factory.munich.line-command.handover.v1:
+    description: Shift handover events via the factory namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveHandoverFactory
+      summary: Receive a handover event (factory namespace)
+      message:
+        $ref: '#/components/messages/HandoverEvent'
+
+  bmw.ifos.munich.line-command.torque.out-of-tolerance.v1:
+    description: Torque measurement flagged as out-of-tolerance by the line command console.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveTorqueOutOfTolerance
+      summary: Receive a torque out-of-tolerance alert
+      message:
+        $ref: '#/components/messages/TorqueOutOfTolerance'
+
+  bmw.ifos.munich.line-command.torque.submitted.v1:
+    description: Torque measurement submitted by an operator via the line command console.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveTorqueSubmitted
+      summary: Receive a torque submission event
+      message:
+        $ref: '#/components/messages/TorqueSubmitted'
+
+  factory.munich.line-command.torque-log.v1:
+    description: Torque log events aggregated and published via the factory namespace.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveTorqueLog
+      summary: Receive a torque log event
+      message:
+        $ref: '#/components/messages/TorqueLog'
+
+  factory.munich.line-command.maintenance-dispatch.v1:
+    description: Maintenance dispatch request raised from the line command console.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+        partitions: 3
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveMaintenanceDispatch
+      summary: Receive a maintenance dispatch event
+      message:
+        $ref: '#/components/messages/MaintenanceDispatch'
+
+components:
+  messages:
+    AdoptionEvent:
+      name: AdoptionEvent
+      title: Adoption Event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AdoptionEventPayload'
+
+    ArSessionStarted:
+      name: ArSessionStarted
+      title: AR Session Started
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArSessionStartedPayload'
+
+    ArSessionEvent:
+      name: ArSessionEvent
+      title: AR Session Event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArSessionEventPayload'
+
+    ExpertCallEnded:
+      name: ExpertCallEnded
+      title: Expert Call Ended
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ExpertCallEndedPayload'
+
+    ExpertCallEvent:
+      name: ExpertCallEvent
+      title: Expert Call Event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ExpertCallEventPayload'
+
+    HandoverSubmitted:
+      name: HandoverSubmitted
+      title: Handover Submitted
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HandoverSubmittedPayload'
+
+    HandoverEvent:
+      name: HandoverEvent
+      title: Handover Event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HandoverEventPayload'
+
+    TorqueOutOfTolerance:
+      name: TorqueOutOfTolerance
+      title: Torque Out Of Tolerance
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TorqueOutOfTolerancePayload'
+
+    TorqueSubmitted:
+      name: TorqueSubmitted
+      title: Torque Submitted
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TorqueSubmittedPayload'
+
+    TorqueLog:
+      name: TorqueLog
+      title: Torque Log
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TorqueLogPayload'
+
+    MaintenanceDispatch:
+      name: MaintenanceDispatch
+      title: Maintenance Dispatch
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MaintenanceDispatchPayload'
+
+  schemas:
+    AdoptionEventPayload:
+      type: object
+      required: [eventId, occurredAt, plant, featureId, deviceType]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        featureId:
+          type: string
+          description: Identifier of the feature adopted (e.g. ar_torque_guide, expert_call)
+        deviceType:
+          type: string
+          enum: [hololens2, ipad_pro, desktop]
+
+    ArSessionStartedPayload:
+      type: object
+      required: [eventId, sessionId, occurredAt, plant, stationId, deviceType]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        deviceType:
+          type: string
+          enum: [hololens2, ipad_pro]
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          nullable: true
+
+    ArSessionEventPayload:
+      type: object
+      required: [eventId, sessionId, occurredAt, plant, stationId, eventType]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        eventType:
+          type: string
+          enum: [started, paused, resumed, ended]
+        durationMs:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    ExpertCallEndedPayload:
+      type: object
+      required: [eventId, callId, occurredAt, plant, stationId, durationMs]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        callId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        durationMs:
+          type: integer
+          minimum: 0
+        resolution:
+          type: string
+          enum: [resolved, escalated, abandoned]
+          nullable: true
+
+    ExpertCallEventPayload:
+      type: object
+      required: [eventId, callId, occurredAt, plant, stationId, callState]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        callId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        callState:
+          type: string
+          enum: [initiated, connected, ended, missed]
+
+    HandoverSubmittedPayload:
+      type: object
+      required: [eventId, handoverId, occurredAt, plant, stationId, shiftId]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        handoverId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        shiftId:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        openIssueCount:
+          type: integer
+          minimum: 0
+
+    HandoverEventPayload:
+      type: object
+      required: [eventId, handoverId, occurredAt, plant, stationId, shiftId, handoverState]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        handoverId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        shiftId:
+          type: string
+        handoverState:
+          type: string
+          enum: [submitted, acknowledged, rejected]
+
+    TorqueOutOfTolerancePayload:
+      type: object
+      required: [eventId, occurredAt, plant, stationId, vin, boltId, targetTorqueNm, actualTorqueNm]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        boltId:
+          type: string
+        targetTorqueNm:
+          type: number
+          format: double
+        actualTorqueNm:
+          type: number
+          format: double
+        deviationPct:
+          type: number
+          format: double
+
+    TorqueSubmittedPayload:
+      type: object
+      required: [eventId, occurredAt, plant, stationId, vin, boltId, actualTorqueNm, withinTolerance]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        boltId:
+          type: string
+        actualTorqueNm:
+          type: number
+          format: double
+        withinTolerance:
+          type: boolean
+
+    TorqueLogPayload:
+      type: object
+      required: [eventId, occurredAt, plant, stationId, vin, measurements]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        vin:
+          type: string
+          pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+        measurements:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [boltId, actualTorqueNm, withinTolerance]
+            properties:
+              boltId:
+                type: string
+              actualTorqueNm:
+                type: number
+                format: double
+              withinTolerance:
+                type: boolean
+
+    MaintenanceDispatchPayload:
+      type: object
+      required: [eventId, dispatchId, occurredAt, plant, stationId, priority, description]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        dispatchId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        stationId:
+          type: string
+        priority:
+          type: string
+          enum: [urgent, high, normal, low]
+        description:
+          type: string
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

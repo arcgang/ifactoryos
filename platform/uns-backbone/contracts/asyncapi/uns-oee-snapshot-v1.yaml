@@ -1,0 +1,154 @@
+asyncapi: 2.6.0
+info:
+  title: UNS OEE Snapshot
+  version: 1.0.0
+  description: Overall Equipment Effectiveness snapshot events for manufacturing lines, bridging OT and IT via the UNS backbone.
+  x-deprecation-policy: >
+    A new incompatible schema version requires a new topic name with an incremented
+    suffix (e.g. .v2). The .v1 topic must remain active and consumed for a minimum
+    of 6 months after the .v2 deprecation notice is published. The deprecation notice
+    is issued by setting x-deprecated: true and x-sunset: <ISO-8601-date> on the
+    channel in the .v1 AsyncAPI file.
+
+servers:
+  production:
+    url: confluent-kafka.uns-backbone.svc.cluster.local:9092
+    protocol: kafka
+    description: Confluent Kafka cluster — Azure Germany West Central (EU data residency)
+    security:
+      - mtls: []
+
+channels:
+  factory.munich.opcenter.oee.snapshot.v1:
+    description: Periodic OEE snapshot from factory line; published by opcenter-sync-service.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID; set to your service name (e.g. planning-cockpit-oee-consumer)
+        partitions: 6
+        replicas: 3
+        x-confluent-schema-registry: true
+    subscribe:
+      operationId: receiveOeeSnapshot
+      summary: Receive an OEE snapshot event
+      message:
+        $ref: '#/components/messages/OeeSnapshot'
+
+  bmw.munich.opcenter.oee.updated:
+    description: OEE updated notification from Siemens OpCenter; legacy topic without versioned suffix retained for backward compatibility.
+    bindings:
+      kafka:
+        groupId:
+          type: string
+          description: Consumer group ID
+        partitions: 6
+        replicas: 3
+    subscribe:
+      operationId: receiveOpcenterOeeUpdated
+      summary: Receive an OpCenter OEE updated event
+      message:
+        $ref: '#/components/messages/OpcenterOeeUpdated'
+
+components:
+  messages:
+    OeeSnapshot:
+      name: OeeSnapshot
+      title: OEE Snapshot
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OeeSnapshotPayload'
+
+    OpcenterOeeUpdated:
+      name: OpcenterOeeUpdated
+      title: OpCenter OEE Updated
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OpcenterOeeUpdatedPayload'
+
+  schemas:
+    OeeSnapshotPayload:
+      type: object
+      required:
+        - eventId
+        - correlationId
+        - snapshotAt
+        - plant
+        - lineId
+        - shiftId
+        - availabilityPct
+        - performancePct
+        - qualityPct
+        - oeePct
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        correlationId:
+          type: string
+          format: uuid
+        snapshotAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        lineId:
+          type: string
+        shiftId:
+          type: string
+        availabilityPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        performancePct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        qualityPct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        oeePct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        plannedDowntimeMinutes:
+          type: integer
+          minimum: 0
+        unplannedDowntimeMinutes:
+          type: integer
+          minimum: 0
+
+    OpcenterOeeUpdatedPayload:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - plant
+        - lineId
+        - oeePct
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        plant:
+          type: string
+        lineId:
+          type: string
+        oeePct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+
+  securitySchemes:
+    mtls:
+      type: X509
+      description: mTLS with SPIFFE/SPIRE SVIDs for cross-zone calls to uns-backbone

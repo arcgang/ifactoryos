@@ -1,0 +1,176 @@
+@startuml iFactoryOS Network Topology — Three-Tier OT/IT/Cloud
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam componentStyle rectangle
+skinparam ArrowColor #444444
+skinparam ArrowThickness 1.5
+skinparam NoteBorderColor #888888
+skinparam NoteBackgroundColor #FFFFF0
+
+title iFactoryOS Network Architecture — IEC 62443 SL2 Three-Tier Topology\nOT Zone / On-Prem IT Zone / Cloud IT Zone
+
+' ============================================================
+' OT Zone — five shops, each with primary + standby gateway
+' ============================================================
+package "OT Zone — VLAN 10.200.x.0/24 per shop\n[IEC 62443 SL2]" as OT_Zone #FFF3E0 {
+
+    package "Shop: Inbound (VLAN 10.200.10.0/24)" as inbound #FFECB3 {
+        [edge-inbound-01\n:primary\nSPIFFE: .../inbound/01] as GW_INB_01
+        [edge-inbound-02\n:standby\nSPIFFE: .../inbound/02] as GW_INB_02
+        [Beckhoff PLC\nADS-UDP :48898] as PLC_INB
+        [SPIRE Agent sidecar\n/run/spire/sockets/agent.sock] as SPIRE_AGENT_INB
+    }
+
+    package "Shop: Body (VLAN 10.200.20.0/24)" as body #FFECB3 {
+        [edge-body-01\n:primary\nSPIFFE: .../body/01] as GW_BOD_01
+        [edge-body-02\n:standby\nSPIFFE: .../body/02] as GW_BOD_02
+        [Beckhoff PLC\nADS-UDP :48898] as PLC_BOD
+        [SPIRE Agent sidecar] as SPIRE_AGENT_BOD
+    }
+
+    package "Shop: Paint (VLAN 10.200.30.0/24)" as paint #FFECB3 {
+        [edge-paint-01\n:primary\nSPIFFE: .../paint/01] as GW_PAI_01
+        [edge-paint-02\n:standby\nSPIFFE: .../paint/02] as GW_PAI_02
+        [Beckhoff PLC\nADS-UDP :48898] as PLC_PAI
+        [SPIRE Agent sidecar] as SPIRE_AGENT_PAI
+    }
+
+    package "Shop: Assembly (VLAN 10.200.40.0/24)" as assembly #FFECB3 {
+        [edge-assembly-01\n:primary\nSPIFFE: .../assembly/01] as GW_ASM_01
+        [edge-assembly-02\n:standby\nSPIFFE: .../assembly/02] as GW_ASM_02
+        [Beckhoff PLC AS-PLC-01\nADS-UDP :48898\ntorque 50 ms] as PLC_ASM_01
+        [Beckhoff PLC AS-PLC-02\nADS-UDP :48898\ntorque 50 ms] as PLC_ASM_02
+        [SPIRE Agent sidecar] as SPIRE_AGENT_ASM
+    }
+
+    package "Shop: Quality (VLAN 10.200.50.0/24)" as quality #FFECB3 {
+        [edge-quality-01\n:primary\nSPIFFE: .../quality/01] as GW_QUA_01
+        [edge-quality-02\n:standby\nSPIFFE: .../quality/02] as GW_QUA_02
+        [Beckhoff PLC\nADS-UDP :48898] as PLC_QUA
+        [SPIRE Agent sidecar] as SPIRE_AGENT_QUA
+    }
+}
+
+' Internal OT flows
+PLC_INB -right-> GW_INB_01 : ADS-UDP\n:48898
+PLC_BOD -right-> GW_BOD_01 : ADS-UDP\n:48898
+PLC_PAI -right-> GW_PAI_01 : ADS-UDP\n:48898
+PLC_ASM_01 -right-> GW_ASM_01 : ADS-UDP\n:48898
+PLC_ASM_02 -right-> GW_ASM_02 : ADS-UDP\n:48898
+PLC_QUA -right-> GW_QUA_01 : ADS-UDP\n:48898
+
+GW_INB_01 .right. SPIRE_AGENT_INB : SVID\nrotation
+GW_ASM_01 .right. SPIRE_AGENT_ASM : SVID\nrotation
+
+' ============================================================
+' Firewall / Zone Boundary
+' ============================================================
+boundary "Zone Boundary\nFirewall CM-013 + FW-IN-005\n[Palo Alto / Cisco]\n[IEC 62443 SC-004]" as FW #FFB74D
+
+' ============================================================
+' On-Prem IT Zone — Plant IT DMZ
+' ============================================================
+package "On-Prem IT Zone — Plant IT DMZ\n[IEC 62443 SL2]" as IT_DMZ #E8F5E9 {
+
+    [HiveMQ Enterprise Broker\nuns-hivemq.hivemq.svc\nTCP :8883 — mTLS TLS 1.3\nSparkplug B native extension\nSPIFFE: munich.bmw/uns-backbone/mqtt-kafka-bridge] as MQTT_BROKER
+
+    [HiveMQ Kafka Extension\nSparkplug B → Avro/JSON bridge\n→ Confluent Kafka] as BRIDGE
+
+    [Confluent Kafka (3-broker)\nuns-kafka-bootstrap.confluent.svc\nTCP :9092 — SASL/SCRAM + TLS\nbmw.munich.uns.ddata.{shop}.v1] as KAFKA
+
+    [Confluent Schema Registry\nuns-schema-registry.confluent.svc\nHTTPS :8081\nAvro schema enforcement] as SCHEMA_REGISTRY
+
+    [SPIRE Server (HA, 3 replicas)\nspire-workload-api.spire.svc\nTCP :8081 — gRPC\nTrust domain: munich.bmw\nCA key in HashiCorp Vault] as SPIRE_SERVER
+
+    [HashiCorp Vault\nvault.ifos.munich.internal\nCA private key: secret/data/spire/ca-key\nAnsible SSH key injection] as VAULT
+
+    [Prometheus / Grafana\nUNS availability SLO ≥99.95%\nEdge gateway :9100/metrics] as OBSERVABILITY
+}
+
+MQTT_BROKER --> BRIDGE : Sparkplug B\nprotobuf
+BRIDGE --> KAFKA : Avro/JSON\nDDATA events
+BRIDGE --> SCHEMA_REGISTRY : schema\nvalidation
+SPIRE_SERVER --> VAULT : AppRole auth\nCA key fetch
+KAFKA --> OBSERVABILITY : metrics
+
+' ============================================================
+' Zone boundary crossings — conduits
+' ============================================================
+
+GW_INB_01 --> FW : CM-013\nTCP :8883\nmTLS SVID
+GW_BOD_01 --> FW : CM-013\nTCP :8883
+GW_PAI_01 --> FW : CM-013\nTCP :8883
+GW_ASM_01 --> FW : CM-013\nTCP :8883
+GW_QUA_01 --> FW : CM-013\nTCP :8883
+
+SPIRE_AGENT_INB --> FW : FW-IN-005\nTCP :8081\ngRPC SVID
+SPIRE_AGENT_ASM --> FW : FW-IN-005\nTCP :8081
+
+FW --> MQTT_BROKER : CM-013 ALLOW\nmTLS enforced\n[SC-004, SC-017]
+FW --> SPIRE_SERVER : FW-IN-005 ALLOW\n[SC-017]
+
+note right of FW
+  CM-013: OT Edge Gateways → MQTT Broker
+  Source: 10.200.{10,20,30,40,50}.0/24
+  Destination: 10.100.1.10 :8883
+  Auth: mTLS SPIFFE SVID (TLS 1.3)
+  IEC 62443: SC-004, SC-017
+
+  FW-IN-005: OT Edge Gateways → SPIRE Workload API
+  Source: 10.200.x.0/24
+  Destination: 10.100.1.20 :8081
+  IEC 62443: SC-017
+end note
+
+' ============================================================
+' Azure Zone Boundary
+' ============================================================
+boundary "Zone Boundary — Azure ExpressRoute\nmTLS SPIFFE SVID on every connection\n[IEC 62443 SC-004, SC-017]" as AZ_FW #5C6BC0
+
+KAFKA --> AZ_FW : Kafka TLS\n:9092 mTLS SVID
+
+' ============================================================
+' Cloud IT Zone — Azure EU Central
+' ============================================================
+package "Cloud IT Zone — Azure EU Central (Germany West Central)\nAzure Red Hat OpenShift 4.16\n[EU data residency — GDPR + Works Council]" as Cloud_Zone #E3F2FD {
+
+    [opcenter-sync-service\nNamespace: opcenter\nSPIFFE: munich.bmw/opcenter-sync-service\nKafka consumer: OEE + Andon] as OPCENTER
+
+    [planning-cockpit-backend\nNamespace: planning-cockpit\nSPIFFE: munich.bmw/planning-cockpit-backend\nKafka consumer: sequence events] as PLANNING
+
+    [quality-studio-backend\nNamespace: quality-studio\nSPIFFE: munich.bmw/quality-studio-backend\nKafka consumer: defect events] as QUALITY
+
+    [line-command-backend\nNamespace: line-command\nSPIFFE: munich.bmw/line-command-backend] as LINE_CMD
+
+    [KServe model serving\nSequenceOptimizer + DefectGenome\nRule-based fallback in shadow mode] as KSERVE
+
+    [IBM API Connect / DataPower\nRBAC enforcement\n5-min role propagation\nAudit log on every 403] as API_GW
+
+    [Immutable Audit Log\nAzure Blob WORM\nHyperledger Fabric fingerprint] as AUDIT
+}
+
+AZ_FW --> OPCENTER : Kafka events\nmTLS SVID
+AZ_FW --> PLANNING : Kafka events\nmTLS SVID
+AZ_FW --> QUALITY : Kafka events\nmTLS SVID
+
+OPCENTER --> API_GW : REST\nmTLS
+PLANNING --> KSERVE : inference
+QUALITY --> KSERVE : inference
+API_GW --> AUDIT : immutable\naudit write
+
+' ============================================================
+' Legend
+' ============================================================
+legend right
+|= Symbol |= Meaning |
+| <&arrow-right> solid | Data flow (active connection) |
+| <&arrow-right> dashed | Configuration / SVID injection |
+| CM-013 | Firewall rule — OT→MQTT broker |
+| FW-IN-005 | Firewall rule — OT→SPIRE Workload API |
+| SC-004 | IEC 62443 SL2: Zone separation |
+| SC-017 | IEC 62443 SL2: mTLS identity |
+endlegend
+
+@enduml

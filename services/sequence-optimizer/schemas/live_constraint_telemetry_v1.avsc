@@ -1,0 +1,39 @@
+{
+  "type": "record",
+  "name": "LiveConstraintTelemetry",
+  "namespace": "bmw.munich.i4.uns.constraints",
+  "doc": "Live telemetry reading from the UNS for a single constraint dimension.",
+  "fields": [
+    {
+      "name": "constraintType",
+      "type": {
+        "type": "enum",
+        "name": "ConstraintType",
+        "symbols": [
+          "paint_capacity",
+          "body_wip_queue",
+          "kitting_readiness",
+          "maintenance_window",
+          "agv_delay",
+          "press_die_overrun"
+        ]
+      },
+      "doc": "Identifies the constraint dimension."
+    },
+    {
+      "name": "currentValue",
+      "type": "double",
+      "doc": "Current measured value of the constraint."
+    },
+    {
+      "name": "unit",
+      "type": "string",
+      "doc": "Engineering unit for currentValue (e.g. %, jobs, minutes)."
+    },
+    {
+      "name": "measuredAt",
+      "type": "string",
+      "doc": "ISO-8601 UTC timestamp of the measurement."
+    }
+  ]
+}

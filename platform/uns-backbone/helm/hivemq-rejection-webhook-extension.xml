@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HiveMQ Rejection Webhook Extension configuration
+  Component: cmp:uns-backbone  |  Realises: US-027 · BR-10
+
+  PURPOSE
+  ───────
+  On every failed TLS handshake (no certificate, expired certificate, unknown CA),
+  this extension POSTs an audit event within 1 second to the audit-forwarder service:
+
+    POST http://audit-forwarder.uns-backbone.svc.cluster.local/rejections/mqtt
+
+  PAYLOAD CONTRACT (consumed by Child 2 — audit-forwarder; field names are fixed)
+  ──────────────────────────────────────────────────────────────────────────────────
+  {
+    "timestamp":        "<ISO-8601 UTC>",
+    "source_ip":        "<string>",
+    "gateway_id":       "<SPIFFE SVID from SNI, empty string if no cert>",
+    "rejection_reason": "<expired_cert|unknown_ca|no_cert_presented>",
+    "correlation_id":   "<UUID v4>"
+  }
+
+  TIMEOUT
+  ───────
+  The POST must complete within 1 second (timeout-ms = 1000). If the forwarder is
+  unavailable the extension logs the failure locally; it does not block the HiveMQ
+  event loop.
+-->
+<rejection-webhook-extension>
+
+  <!-- Audit forwarder endpoint — cluster-internal, no external egress required. -->
+  <webhook-url>http://audit-forwarder.uns-backbone.svc.cluster.local/rejections/mqtt</webhook-url>
+
+  <!-- Hard deadline for the POST; must not exceed 1000 ms (US-027 requirement). -->
+  <timeout-ms>1000</timeout-ms>
+
+  <!-- Retry once on transient network error (still within the 1 s budget on fast LAN). -->
+  <retry-count>1</retry-count>
+  <retry-delay-ms>100</retry-delay-ms>
+
+  <!-- HTTP method — POST only. -->
+  <http-method>POST</http-method>
+
+  <!-- Content-Type header required by the audit-forwarder. -->
+  <headers>
+    <header>
+      <name>Content-Type</name>
+      <value>application/json</value>
+    </header>
+    <header>
+      <!-- Correlation header lets the forwarder join webhook events to HiveMQ logs. -->
+      <name>X-Source-Component</name>
+      <value>hivemq-broker</value>
+    </header>
+  </headers>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       PAYLOAD TEMPLATE
+       ─────────────────────────────────────────────────────────────
+       Variables injected by HiveMQ Enterprise at send time:
+         ${timestamp}        — ISO-8601 UTC of the rejected handshake
+         ${source_ip}        — client IP:port
+         ${gateway_id}       — SPIFFE SVID URI SAN extracted from SNI/cert;
+                               empty string if the client presented no certificate
+         ${rejection_reason} — one of: expired_cert | unknown_ca | no_cert_presented
+         ${correlation_id}   — UUID v4 generated per rejection event
+       ───────────────────────────────────────────────────────────── -->
+  <payload-template><![CDATA[{
+  "timestamp": "${timestamp}",
+  "source_ip": "${source_ip}",
+  "gateway_id": "${gateway_id}",
+  "rejection_reason": "${rejection_reason}",
+  "correlation_id": "${correlation_id}"
+}]]></payload-template>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       TRIGGER CONDITIONS
+       Only fire on TLS-layer rejections; MQTT-level auth failures
+       are handled by the authorisation extension (mqtt-acl-rules.xml).
+       ───────────────────────────────────────────────────────────── -->
+  <triggers>
+    <!-- Client presented no certificate (requireClientCert=true enforces this at TLS layer) -->
+    <trigger>no_cert_presented</trigger>
+    <!-- Certificate signed by an unknown CA (not in spiffe://munich.bmw bundle) -->
+    <trigger>unknown_ca</trigger>
+    <!-- Certificate has passed its notAfter date -->
+    <trigger>expired_cert</trigger>
+  </triggers>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       LOGGING
+       On POST failure (timeout / forwarder down) log at WARN; the
+       rejection itself is still enforced — logging failure does not
+       cause the handshake to succeed.
+       ───────────────────────────────────────────────────────────── -->
+  <log-on-failure>true</log-on-failure>
+  <log-level>WARN</log-level>
+
+</rejection-webhook-extension>

@@ -1,0 +1,50 @@
+# ArgoCD Application — AI model serving (KServe: SequenceOptimizer + DefectGenome) on DR cluster
+# Synced to DR cluster at 50% replica count; rule-based fallback in shadow mode
+# Realises: US-025 · BR-16
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-serving-dr
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+    dr_role: "secondary"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ifos-dr
+
+  source:
+    repoURL: https://github.com/bmwgroup/ifactoryos-gitops
+    targetRevision: HEAD
+    path: platform/ai-serving/overlays/dr
+
+  destination:
+    server: https://api.ifos-dr-euno.germanyNorth.aroapp.io:6443
+    namespace: ifos-ai-serving
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: serving.kserve.io
+      kind: InferenceService
+      jsonPointers:
+        - /spec/predictor/minReplicas
+        - /spec/predictor/maxReplicas

@@ -5,11 +5,19 @@ Requires=spire-agent.service
 
 [Service]
 Type=simple
+# Connect to the SPIRE Workload API via the Unix domain socket exposed by the
+# SPIRE agent sidecar.  The watcher subscribes to SVID push updates and writes
+# the renewed cert/key/bundle to the paths below without service interruption.
+# On rotation, sends SIGHUP to the SIMATIC Edge Runtime so it reloads the TLS
+# context without dropping the active MQTT connection (zero-interrupt rotation).
 ExecStart=/usr/local/bin/svid-watcher \
     --socket {{ spire_agent_socket }} \
+    --workload-api-address {{ spire_workload_api_address }} \
+    --trust-domain {{ spire_trust_domain }} \
     --cert-out {{ svid_cert_path }} \
     --key-out {{ svid_key_path }} \
     --bundle-out {{ spire_bundle_path }} \
+    --rotate-at-half-ttl={{ svid_rotate_at_half_ttl | lower }} \
     --on-rotate "kill -HUP $(systemctl show -p MainPID --value {{ simatic_edge_service }})"
 Restart=on-failure
 RestartSec=5s

@@ -1,0 +1,121 @@
+---
+# ServiceAccount — annotated with the Azure Workload Identity federated credential.
+# The azure.workload.identity/client-id annotation is required by the
+# azure-workload-identity webhook to project the token onto the pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-forwarder
+  namespace: uns-backbone
+  labels:
+    app: audit-forwarder
+    component: cmp:uns-backbone
+    data_residency: eu-de-west-central
+  annotations:
+    azure.workload.identity/client-id: "${AUDIT_FORWARDER_CLIENT_ID}"
+    description: >
+      Workload Identity for the audit-forwarder pod; grants
+      Storage Blob Data Contributor on the immutable-audit-log container
+      (azurerm_role_assignment.audit_contributors in platform/immutable-audit-log/main.tf).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-forwarder
+  namespace: uns-backbone
+  labels:
+    app: audit-forwarder
+    component: cmp:uns-backbone
+    data_residency: eu-de-west-central
+    iec62443-sl: SL2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: audit-forwarder
+  template:
+    metadata:
+      labels:
+        app: audit-forwarder
+        component: cmp:uns-backbone
+        data_residency: eu-de-west-central
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: audit-forwarder
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: audit-forwarder
+          image: ifactoryos/audit-forwarder:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # Storage account name from immutable-audit-log module output: storage_account_name
+            - name: AUDIT_STORAGE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: audit-forwarder-config
+                  key: storage_account_name
+            # Container name from immutable-audit-log module output: audit_container_name
+            - name: AUDIT_CONTAINER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: audit-forwarder-config
+                  key: audit_container_name
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: audit-forwarder
+---
+# Service — DNS name audit-forwarder.uns-backbone.svc.cluster.local
+# Children 0 (HiveMQ) and 1 (Kafka log-tailer sidecar) POST to this address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-forwarder
+  namespace: uns-backbone
+  labels:
+    app: audit-forwarder
+    component: cmp:uns-backbone
+    data_residency: eu-de-west-central
+spec:
+  selector:
+    app: audit-forwarder
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

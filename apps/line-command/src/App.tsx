@@ -1,6 +1,34 @@
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LanguageToggle } from "./components/LanguageToggle";
 import { AndonAlert, type AndonAlertContent } from "./components/AndonAlert";
+import { ForbiddenScreen } from "./components/ForbiddenScreen";
+import { AccessRestrictedToast } from "./components/AccessRestrictedToast";
+import { ARWorkbenchPage } from "./components/ARWorkbenchPage";
+import { useRbac } from "./hooks/useRbac";
+
+// ---------------------------------------------------------------------------
+// Route definitions
+// ---------------------------------------------------------------------------
+
+type Route =
+  | "command-center"
+  | "station-detail"
+  | "andon-log"
+  | "handover-builder"
+  | "ar-workbench"
+  | "settings";
+
+/** Routes that Assembly Associates may not access. */
+const ASSOCIATE_BLOCKED_ROUTES: Route[] = [
+  "command-center",
+  "station-detail",
+  "handover-builder",
+];
+
+// ---------------------------------------------------------------------------
+// Demo alert content (kept for the shift-lead full view)
+// ---------------------------------------------------------------------------
 
 const ELECTRODE_WEAR_ALERT: AndonAlertContent = {
   title: {
@@ -36,8 +64,80 @@ const OEE_ALERT: AndonAlertContent = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
 export function App() {
   const { t } = useTranslation();
+  const { role, userId, loading } = useRbac();
+
+  const [currentRoute, setCurrentRoute] = useState<Route>("command-center");
+  const [showRestrictedToast, setShowRestrictedToast] = useState(false);
+  const [forbiddenResource, setForbiddenResource] = useState<string | null>(null);
+
+  // When role resolves to assembly_associate, force redirect away from blocked routes.
+  // Uses functional updater so currentRoute is read from the setter, not the closure,
+  // keeping it out of the dep array and avoiding a re-run loop.
+  useEffect(() => {
+    if (loading) return;
+    if (role !== "assembly_associate") return;
+    setCurrentRoute((prev) => {
+      if (ASSOCIATE_BLOCKED_ROUTES.includes(prev)) {
+        setShowRestrictedToast(true);
+        return "ar-workbench";
+      }
+      return prev;
+    });
+  }, [role, loading]);
+
+  const navigate = useCallback(
+    (route: Route) => {
+      if (role === "assembly_associate" && ASSOCIATE_BLOCKED_ROUTES.includes(route)) {
+        setCurrentRoute("ar-workbench");
+        setShowRestrictedToast(true);
+        return;
+      }
+      setCurrentRoute(route);
+    },
+    [role],
+  );
+
+  const handleForbiddenFromApi = useCallback((resource: string) => {
+    setForbiddenResource(resource);
+  }, []);
+
+  const handleReturnFromForbidden = useCallback(() => {
+    setForbiddenResource(null);
+  }, []);
+
+  // Loading skeleton
+  if (loading) {
+    return (
+      <div className="shell" aria-busy="true">
+        <div className="rbac-loading" role="status" aria-live="polite">
+          <p>{t("rbac.loading")}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Full-page 403 for roles with no Line Command access
+  if (role === "forbidden" || forbiddenResource !== null) {
+    return (
+      <div className="shell">
+        <ForbiddenScreen
+          resource={forbiddenResource ?? "/line-command"}
+          userPrincipal={userId || undefined}
+          requiredScope="factory_os:console:line-command"
+          onReturn={forbiddenResource !== null ? handleReturnFromForbidden : undefined}
+        />
+      </div>
+    );
+  }
+
+  // Determine which nav items are visible for this role
+  const isAssociate = role === "assembly_associate";
 
   return (
     <div className="shell">
@@ -48,46 +148,139 @@ export function App() {
         <LanguageToggle />
       </header>
 
+      {showRestrictedToast && (
+        <AccessRestrictedToast onDismiss={() => setShowRestrictedToast(false)} />
+      )}
+
       <div className="app-body">
         <nav className="sidebar" aria-label={t("nav.section_line")}>
           <div className="nav-section">{t("nav.section_line")}</div>
-          <div className="nav-item active" aria-current="page">
-            <span className="icon" aria-hidden="true">◈</span>
-            {t("nav.command_center")}
-          </div>
-          <div className="nav-item">
-            <span className="icon" aria-hidden="true">◉</span>
-            {t("nav.station_detail")}
-          </div>
-          <div className="nav-item">
-            <span className="icon" aria-hidden="true">⬡</span>
-            {t("nav.andon_log")}
-          </div>
-          <div className="nav-section">{t("nav.section_shift")}</div>
-          <div className="nav-item">
-            <span className="icon" aria-hidden="true">↗</span>
-            {t("nav.handover_builder")}
-          </div>
-          <div className="nav-item">
+
+          {isAssociate ? (
+            // Assembly Associate: only AR Workbench is navigable
+            <>
+              <button
+                type="button"
+                className={`nav-item${currentRoute === "ar-workbench" ? " active" : ""}`}
+                aria-current={currentRoute === "ar-workbench" ? "page" : undefined}
+                onClick={() => navigate("ar-workbench")}
+              >
+                <span className="icon" aria-hidden="true">⬡</span>
+                {t("rbac.nav_ar_workbench")}
+              </button>
+              <div className="nav-item nav-item--locked" aria-disabled="true">
+                <span className="icon" aria-hidden="true">◈</span>
+                <span className="nav-item-label">{t("rbac.nav_command_center_locked")}</span>
+              </div>
+              <div className="nav-section">{t("nav.section_shift")}</div>
+              <div className="nav-item nav-item--locked" aria-disabled="true">
+                <span className="icon" aria-hidden="true">↗</span>
+                <span className="nav-item-label">{t("rbac.nav_handover_locked")}</span>
+              </div>
+            </>
+          ) : (
+            // Shift Lead: full navigation
+            <>
+              <button
+                type="button"
+                className={`nav-item${currentRoute === "command-center" ? " active" : ""}`}
+                aria-current={currentRoute === "command-center" ? "page" : undefined}
+                onClick={() => navigate("command-center")}
+              >
+                <span className="icon" aria-hidden="true">◈</span>
+                {t("nav.command_center")}
+              </button>
+              <button
+                type="button"
+                className={`nav-item${currentRoute === "station-detail" ? " active" : ""}`}
+                aria-current={currentRoute === "station-detail" ? "page" : undefined}
+                onClick={() => navigate("station-detail")}
+              >
+                <span className="icon" aria-hidden="true">◉</span>
+                {t("nav.station_detail")}
+              </button>
+              <button
+                type="button"
+                className={`nav-item${currentRoute === "andon-log" ? " active" : ""}`}
+                aria-current={currentRoute === "andon-log" ? "page" : undefined}
+                onClick={() => navigate("andon-log")}
+              >
+                <span className="icon" aria-hidden="true">⬡</span>
+                {t("nav.andon_log")}
+              </button>
+              <div className="nav-section">{t("nav.section_shift")}</div>
+              <button
+                type="button"
+                className={`nav-item${currentRoute === "handover-builder" ? " active" : ""}`}
+                aria-current={currentRoute === "handover-builder" ? "page" : undefined}
+                onClick={() => navigate("handover-builder")}
+              >
+                <span className="icon" aria-hidden="true">↗</span>
+                {t("nav.handover_builder")}
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            className={`nav-item${currentRoute === "settings" ? " active" : ""}`}
+            aria-current={currentRoute === "settings" ? "page" : undefined}
+            onClick={() => navigate("settings")}
+          >
             <span className="icon" aria-hidden="true">⚙</span>
             {t("nav.settings")}
-          </div>
+          </button>
         </nav>
 
         <main className="main-content" aria-label={t("command_center.title")}>
-          <AndonAlert
-            content={ELECTRODE_WEAR_ALERT}
-            variant="error"
-            countdown={t("andon.minutes_until_failure", { count: "14" })}
-            onDispatchMaintenance={() => undefined}
-            onAcknowledge={() => undefined}
-          />
+          {currentRoute === "ar-workbench" && (
+            <ARWorkbenchPage
+              vin="WBADT43453G PLACEHOLDER"
+              userId={userId}
+              onForbidden={handleForbiddenFromApi}
+            />
+          )}
 
-          <AndonAlert
-            content={OEE_ALERT}
-            variant="warning"
-            onAcknowledge={() => undefined}
-          />
+          {currentRoute === "command-center" && !isAssociate && (
+            <>
+              <AndonAlert
+                content={ELECTRODE_WEAR_ALERT}
+                variant="error"
+                countdown={t("andon.minutes_until_failure", { count: "14" })}
+                onDispatchMaintenance={() => undefined}
+                onAcknowledge={() => undefined}
+              />
+              <AndonAlert
+                content={OEE_ALERT}
+                variant="warning"
+                onAcknowledge={() => undefined}
+              />
+            </>
+          )}
+
+          {currentRoute === "station-detail" && !isAssociate && (
+            <div className="placeholder-view">
+              <h2>{t("nav.station_detail")}</h2>
+            </div>
+          )}
+
+          {currentRoute === "andon-log" && (
+            <div className="placeholder-view">
+              <h2>{t("nav.andon_log")}</h2>
+            </div>
+          )}
+
+          {currentRoute === "handover-builder" && !isAssociate && (
+            <div className="placeholder-view">
+              <h2>{t("nav.handover_builder")}</h2>
+            </div>
+          )}
+
+          {currentRoute === "settings" && (
+            <div className="placeholder-view">
+              <h2>{t("settings.title")}</h2>
+            </div>
+          )}
         </main>
       </div>
     </div>

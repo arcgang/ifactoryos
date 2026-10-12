@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Error handler policy — IBM API Connect / DataPower Gateway
+  Catches jwt-missing and rbac-forbidden throws and returns the correct HTTP status
+  with the standard error envelope so a stack trace never leaks to the client.
+  IBM-SEC-001 §3.4: sanitise error responses.
+-->
+<assembly>
+  <catch>
+    <case>
+      <errors>
+        <error>jwt-missing</error>
+      </errors>
+      <execute>
+        <set-variable>
+          <name>message.status.code</name>
+          <value>401</value>
+        </set-variable>
+        <gatewayscript>
+          var correlationId = context.get('request.headers.x-correlation-id') || context.get('system.uuid');
+          context.set('message.body', JSON.stringify({
+            code:           'UNAUTHORIZED',
+            message:        'Bearer token is missing or malformed.',
+            correlation_id: correlationId
+          }));
+          context.set('message.headers.Content-Type', 'application/json');
+        </gatewayscript>
+      </execute>
+    </case>
+    <case>
+      <errors>
+        <error>rbac-forbidden</error>
+      </errors>
+      <!-- 403 body already set by console-rbac.xml before the throw -->
+    </case>
+    <case>
+      <errors>
+        <error>*</error>
+      </errors>
+      <execute>
+        <set-variable>
+          <name>message.status.code</name>
+          <value>500</value>
+        </set-variable>
+        <gatewayscript>
+          var correlationId = context.get('request.headers.x-correlation-id') || context.get('system.uuid');
+          context.set('message.body', JSON.stringify({
+            code:           'INTERNAL_SERVER_ERROR',
+            message:        'An unexpected error occurred.',
+            correlation_id: correlationId
+          }));
+          context.set('message.headers.Content-Type', 'application/json');
+        </gatewayscript>
+      </execute>
+    </case>
+  </catch>
+</assembly>

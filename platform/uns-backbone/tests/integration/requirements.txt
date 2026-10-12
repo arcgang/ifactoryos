@@ -1,0 +1,6 @@
+pytest
+cryptography>=41.0
+azure-storage-blob>=12.20.0
+azure-identity>=1.16.0
+confluent-kafka>=2.3
+requests>=2.31

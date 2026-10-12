@@ -12,6 +12,7 @@ from app.auth import (
     caller_subject,
     require_bearer,
     require_my26_config_writer,
+    require_override_writer,
     require_resequence_writer,
     require_threshold_writer,
 )
@@ -23,8 +24,12 @@ from app.models import (
     My26ValidationResult,
     OptimizeRequest,
     OptimizeResponse,
+    OverrideListResponse,
+    OverrideRecord,
+    OverrideRequest,
     ResequenceRequest,
     ThresholdListResponse,
+    VinExplanation,
 )
 
 router = APIRouter(tags=["Constraints"])
@@ -167,6 +172,44 @@ async def get_optimize_run(
     return result
 
 
+@optimize_router.get(
+    "/optimize/{runId}/explain/{vin}",
+    response_model=VinExplanation,
+    operation_id="explainVinPosition",
+)
+async def explain_vin_position(
+    runId: uuid.UUID,
+    vin: str,
+    _payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> VinExplanation:
+    import re
+
+    from app.explain import get_explanation
+
+    if not re.match(r"^[A-HJ-NPR-Z0-9]{17}$", vin):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "INVALID_VIN",
+                "message": "VIN must be 17 characters matching [A-HJ-NPR-Z0-9]",
+                "correlation_id": str(uuid.uuid4()),
+            },
+        )
+
+    result = await get_explanation(runId, vin, pool)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "EXPLANATION_NOT_FOUND",
+                "message": f"No explanation found for run {runId} and VIN {vin}",
+                "correlation_id": str(uuid.uuid4()),
+            },
+        )
+    return result
+
+
 @optimize_router.post(
     "/resequence",
     response_model=OptimizeResponse,
@@ -294,3 +337,115 @@ async def save_my26_config_endpoint(
 
     user_id = caller_subject(payload)
     return await save_my26_config(body, pool, user_id)
+
+
+# ---------------------------------------------------------------------------
+# Overrides endpoints
+# ---------------------------------------------------------------------------
+
+overrides_router = APIRouter(tags=["Overrides"])
+
+
+@overrides_router.get(
+    "/overrides",
+    response_model=OverrideListResponse,
+    operation_id="listOverrides",
+)
+async def list_overrides(
+    weekIso: str | None = Query(default=None, pattern=r"^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$"),
+    runId: uuid.UUID | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    _payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> OverrideListResponse:
+    from app.overrides import list_overrides as _list_overrides
+
+    return await _list_overrides(
+        pool=pool,
+        week_iso=weekIso,
+        run_id=runId,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+@overrides_router.post(
+    "/overrides",
+    response_model=OverrideRecord,
+    operation_id="createOverride",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_override(
+    body: OverrideRequest,
+    payload: dict[str, Any] = Depends(require_override_writer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> OverrideRecord:
+    from app.overrides import create_override as _create_override
+
+    planner_id = caller_subject(payload)
+    return await _create_override(request=body, planner_id=planner_id, pool=pool)
+
+
+@overrides_router.get(
+    "/overrides/export",
+    operation_id="exportOverridesPdf",
+    responses={
+        200: {"content": {"application/pdf": {}}, "description": "PDF binary"},
+        400: {"model": None},
+        401: {"model": None},
+    },
+)
+async def export_overrides_pdf(
+    weekIso: str = Query(pattern=r"^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$"),
+    _payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> Any:
+    from fastapi.responses import Response
+
+    from app.overrides import build_override_pdf, list_overrides as _list_overrides
+
+    resp = await _list_overrides(pool=pool, week_iso=weekIso, limit=200)
+    all_records = resp.data
+    # If more than 200 records exist, fetch remaining pages
+    page = resp.page
+    while page.next_cursor is not None:
+        resp = await _list_overrides(
+            pool=pool, week_iso=weekIso, cursor=page.next_cursor, limit=200
+        )
+        all_records = all_records + resp.data
+        page = resp.page
+
+    pdf_bytes = build_override_pdf(all_records, weekIso)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="overrides-{weekIso}.pdf"'
+        },
+    )
+
+
+@overrides_router.get(
+    "/overrides/{overrideId}",
+    response_model=OverrideRecord,
+    operation_id="getOverride",
+)
+async def get_override(
+    overrideId: uuid.UUID,
+    _payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> OverrideRecord:
+    from app.overrides import get_override as _get_override
+
+    record = await _get_override(overrideId, pool)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "OVERRIDE_NOT_FOUND",
+                "message": f"Override {overrideId} not found",
+                "correlation_id": str(uuid.uuid4()),
+            },
+        )
+    return record

@@ -216,3 +216,60 @@ class My26ValidationIssue(BaseModel):
 class My26ValidationResult(BaseModel):
     valid: bool
     issues: list[My26ValidationIssue]
+
+
+# ---------------------------------------------------------------------------
+# Override log models
+# ---------------------------------------------------------------------------
+
+
+class OverrideRequest(BaseModel):
+    runId: UUID
+    vin: str = Field(pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    originalPosition: int = Field(ge=1)
+    newPosition: int = Field(ge=1)
+    justification: str = Field(min_length=10, max_length=2000)
+
+
+class OverrideRecord(BaseModel):
+    overrideId: UUID
+    runId: UUID
+    vin: str
+    originalPosition: int
+    newPosition: int
+    justification: str
+    plannerId: str
+    createdAt: str
+
+
+class OverrideListResponse(BaseModel):
+    data: list[OverrideRecord]
+    page: CursorPage
+
+
+# ---------------------------------------------------------------------------
+# VIN constraint explanation models
+# ---------------------------------------------------------------------------
+
+
+class ConstraintFactorName(str, Enum):
+    paint_batch_conflict = "paint_batch_conflict"
+    changeover_penalty = "changeover_penalty"
+    maintenance_window = "maintenance_window"
+    kitting_gap = "kitting_gap"
+    vip_priority = "vip_priority"
+    regulatory_hold = "regulatory_hold"
+
+
+class ConstraintFactor(BaseModel):
+    factorName: ConstraintFactorName
+    weightedScore: float
+    dataSource: str
+    rawValue: float | None = None
+
+
+class VinExplanation(BaseModel):
+    runId: UUID
+    vin: str
+    position: int
+    topFactors: list[ConstraintFactor] = Field(min_length=1, max_length=3)

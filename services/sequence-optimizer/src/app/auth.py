@@ -105,6 +105,25 @@ def require_my26_config_writer(
     return payload
 
 
+def require_override_writer(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless the JWT carries the override-writer role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
+    roles: list[str] = payload.get("roles", []) or []
+    if cfg.override_writer_role not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "FORBIDDEN",
+                f"Caller lacks required role: {cfg.override_writer_role}",
+            ),
+        )
+    return payload
+
+
 def caller_subject(payload: dict[str, Any]) -> str:
     """Extract the JWT subject (caller identity)."""
     return payload.get("sub") or payload.get("upn") or "unknown"

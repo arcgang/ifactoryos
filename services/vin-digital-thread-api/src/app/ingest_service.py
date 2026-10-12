@@ -1,11 +1,13 @@
 """Business logic for POST /vin/{vin}/thread/events.
 
 Write order (per pg-write-ahead-log-before-neo4j decision):
-  1. INSERT into thread_event_ingest_log (status=PENDING) — idempotency check
-  2. CREATE event node in Neo4j and MERGE link to VIN node
-  3. UPDATE thread_event_ingest_log.status = LINKED
-  4. Publish VinThreadEventLinked to Kafka
-  5. UPSERT completeness cache
+  1. PII scrub parameters map (replace raw employee IDs with pseudonymous tokens)
+  2. INSERT into thread_event_ingest_log (status=PENDING) — idempotency check
+  3. CREATE event node in Neo4j (scrubbed parameters only) and MERGE link to VIN node
+  4. UPDATE thread_event_ingest_log.status = LINKED
+  5. Publish VinThreadEventLinked to Kafka (scrubbed payload)
+  6. UPSERT completeness cache; publish completeness alert if < 95% threshold
+  7. Publish VinThreadFinalGateComplete if VIN reaches FINAL_GATE_COMPLETE status
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ _VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 
 _NEO4J_WRITE_TIMEOUT_S = 4.0
 _PG_WRITE_TIMEOUT_S = 2.0
+_COMPLETENESS_THRESHOLD = 95.0
 
 
 def _now_utc_iso() -> str:
@@ -41,6 +44,18 @@ async def ingest_event(
     """Ingest one manufacturing event and link it to the VIN digital thread."""
     if not _VIN_RE.match(vin):
         raise _VinFormatError(vin)
+
+    from app.config import get_settings
+    from app.pii_scrubber import scrub_parameters
+
+    cfg = get_settings()
+
+    # --- PII scrub: replace raw employee IDs with pseudonymous tokens ---
+    scrubbed_parameters = await scrub_parameters(
+        request.parameters,
+        identity_service_url=cfg.identity_service_url,
+        timeout_s=cfg.identity_service_timeout_s,
+    )
 
     idempotency_key = str(request.idempotencyKey)
     event_id = uuid.uuid4()
@@ -72,7 +87,7 @@ async def ingest_event(
                 request.station,
                 request.occurredAt,
                 request.dataSource,
-                _jsonb_params(request.parameters),
+                _jsonb_params(scrubbed_parameters),
                 request.stageNumber,
                 request.tunnelPositionMm,
                 user_id,
@@ -80,7 +95,7 @@ async def ingest_event(
 
     try:
         await asyncio.wait_for(
-            _neo4j_link_event(event_id, vin, request, linked_at),
+            _neo4j_link_event(event_id, vin, request, linked_at, scrubbed_parameters),
             timeout=_NEO4J_WRITE_TIMEOUT_S,
         )
     except asyncio.TimeoutError as err:
@@ -99,10 +114,11 @@ async def ingest_event(
             str(event_id),
         )
 
+    # Fire-and-forget downstream tasks — must not block the HTTP response.
     asyncio.create_task(
-        _publish_event_linked(str(event_id), vin, request, linked_at, user_id)
+        _publish_event_linked(str(event_id), vin, request, linked_at, user_id, scrubbed_parameters)
     )
-    asyncio.create_task(_refresh_completeness_cache(vin, pool))
+    asyncio.create_task(_refresh_completeness_and_alert(vin, pool))
 
     return ThreadEventIngestResponse(
         vin=vin,
@@ -116,8 +132,14 @@ async def _neo4j_link_event(
     vin: str,
     request: ThreadEventIngestRequest,
     linked_at: str,
+    scrubbed_parameters: dict,
 ) -> None:
-    """Create event node and MERGE VIN→event edge in Neo4j."""
+    """Create event node and MERGE VIN→event edge in Neo4j.
+
+    Only scrubbed_parameters are written — raw employee IDs never reach Neo4j.
+    """
+    import json
+
     from neo4j import AsyncGraphDatabase
 
     from app.config import get_settings
@@ -131,16 +153,17 @@ async def _neo4j_link_event(
             await session.run(
                 """
                 MERGE (v:VIN {vin: $vin})
-                CREATE (e:ManufacturingEvent {
-                    eventId: $event_id,
+                MERGE (e:ManufacturingEvent {eventId: $event_id})
+                SET e += {
                     eventType: $event_type,
                     shop: $shop,
                     station: $station,
                     occurredAt: $occurred_at,
                     dataSource: $data_source,
+                    parameters: $parameters,
                     linkedAt: $linked_at
-                })
-                CREATE (v)-[:HAS_EVENT]->(e)
+                }
+                MERGE (v)-[:HAS_EVENT]->(e)
                 """,
                 vin=vin,
                 event_id=str(event_id),
@@ -149,6 +172,7 @@ async def _neo4j_link_event(
                 station=request.station,
                 occurred_at=request.occurredAt,
                 data_source=request.dataSource,
+                parameters=json.dumps(scrubbed_parameters),
                 linked_at=linked_at,
             )
 
@@ -159,9 +183,11 @@ async def _publish_event_linked(
     request: ThreadEventIngestRequest,
     linked_at: str,
     user_id: str,
+    scrubbed_parameters: dict,
 ) -> None:
     from app.kafka_producer import TOPIC_EVENT_LINKED, publish
 
+    # Never include raw PII in Kafka payloads — use scrubbed parameters.
     payload = {
         "eventId": event_id,
         "vin": vin,
@@ -171,11 +197,13 @@ async def _publish_event_linked(
         "occurredAt": request.occurredAt,
         "linkedAt": linked_at,
         "ingestedBy": user_id,
+        "parameters": scrubbed_parameters,
     }
     await publish(TOPIC_EVENT_LINKED, payload)
 
 
-async def _refresh_completeness_cache(vin: str, pool: asyncpg.Pool) -> None:
+async def _refresh_completeness_and_alert(vin: str, pool: asyncpg.Pool) -> None:
+    """Upsert completeness cache; publish alerts when threshold is breached or VIN completes."""
     try:
         async with pool.acquire() as conn:
             await conn.execute(
@@ -186,8 +214,78 @@ async def _refresh_completeness_cache(vin: str, pool: asyncpg.Pool) -> None:
                 """,
                 vin,
             )
+            row = await conn.fetchrow(
+                """
+                SELECT overall_completeness_pct, meets_threshold, alert_published, vin_status
+                FROM vin_thread_completeness_cache
+                WHERE vin = $1
+                """,
+                vin,
+            )
     except asyncpg.PostgresError as err:
         logger.exception("Failed to refresh completeness cache for vin=%s", vin, exc_info=err)
+        return
+
+    if row is None:
+        return
+
+    overall_pct = float(row["overall_completeness_pct"])
+    alert_published = bool(row["alert_published"])
+    vin_status = str(row["vin_status"])
+
+    # Publish completeness alert when below threshold and not yet published.
+    if overall_pct < _COMPLETENESS_THRESHOLD and not alert_published:
+        asyncio.create_task(_publish_completeness_alert(vin, overall_pct, pool))
+
+    # Publish final gate complete when VIN reaches terminal FINAL_GATE_COMPLETE status.
+    if vin_status == "FINAL_GATE_COMPLETE":
+        asyncio.create_task(_publish_final_gate_complete(vin))
+
+
+async def _publish_completeness_alert(
+    vin: str,
+    completeness_pct: float,
+    pool: asyncpg.Pool,
+) -> None:
+    from app.kafka_producer import TOPIC_COMPLETENESS_ALERT, publish
+
+    payload = {
+        "vin": vin,
+        "completeness_pct": completeness_pct,
+        "threshold_pct": _COMPLETENESS_THRESHOLD,
+    }
+    try:
+        await publish(TOPIC_COMPLETENESS_ALERT, payload)
+    except (OSError, RuntimeError) as err:
+        logger.exception("Failed to publish completeness alert for vin=%s: %s", vin, err)
+        return
+
+    # Mark alert as published so we don't re-publish on every subsequent event.
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE vin_thread_completeness_cache
+                SET alert_published = TRUE, alert_published_at = now()
+                WHERE vin = $1 AND alert_published = FALSE
+                """,
+                vin,
+            )
+    except asyncpg.PostgresError:
+        logger.exception("Failed to mark alert_published for vin=%s", vin)
+
+
+async def _publish_final_gate_complete(vin: str) -> None:
+    from app.kafka_producer import TOPIC_FINAL_GATE_COMPLETE, publish
+
+    payload = {
+        "vin": vin,
+        "status": "FINAL_GATE_COMPLETE",
+    }
+    try:
+        await publish(TOPIC_FINAL_GATE_COMPLETE, payload)
+    except (OSError, RuntimeError) as err:
+        logger.exception("Failed to publish final gate complete for vin=%s: %s", vin, err)
 
 
 def _jsonb_params(params: dict) -> str:

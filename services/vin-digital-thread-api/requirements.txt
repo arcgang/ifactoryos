@@ -3,6 +3,11 @@
 # scripts/refresh-templates.ts last verified. See that file.
 -c constraints.txt
 
+
+uvicorn[standard]
+asyncpg
+neo4j
+aiokafka
 fastapi>=0.115
 uvicorn>=0.30
 pydantic>=2.7

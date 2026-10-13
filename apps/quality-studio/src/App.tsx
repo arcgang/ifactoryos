@@ -7,10 +7,12 @@ import i18n, {
 import { useTranslatedAlert } from "./useTranslatedAlert";
 import { DefectDashboardPage, type DefectRow } from "./components/DefectDashboardPage";
 import { ProcessReplayPage } from "./components/ProcessReplayPage";
+import { DefectGenomePage } from "./components/DefectGenomePage";
 
 type Route =
   | { page: "dashboard" }
-  | { page: "replay"; vin: string };
+  | { page: "replay"; vin: string }
+  | { page: "defectGenome" };
 
 function LanguageSwitcher() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -121,6 +123,15 @@ function QualityStudioShell() {
           <li>
             <button
               type="button"
+              onClick={() => navigate({ page: "defectGenome" })}
+              aria-current={route.page === "defectGenome" ? "page" : undefined}
+            >
+              {t("defectGenome.breadcrumbParent")}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
               onClick={() =>
                 route.page === "replay"
                   ? undefined
@@ -161,6 +172,10 @@ function QualityStudioShell() {
           vin={route.vin}
           onBack={() => navigate({ page: "dashboard" })}
         />
+      )}
+
+      {route.page === "defectGenome" && (
+        <DefectGenomePage />
       )}
     </main>
   );

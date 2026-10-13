@@ -3,4 +3,13 @@
 # scripts/refresh-templates.ts last verified. See that file.
 -c constraints.txt
 
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+asyncpg
+httpx
+python-jose[cryptography]
+aiokafka
 pytest
+pytest-asyncio

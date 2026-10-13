@@ -1,4 +1,11 @@
 import type { ConstraintThreshold, ThresholdListResponse } from "../types/constraints";
+import type {
+  SequencePublishRequest,
+  SequencePublishResponse,
+  SyncJob,
+  SyncJobListResponse,
+  SyncJobStatus,
+} from "../types/sequence";
 import type { OptimizeRequest, OptimizeResponse } from "../types/optimizer";
 import type {
   AlertListResponse,
@@ -82,6 +89,48 @@ export function getConstraintStreamUrl(): string {
   return `${baseUrl}/constraints/stream`;
 }
 
+export async function publishSequence(
+  req: SequencePublishRequest,
+): Promise<SequencePublishResponse> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/json");
+
+  const res = await fetch(`${baseUrl}/sequence/publish`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(req),
+  });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    redirectToLogin();
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `Request failed with status ${res.status}`);
+  }
+  return res.json() as Promise<SequencePublishResponse>;
+}
+
+export async function getSyncJob(syncJobId: string): Promise<SyncJob> {
+  return request<SyncJob>(`/sequence/jobs/${encodeURIComponent(syncJobId)}`);
+}
+
+export async function listSyncJobs(params?: {
+  status?: SyncJobStatus;
+  cursor?: string;
+  limit?: number;
+}): Promise<SyncJobListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  const q = qs.toString();
+  return request<SyncJobListResponse>(`/sequence/jobs${q ? `?${q}` : ""}`);
+}
+
 export async function postOptimize(body: OptimizeRequest): Promise<OptimizeResponse> {
   return request<OptimizeResponse>("/optimize", {
     method: "POST",
@@ -110,7 +159,7 @@ export async function postResequence(body: ResequenceRequest): Promise<OptimizeR
   });
 }
 
-export async function publishSequence(body: PublishSequenceRequest): Promise<void> {
+export async function publishAlertSequence(body: PublishSequenceRequest): Promise<void> {
   return request<void>("/sequence/publish", {
     method: "POST",
     body: JSON.stringify(body),

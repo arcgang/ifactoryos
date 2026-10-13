@@ -134,6 +134,67 @@ class TestArSessionMigration:
         assert "COMMIT;" in self._SQL
 
 
+class TestShiftHandoverMigration:
+    _SQL = _read("20261012_005_shift_handover.sql")
+
+    def test_table_created_with_if_not_exists(self):
+        assert "CREATE TABLE IF NOT EXISTS shift_handover" in self._SQL
+
+    def test_all_required_columns_present(self):
+        for col in (
+            "id", "shift_id", "line_id", "shift_start_ts", "shift_end_ts",
+            "submitted_by_user_id", "alert_dispositions", "oee_delta_pct",
+            "held_vins", "notes", "idempotency_key", "created_at", "updated_at",
+        ):
+            assert col in self._SQL, f"Missing column: {col}"
+
+    def test_uuid_primary_key_with_default(self):
+        assert "UUID" in self._SQL
+        assert "gen_random_uuid()" in self._SQL
+
+    def test_timestamptz_columns(self):
+        assert "TIMESTAMPTZ" in self._SQL
+
+    def test_jsonb_alert_dispositions_column(self):
+        assert "JSONB" in self._SQL
+
+    def test_numeric_oee_delta_pct(self):
+        assert "NUMERIC(6,3)" in self._SQL
+
+    def test_text_array_held_vins(self):
+        assert "TEXT[]" in self._SQL
+
+    def test_idempotency_unique_constraint(self):
+        assert "uq_shift_handover_idempotency" in self._SQL
+        assert "UNIQUE (idempotency_key)" in self._SQL
+
+    def test_shift_line_unique_constraint(self):
+        assert "uq_shift_handover_shift_line" in self._SQL
+        assert "UNIQUE (shift_id, line_id)" in self._SQL
+
+    def test_all_required_indexes(self):
+        assert "idx_shift_handover_shift_id" in self._SQL
+        assert "idx_shift_handover_line_id" in self._SQL
+        assert "idx_shift_handover_submitted_by" in self._SQL
+        assert "idx_shift_handover_shift_end_ts" in self._SQL
+
+    def test_shift_end_ts_index_is_descending(self):
+        assert "shift_end_ts DESC" in self._SQL
+
+    def test_data_residency_classification_comment(self):
+        assert "data_residency=eu-germany-west-central" in self._SQL
+        assert "classification=internal" in self._SQL
+
+    def test_wrapped_in_transaction(self):
+        assert "BEGIN;" in self._SQL
+        assert "COMMIT;" in self._SQL
+
+    def test_migration_version_is_timestamp_not_integer(self):
+        filename = "20261012_005_shift_handover.sql"
+        assert filename[0].isdigit()
+        assert len(filename.split("_")[0]) == 8  # YYYYMMDD
+
+
 class TestTorqueLogMigration:
     _SQL = _read("20261012_004_torque_log.sql")
 

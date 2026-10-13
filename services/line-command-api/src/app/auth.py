@@ -66,6 +66,24 @@ def require_ar_role(
     return payload
 
 
+def require_shift_lead(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless the JWT carries ifos-shiftlead."""
+    roles: list[str] = payload.get("roles", []) or []
+    scopes: list[str] = payload.get("scp", "").split() if payload.get("scp") else []
+    all_grants = set(roles) | set(scopes)
+    if settings.shift_lead_role not in all_grants:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "FORBIDDEN",
+                f"Caller requires {settings.shift_lead_role}",
+            ),
+        )
+    return payload
+
+
 def caller_subject(payload: dict[str, Any]) -> str:
     """Extract the JWT subject (caller identity) for audit records."""
     return str(payload.get("sub") or payload.get("oid") or "unknown")

@@ -13,12 +13,31 @@ import type {
   ConstraintSnapshot,
 } from "../types/optimizer";
 import type { OverrideRecord } from "../types/overrides";
+import type { SequencePublishRequest, VinSequenceItem } from "../types/sequence";
+import { usePublishSequence } from "../hooks/usePublishSequence";
+import { PublishButton } from "./PublishButton";
+import { PublishConfirmationBanner } from "./PublishConfirmationBanner";
+import { PendingPublishBadge } from "./PendingPublishBadge";
 import { VinExplainPanel } from "./VinExplainPanel";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 45_000;
 const MONTE_CARLO_RUNS = 50;
 const JUSTIFICATION_MIN_LEN = 10;
+
+// Stub data representing a locked sequence — in production this would be fetched.
+const STUB_PLAN_ID = "SPL-2026-042-A";
+const STUB_LOCKED_AT = "2026-10-13T06:17:04Z";
+const STUB_PLANNER_USER_ID = "usr_kmueller_pp01";
+
+const STUB_VINS: VinSequenceItem[] = [
+  { vin: "WBY11CF050N123401", position: 1, optionCodes: ["P0A96", "ZMP"] },
+  { vin: "WBY11CF050N123402", position: 2, optionCodes: ["P0A96", "ZMQ"] },
+  { vin: "WBY11CF050N123403", position: 3, optionCodes: ["P0A96", "ZMR"] },
+  { vin: "WBY11CF050N123404", position: 4, optionCodes: ["P0B7N", "ZMQ"] },
+  { vin: "WBY11CF050N123405", position: 5, optionCodes: ["P0B7N", "ZMP"] },
+  { vin: "WBY11CF050N123406", position: 6, optionCodes: ["P0300", "ZMP"] },
+];
 
 type RunState =
   | { phase: "idle" }
@@ -451,6 +470,13 @@ export function SequenceBuilderPage() {
   const [overrideTarget, setOverrideTarget] = useState<SelectedVin | null>(null);
   const [overrides, setOverrides] = useState<OverrideRecord[]>([]);
 
+  const { publishState, publish, dismiss } = usePublishSequence(STUB_PLAN_ID);
+  const [showConfirmPanel, setShowConfirmPanel] = useState(false);
+
+  const isPublishing = publishState.phase === "publishing";
+  const isQueued = publishState.phase === "queued";
+  const isPublished = publishState.phase === "published";
+
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
       clearInterval(pollTimerRef.current);
@@ -565,17 +591,113 @@ export function SequenceBuilderPage() {
     setOverrideTarget(null);
   }, []);
 
+  function handlePublishClick() {
+    setShowConfirmPanel(true);
+  }
+
+  function handleConfirm() {
+    setShowConfirmPanel(false);
+    const req: SequencePublishRequest = {
+      sequencePlanId: STUB_PLAN_ID,
+      vinSequence: STUB_VINS,
+      source: "planning-cockpit",
+      lockedAt: STUB_LOCKED_AT,
+      plannerUserId: STUB_PLANNER_USER_ID,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    void publish(req);
+  }
+
+  function handlePublishCancel() {
+    setShowConfirmPanel(false);
+  }
+
   const isRunnable = runState.phase === "idle" || runState.phase === "done" || runState.phase === "error";
   const runId = runState.phase === "done" ? runState.result.runId : runState.phase === "running" ? runState.runId : "";
 
   return (
     <main className="main-content" id="sequence-builder">
+      <div aria-live="assertive" aria-atomic="true" className="sr-only">
+        {isPublished && t("publish.srPublished")}
+        {isQueued && t("publish.srQueued")}
+      </div>
+
       <div className="page-header">
         <div className="page-header-left">
           <h2>{t("nav.sequenceBuilder")}</h2>
           <p className="subtitle">{t("sequenceBuilder.subtitle")}</p>
         </div>
+        <div className="page-header-right">
+          {!isPublished && !isQueued && (
+            <PublishButton
+              disabled={isPublishing}
+              publishing={isPublishing}
+              onClick={handlePublishClick}
+            />
+          )}
+        </div>
       </div>
+
+      {isPublished && publishState.phase === "published" && (
+        <PublishConfirmationBanner
+          response={publishState.response}
+          onDismiss={dismiss}
+        />
+      )}
+
+      {isQueued && publishState.phase === "queued" && (
+        <PendingPublishBadge retryScheduledAt={publishState.retryScheduledAt} />
+      )}
+
+      {publishState.phase === "error" && (
+        <div
+          className="publish-error-banner"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        >
+          <h3 className="publish-error-banner__title">{t("publish.errorTitle")}</h3>
+          <p className="publish-error-banner__body">{publishState.message}</p>
+          {publishState.isRejected && (
+            <a
+              href="mailto:integration-lead@bmw.com"
+              className="publish-error-banner__action"
+            >
+              {t("publish.contactIntegrationLead")}
+            </a>
+          )}
+        </div>
+      )}
+
+      {showConfirmPanel && (
+        <section
+          className="card card--action"
+          aria-labelledby="confirm-publish-heading"
+        >
+          <h3 id="confirm-publish-heading" className="card__title card__title--blue">
+            {t("publish.confirmTitle")}
+          </h3>
+          <p className="publish-confirm__body">
+            {t("publish.confirmBody", { count: STUB_VINS.length })}
+          </p>
+          <div className="publish-confirm__actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handlePublishCancel}
+            >
+              {t("publish.cancel")}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleConfirm}
+            >
+              {t("publish.confirmPublish", { count: STUB_VINS.length })}
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Run control card */}
       <section className="seq-card" aria-label={t("sequenceBuilder.runCardLabel")}>

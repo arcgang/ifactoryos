@@ -1,0 +1,70 @@
+[package]
+name = "opcenter-sync-service"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "opcenter-sync-service"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP server
+axum = { version = "0.7", features = ["macros"] }
+
+# HTTP client (OpCenter REST polling fallback — explicit timeout per convention)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# GraphQL WebSocket subscription (native-tls for SPIFFE SVID mTLS)
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+
+# Kafka producer (librdkafka bindings with SASL/SCRAM + SSL)
+rdkafka = { version = "0.36", features = ["sasl", "ssl"] }
+
+# PostgreSQL (deadpool for connection pooling)
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4"] }
+deadpool-postgres = { version = "0.14", features = ["serde"] }
+native-tls = "0.2"
+
+# Serialisation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Domain types
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+
+# Configuration — reads env vars at startup, fails fast on missing vars
+config = "0.14"
+dotenvy = "0.15"
+
+# Metrics — private registry, Prometheus text format
+prometheus = "0.13"
+once_cell = "1"
+
+# Logging / tracing — structured JSON
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Base64 cursor encoding
+base64 = "0.22"
+
+# JWT validation (BMW Entra ID bearer tokens)
+jsonwebtoken = "9"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+rust_decimal = "1"
+anyhow = "1"
+base64 = "0.22"

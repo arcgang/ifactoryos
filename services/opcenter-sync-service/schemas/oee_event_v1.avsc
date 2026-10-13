@@ -1,0 +1,24 @@
+{
+  "type": "record",
+  "name": "OeeEvent",
+  "namespace": "bmw.munich.opcenter",
+  "doc": "OEE snapshot received from OpCenter GraphQL subscription. Published to bmw.munich.opcenter.oee.updated within 5s p95.",
+  "fields": [
+    { "name": "eventId",       "type": "string", "doc": "UUID v4 — unique per event" },
+    { "name": "eventType",     "type": "string", "doc": "Constant: opcenter.oee.updated" },
+    { "name": "lineId",        "type": "string", "doc": "Weld line identifier, e.g. WELD-LINE-1" },
+    { "name": "oeePercent",    "type": "double", "doc": "Overall OEE 0–100" },
+    { "name": "availability",  "type": "double", "doc": "Availability component 0–100" },
+    { "name": "performance",   "type": "double", "doc": "Performance component 0–100" },
+    { "name": "quality",       "type": "double", "doc": "Quality component 0–100" },
+    { "name": "measuredAt",    "type": "string", "doc": "ISO-8601 UTC — when OpCenter measured this" },
+    { "name": "receivedAt",    "type": "string", "doc": "ISO-8601 UTC — when this service received it" },
+    { "name": "correlationId", "type": "string", "doc": "UUID v4 for cross-service tracing" },
+    {
+      "name": "opcenterEventId",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Source event ID from OpCenter; null when polled via REST fallback"
+    }
+  ]
+}

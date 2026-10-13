@@ -1,10 +1,13 @@
 # OpenTelemetry Collector — Adoption Event Pipeline
 #
-# Receives OTLP gRPC from planning-cockpit (port 4317, TLS 1.3).
+# Receives:
+#   - OTLP gRPC from planning-cockpit (port 4317, TLS 1.3)
+#   - Kafka messages from line-command adoption topic (factory.munich.line-command.adoption.v1)
 # Routes to Azure Monitor Log Analytics workspace law-ifos-euwe-pr
 # via the azuremonitor exporter (adoptionevent table).
 #
-# Realises: US-019 · BR-12
+# Realises: US-019 · BR-12 (planning-cockpit)
+#           US-020 · BR-12 (line-command)
 # NFR-18: 13-month retention applied at LAW table level (see main.tf).
 
 receivers:
@@ -17,6 +20,27 @@ receivers:
           key_file:  /etc/otel/tls/tls.key
           min_version: "1.3"
           client_ca_file: /etc/otel/tls/ca.crt
+
+  # Kafka receiver — line-command AdoptionEvent messages on the UNS adoption topic.
+  # Consumer group line-command-adoption-consumer per US-020 spec.
+  # SASL/SCRAM-SHA-512 credentials injected via otel-collector-azmon-credentials secret.
+  kafka/line_command_adoption:
+    brokers:
+      - uns-kafka-bootstrap.confluent.svc.cluster.local:9092
+    topic: factory.munich.line-command.adoption.v1
+    group_id: line-command-adoption-consumer
+    auth:
+      sasl:
+        username: "${KAFKA_SASL_USERNAME}"
+        password: "${KAFKA_SASL_PASSWORD}"
+        mechanism: SCRAM-SHA-512
+      tls:
+        ca_file: /etc/otel/tls/ca.crt
+        cert_file: /etc/otel/tls/tls.crt
+        key_file: /etc/otel/tls/tls.key
+    encoding: json
+    # Retry on transient broker errors; do not discard messages.
+    initial_offset: latest
 
 processors:
   batch:
@@ -34,9 +58,19 @@ processors:
         action: delete
       - key: enduser.email
         action: delete
+      # Works Council §87 BetrVG: biometric and gaze fields must never reach LAW.
+      - key: biometric_data
+        action: delete
+      - key: gaze_vector
+        action: delete
+      - key: gaze_target
+        action: delete
+      - key: eye_tracking
+        action: delete
 
   # Add plant/region label for Azure Monitor resource routing.
-  resource/label:
+  # component is set downstream per pipeline branch (planning-cockpit or line-command).
+  resource/label_planning_cockpit:
     attributes:
       - key: deployment.environment
         value: production
@@ -47,16 +81,43 @@ processors:
       - key: plant
         value: munich
         action: upsert
+      - key: component
+        value: planning-cockpit
+        action: upsert
 
-  # Filter: only forward adoption session events, drop everything else
-  # so the pipeline doesn't mix operational traces with Gate 1 metrics.
-  filter/adoption_only:
+  resource/label_line_command:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: service.name
+        value: line-command
+        action: upsert
+      - key: plant
+        value: munich
+        action: upsert
+      - key: component
+        value: line-command
+        action: upsert
+
+  # Filter: planning-cockpit adoption events only.
+  filter/planning_cockpit_adoption:
     spans:
       include:
         match_type: regexp
         attributes:
           - key: actionType
             value: "login|session_start|session_end|optimizer_run|override_applied|publish_confirmed"
+
+  # Filter: line-command meaningful actions + login events.
+  # Passes all action types including LOGIN so that login-only sessions can be
+  # identified and excluded from WAU in the KQL layer (not dropped here).
+  filter/line_command_adoption:
+    logs:
+      include:
+        match_type: regexp
+        body:
+          value: ".*"  # pass all; KQL enforces meaningful-action vs login-only rule
 
 exporters:
   # Azure Monitor — Log Analytics workspace law-ifos-euwe-pr
@@ -73,11 +134,17 @@ exporters:
 
 service:
   pipelines:
-    traces:
+    # Planning-cockpit OTLP spans → AdoptionEvent_CL
+    traces/planning_cockpit:
       receivers:  [otlp]
-      processors: [batch, attributes/redact_pii, resource/label, filter/adoption_only]
+      processors: [batch, attributes/redact_pii, resource/label_planning_cockpit, filter/planning_cockpit_adoption]
+      exporters:  [azuremonitor]
+    # Line-command Kafka JSON logs → AdoptionEvent_CL
+    logs/line_command:
+      receivers:  [kafka/line_command_adoption]
+      processors: [batch, attributes/redact_pii, resource/label_line_command, filter/line_command_adoption]
       exporters:  [azuremonitor]
     metrics:
       receivers:  [otlp]
-      processors: [batch, resource/label]
+      processors: [batch, resource/label_planning_cockpit]
       exporters:  [prometheus]

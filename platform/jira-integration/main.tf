@@ -1,37 +1,9 @@
 # jira-integration — Jira REST API v3, OAuth 2.0
 # LLD component cmp:jira-integration. Provision and configure it here; nothing in this module is applied
 # until a pull request adds the provider resources and the plan is reviewed.
-
-variable "environment" {
-  type = string
-}
-
-variable "vault_addr" {
-  type        = string
-  description = "HashiCorp Vault address (e.g. https://vault.internal.ifos.example)"
-}
-
-variable "jira_base_url" {
-  type        = string
-  description = "Jira Cloud base URL (e.g. https://bmwgroup.atlassian.net)"
-}
-
-variable "jira_admin_token" {
-  type        = string
-  sensitive   = true
-  description = "Jira Admin API token used by Terraform to provision the project and custom fields. Read from Vault at apply time."
-}
-
-variable "jira_oauth2_client_id" {
-  type        = string
-  description = "OAuth 2.0 client_id for the defect-genome Jira OAuth app (created in Atlassian developer console)."
-}
-
-variable "jira_oauth2_client_secret" {
-  type        = string
-  sensitive   = true
-  description = "OAuth 2.0 client_secret for the defect-genome Jira OAuth app. Read from environment/Vault at apply time; never hardcoded."
-}
+#
+# Variables: see variables.tf
+# Outputs:   see outputs.tf
 
 # ---------------------------------------------------------------------------
 # Terraform provider configuration
@@ -178,41 +150,3 @@ resource "jira_custom_field_option" "prep_stage_screen" {
   project_key  = jira_project.ifos_quality.key
 }
 
-# ---------------------------------------------------------------------------
-# Outputs — consumed by downstream services and CI verification
-# ---------------------------------------------------------------------------
-
-output "vault_secret_path" {
-  value       = vault_kv_secret_v2.jira_quality_studio_client_secret.path
-  description = "Vault KV v2 path where the Jira OAuth2 client secret is stored. Consumed by defect-genome via Vault Agent Injector."
-}
-
-output "jira_project_key" {
-  value       = jira_project.ifos_quality.key
-  description = "Jira project key for IFOS-QUALITY. Used by defect-genome to create Corrective Action issues."
-}
-
-output "jira_issue_type_id" {
-  value       = jira_issue_type.corrective_action.id
-  description = "Jira issue type ID for 'Corrective Action'. Passed by defect-genome when creating issues via the Jira REST API."
-}
-
-output "custom_field_cluster_id" {
-  value       = jira_custom_field.defect_genome_cluster_id.id
-  description = "Jira custom field ID for 'DefectGenome Cluster ID'."
-}
-
-output "custom_field_root_cause_probability" {
-  value       = jira_custom_field.root_cause_probability.id
-  description = "Jira custom field ID for 'Root Cause Probability'."
-}
-
-output "custom_field_affected_vin_count" {
-  value       = jira_custom_field.affected_vin_count.id
-  description = "Jira custom field ID for 'Affected VIN Count'."
-}
-
-output "custom_field_prep_stage_adjustment" {
-  value       = jira_custom_field.recommended_prep_stage_adjustment.id
-  description = "Jira custom field ID for 'Recommended Prep Stage Adjustment'."
-}

@@ -126,6 +126,24 @@
     "success": "Wartungsauftrag erfolgreich gesendet.",
     "error": "Senden fehlgeschlagen. Bitte erneut versuchen."
   },
+  "station_detail": {
+    "title": "Stationsdetail",
+    "weld_trace_heading": "Schweißkurve — Letzte 60 Minuten",
+    "current_series_label": "Strom (A)",
+    "voltage_series_label": "Spannung (V)",
+    "threshold_crossing_label": "Schwellwert überschritten",
+    "minutes_to_failure_label": "Minuten bis zum prognostizierten Ausfall",
+    "recommended_action_label": "Empfohlene Maßnahme",
+    "dispatch_confirm_heading": "Wartungsbeauftragung bestätigen",
+    "dispatch_confirm_body": "Dies protokolliert einen Wartungseinsatz im unveränderlichen Audit-Trail. Fortfahren?",
+    "dispatch_confirm_yes": "Ja, beauftragen",
+    "dispatch_confirm_cancel": "Abbrechen",
+    "dispatch_success": "Wartungseinsatz protokolliert und Ereignis veröffentlicht.",
+    "dispatch_error": "Beauftragung fehlgeschlagen. Bitte erneut versuchen.",
+    "loading": "Stationsdetail wird geladen…",
+    "error": "Stationsdetail konnte nicht geladen werden.",
+    "no_alert_id": "Keine Meldung ausgewählt."
+  },
   "handover_builder": {
     "title": "Übergabe-Builder",
     "shift_label": "Schicht",

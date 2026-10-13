@@ -4,6 +4,7 @@ import { LanguageToggle } from "./components/LanguageToggle";
 import { ForbiddenScreen } from "./components/ForbiddenScreen";
 import { AccessRestrictedToast } from "./components/AccessRestrictedToast";
 import { ARWorkbenchPage } from "./components/ARWorkbenchPage";
+import { StationDetailPage } from "./components/StationDetailPage";
 import { CommandCenterPage } from "./components/CommandCenterPage";
 import { HandoverBuilderPage } from "./components/HandoverBuilderPage";
 import { PlantManagerHandoverTable } from "./components/PlantManagerHandoverTable";
@@ -247,9 +248,11 @@ export function App() {
           )}
 
           {currentRoute === "station-detail" && !isAssociate && (
-            <div className="placeholder-view">
-              <h2>{t("nav.station_detail")}</h2>
-            </div>
+            <StationDetailPage
+              alertId="550e8400-e29b-41d4-a716-446655440000"
+              userId={userId}
+              onForbidden={handleForbiddenFromApi}
+            />
           )}
 
           {currentRoute === "andon-log" && (

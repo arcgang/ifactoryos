@@ -192,6 +192,47 @@ pub struct HealthResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Gate result types (from this branch — gate result ingestion pipeline)
+// ---------------------------------------------------------------------------
+
+/// A single measurement within a gate result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GateMeasurement {
+    pub measurement_id: String,
+    pub name: String,
+    pub value: f64,
+    pub unit: String,
+    pub tolerance_low: f64,
+    pub tolerance_high: f64,
+    pub within_tolerance: bool,
+    pub rework_threshold_low: Option<f64>,
+    pub rework_threshold_high: Option<f64>,
+}
+
+/// Response body for a single gate result — matches the OpenAPI `GateResult` schema.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GateResult {
+    pub gate_result_id: Uuid,
+    pub vin: String,
+    pub gate_id: String,
+    pub gate_type: String,
+    pub result: String,
+    pub measurements: Vec<GateMeasurement>,
+    pub measured_at: DateTime<Utc>,
+    pub received_from_opcenter_at: DateTime<Utc>,
+    pub opcenter_event_id: Option<String>,
+}
+
+/// List response wrapper — matches the OpenAPI `GateResultListResponse` schema.
+#[derive(Debug, Serialize)]
+pub struct GateResultListResponse {
+    pub data: Vec<GateResult>,
+    pub page: CursorPage,
+}
+
+// ---------------------------------------------------------------------------
 // Sequence publish — request / response / domain types (US-004)
 // ---------------------------------------------------------------------------
 

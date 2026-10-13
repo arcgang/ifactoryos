@@ -85,10 +85,11 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except asyncio.CancelledError:
             pass
 
-    from app.db import close_pool
+    from app.db import close_pool, close_ts_pool
     from app.kafka_producer import stop_producer
 
     await close_pool()
+    await close_ts_pool()
     await stop_producer()
 
 
@@ -107,7 +108,6 @@ def create_app() -> FastAPI:
     app.include_router(andon_router)
     app.include_router(handover_router)
     app.include_router(expert_calls_router)
-    app.include_router(handover_router)
     app.include_router(torque_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])

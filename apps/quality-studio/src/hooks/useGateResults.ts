@@ -1,143 +1,148 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiRequest } from "../services/api";
-import type { GateResultListResponse, GateResultRecord, GateType } from "../types/gateResults";
-import { ALL_GATE_TYPES } from "../types/gateResults";
+import { listGateResults } from "../services/api";
+import type { GateResultRecord, GateType } from "../services/api";
 
-const POLL_INTERVAL_MS = 10_000;
-const DEFAULT_TIMEOUT_SECONDS = 600;
+export const ALL_GATE_TYPES: GateType[] = [
+  "dimensional",
+  "leak",
+  "electrical",
+  "nvh",
+  "adas",
+];
 
-export type GateResultsState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | {
-      status: "loaded";
-      byType: Partial<Record<GateType, GateResultRecord>>;
-      receivedCount: number;
-      isComplete: boolean;
-      timedOut: boolean;
-      timedOutTypes: GateType[];
-      elapsedSeconds: number;
-      timeoutSeconds: number;
-    };
+export const POLL_INTERVAL_MS = 5_000;
+export const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+export type GateCommandPhase =
+  | "loading"
+  | "partial"
+  | "populated"
+  | "timeout"
+  | "error";
+
+export interface GateResultsState {
+  phase: GateCommandPhase;
+  results: GateResultRecord[];
+  receivedGateTypes: Set<GateType>;
+  missingGateTypes: GateType[];
+  error: string | null;
+  elapsedMs: number;
+  reload: () => void;
+}
+
+function buildGateTypeMap(
+  results: GateResultRecord[],
+): Map<GateType, GateResultRecord> {
+  const map = new Map<GateType, GateResultRecord>();
+  for (const r of results) {
+    if (!map.has(r.gateType)) {
+      map.set(r.gateType, r);
+    }
+  }
+  return map;
+}
 
 export function useGateResults(vin: string): GateResultsState {
-  const [state, setState] = useState<GateResultsState>({ status: "loading" });
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef = useRef<number | null>(null);
-  const timeoutSecondsRef = useRef<number>(DEFAULT_TIMEOUT_SECONDS);
-  const timedOutRef = useRef(false);
+  const [results, setResults] = useState<GateResultRecord[]>([]);
+  const [phase, setPhase] = useState<GateCommandPhase>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
-  const clearTimers = useCallback(() => {
-    if (timerRef.current !== null) clearInterval(timerRef.current);
-    if (pollRef.current !== null) clearInterval(pollRef.current);
-    timerRef.current = null;
-    pollRef.current = null;
+  const startedAtRef = useRef<number>(Date.now());
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    if (elapsedRef.current !== null) {
+      clearInterval(elapsedRef.current);
+      elapsedRef.current = null;
+    }
   }, []);
 
-  const fetchResults = useCallback(async (isInitial: boolean) => {
+  const fetchResults = useCallback(async () => {
     try {
-      const response = await apiRequest<GateResultListResponse>(
-        `/api/v1/gate-results?vin=${encodeURIComponent(vin)}&limit=5`,
-      );
+      const resp = await listGateResults({ vin, limit: 200 });
+      if (!mountedRef.current) return;
 
-      const byType: Partial<Record<GateType, GateResultRecord>> = {};
-      for (const record of response.data) {
-        // Keep most-recently-received result per gate type
-        const existing = byType[record.gateType];
-        if (
-          !existing ||
-          record.receivedFromOpcenterAt > existing.receivedFromOpcenterAt
-        ) {
-          byType[record.gateType] = record;
-        }
-      }
+      const allResults = resp.data;
+      const byType = buildGateTypeMap(allResults);
+      const receivedTypes = new Set(byType.keys());
+      const missing = ALL_GATE_TYPES.filter((t) => !receivedTypes.has(t));
 
-      const receivedCount = Object.keys(byType).length;
-      const isComplete = receivedCount === ALL_GATE_TYPES.length;
+      setResults(allResults);
+      setError(null);
 
-      if (isInitial) {
-        if (!isComplete) {
-          startTimeRef.current = Date.now();
-        }
-      }
+      const elapsed = Date.now() - startedAtRef.current;
 
-      const elapsedSeconds =
-        startTimeRef.current !== null
-          ? Math.floor((Date.now() - startTimeRef.current) / 1000)
-          : 0;
-
-      const timedOut = timedOutRef.current;
-      const timedOutTypes = timedOut
-        ? ALL_GATE_TYPES.filter((gt) => !byType[gt])
-        : [];
-
-      setState({
-        status: "loaded",
-        byType,
-        receivedCount,
-        isComplete,
-        timedOut,
-        timedOutTypes,
-        elapsedSeconds,
-        timeoutSeconds: timeoutSecondsRef.current,
-      });
-
-      if (isComplete && pollRef.current !== null) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      if (missing.length === 0) {
+        setPhase("populated");
+        stopPolling();
+      } else if (elapsed >= TIMEOUT_MS) {
+        setPhase("timeout");
+        stopPolling();
+      } else {
+        setPhase("partial");
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Unknown error";
-      setState({ status: "error", message });
+      if (!mountedRef.current) return;
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setPhase("error");
+      stopPolling();
     }
-  }, [vin]);
+  }, [vin, stopPolling]);
 
-  useEffect(() => {
-    setState({ status: "loading" });
-    startTimeRef.current = null;
-    timedOutRef.current = false;
+  const startPolling = useCallback(() => {
+    stopPolling();
+    startedAtRef.current = Date.now();
+    setElapsedMs(0);
+    setPhase("loading");
+    setError(null);
 
-    void fetchResults(true);
+    void fetchResults();
 
     pollRef.current = setInterval(() => {
-      void fetchResults(false);
+      const elapsed = Date.now() - startedAtRef.current;
+      if (elapsed >= TIMEOUT_MS) {
+        setPhase("timeout");
+        stopPolling();
+        return;
+      }
+      void fetchResults();
     }, POLL_INTERVAL_MS);
 
-    // Countdown timer — updates elapsed every second
-    timerRef.current = setInterval(() => {
-      if (startTimeRef.current === null || timedOutRef.current) return;
+    elapsedRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - startedAtRef.current);
+    }, 1_000);
+  }, [fetchResults, stopPolling]);
 
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+  useEffect(() => {
+    mountedRef.current = true;
+    startPolling();
+    return () => {
+      mountedRef.current = false;
+      stopPolling();
+    };
+  }, [startPolling, stopPolling]);
 
-      if (elapsed >= timeoutSecondsRef.current) {
-        timedOutRef.current = true;
-        // Stop polling on timeout
-        if (pollRef.current !== null) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-        // Force a state update to show timeout alert
-        setState((prev) => {
-          if (prev.status !== "loaded") return prev;
-          return {
-            ...prev,
-            timedOut: true,
-            timedOutTypes: ALL_GATE_TYPES.filter((gt) => !prev.byType[gt]),
-            elapsedSeconds: elapsed,
-          };
-        });
-      } else {
-        setState((prev) => {
-          if (prev.status !== "loaded") return prev;
-          return { ...prev, elapsedSeconds: elapsed };
-        });
-      }
-    }, 1000);
+  const receivedGateTypes = new Set(
+    results.map((r) => r.gateType as GateType),
+  );
+  const missingGateTypes = ALL_GATE_TYPES.filter(
+    (t) => !receivedGateTypes.has(t),
+  );
 
-    return clearTimers;
-  }, [vin, fetchResults, clearTimers]);
-
-  return state;
+  return {
+    phase,
+    results,
+    receivedGateTypes,
+    missingGateTypes,
+    error,
+    elapsedMs,
+    reload: startPolling,
+  };
 }

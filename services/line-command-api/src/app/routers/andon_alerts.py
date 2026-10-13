@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse
 
+from app.andon_service import AlreadyAcknowledgedError, acknowledge_alert, fetch_alert, fetch_weld_trace
+from app.audit import AuditStore, AuditWriterProtocol, fire_audit_write, sha256_hex
 from app.auth import caller_subject, require_bearer, require_shift_lead
+from app.config import settings
 from app.cursor import decode_cursor, encode_cursor
-from app.db import get_pool
-from app.kafka_producer import TOPIC_ADOPTION_EVENT, publish
+from app.db import get_pool, get_ts_pool
+from app.kafka_producer import TOPIC_ADOPTION_EVENT, TOPIC_MAINTENANCE_DISPATCH, publish
 from app.models import (
     AlertAcknowledgeRequest,
     AlertAcknowledgeResponse,
@@ -22,14 +26,22 @@ from app.models import (
     AndonAlertListResponse,
     CursorPage,
     ErrorResponse,
+    WeldTrace,
+    WeldTracePoint,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Andon Alerts"])
 
+_process_audit_writer: AuditWriterProtocol = AuditStore()
+
 _VALID_ALERT_STATUSES = {"open", "acknowledged", "resolved", "false_positive"}
 _VALID_LC_STATUSES = {"open", "resolved", "escalated", "monitoring"}
+
+
+def get_audit_writer() -> AuditWriterProtocol:
+    return _process_audit_writer
 
 
 def _error(code: str, message: str) -> dict[str, Any]:
@@ -53,6 +65,11 @@ def _row_to_alert(row: Any) -> AndonAlert:
         resolvedAt=resolved_at.astimezone(timezone.utc).isoformat() if resolved_at else None,
         acknowledgedAt=acknowledged_at.astimezone(timezone.utc).isoformat() if acknowledged_at else None,
         opcenterEventId=row["opcenter_event_id"],
+        # list endpoint does not include weld trace; these are populated by get_andon_alert
+        receivedAt=detected_at.astimezone(timezone.utc).isoformat(),
+        correlationId=row.get("correlation_id") or uuid.uuid4(),
+        weldTrace=WeldTrace(weld_current_a=[], weld_voltage_v=[]),
+        thresholdCrossingAt=detected_at.astimezone(timezone.utc).isoformat(),
     )
 
 
@@ -110,7 +127,7 @@ async def _query_alerts(
             alert_id, opcenter_event_id, station_id, line_id, alert_type,
             predicted_failure_type, minutes_to_predicted_failure,
             recommended_action, status, detected_at, acknowledged_at,
-            resolved_at
+            resolved_at, correlation_id
         FROM andon_alert
         {where_clause}
         ORDER BY minutes_to_predicted_failure ASC NULLS LAST, detected_at DESC, alert_id DESC
@@ -195,45 +212,56 @@ async def list_andon_alerts(
     },
 )
 async def get_andon_alert(
-    alertId: UUID = Path(...),
-    _jwt: dict[str, Any] = Depends(require_bearer),
+    alertId: str,
+    jwt_payload: dict[str, Any] = Depends(require_bearer),
     pool: Any = Depends(get_pool),
+    ts_pool: Any = Depends(get_ts_pool),
 ) -> JSONResponse:
-    try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    alert_id, opcenter_event_id, station_id, line_id, alert_type,
-                    predicted_failure_type, minutes_to_predicted_failure,
-                    recommended_action, status, detected_at, acknowledged_at,
-                    resolved_at
-                FROM andon_alert
-                WHERE alert_id = $1
-                """,
-                alertId,
-            )
-    except Exception as exc:
-        logger.exception("Failed to fetch andon_alert %s: %s", alertId, exc)
-        return JSONResponse(
-            status_code=500,
-            content=_error("QUERY_FAILED", "Failed to fetch Andon alert"),
-        )
+    async with pool.acquire() as conn:
+        row = await fetch_alert(conn, alertId)
 
     if row is None:
-        return JSONResponse(
-            status_code=404,
-            content=_error("ALERT_NOT_FOUND", f"Andon alert {alertId} not found"),
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_error("ALERT_NOT_FOUND", f"Andon alert {alertId!r} not found"),
         )
 
-    alert = _row_to_alert(row)
-    return JSONResponse(status_code=200, content=alert.model_dump(mode="json"))
+    async with ts_pool.acquire() as ts_conn:
+        raw_trace = await fetch_weld_trace(ts_conn, row["station_id"])
+
+    weld_trace = WeldTrace(
+        weld_current_a=[WeldTracePoint(**p) for p in raw_trace["weld_current_a"]],
+        weld_voltage_v=[WeldTracePoint(**p) for p in raw_trace["weld_voltage_v"]],
+    )
+
+    alert = AndonAlert(
+        alertId=row["alert_id"],
+        opcenterEventId=row["opcenter_event_id"],
+        stationId=row["station_id"],
+        lineId=row["line_id"],
+        alertType=row["alert_type"],
+        predictedFailureType=row["predicted_failure_type"],
+        minutesToPredictedFailure=row["minutes_to_predicted_failure"],
+        recommendedAction=row["recommended_action"],
+        status=row["status"],
+        detectedAt=row["detected_at"],
+        receivedAt=row["received_at"],
+        acknowledgedAt=row["acknowledged_at"],
+        resolvedAt=row["resolved_at"],
+        correlationId=row["correlation_id"],
+        weldTrace=weld_trace,
+        thresholdCrossingAt=row["detected_at"],
+    )
+    return JSONResponse(
+        status_code=200,
+        content=json.loads(alert.model_dump_json()),
+    )
 
 
 @router.post(
     "/andon/alerts/{alertId}/acknowledge",
     operation_id="acknowledgeAndonAlert",
-    summary="Acknowledge a predictive Andon alert and record disposition",
+    summary="Acknowledge an Andon alert (shift-lead only)",
     responses={
         200: {"model": AlertAcknowledgeResponse},
         400: {"model": ErrorResponse},
@@ -241,89 +269,107 @@ async def get_andon_alert(
         403: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
     },
 )
 async def acknowledge_andon_alert(
-    alertId: UUID = Path(...),
-    body: AlertAcknowledgeRequest = ...,
+    alertId: str,
+    body: AlertAcknowledgeRequest,
     jwt_payload: dict[str, Any] = Depends(require_shift_lead),
     pool: Any = Depends(get_pool),
+    audit_writer: AuditWriterProtocol = Depends(get_audit_writer),
 ) -> JSONResponse:
-    now = datetime.now(timezone.utc)
-    caller = caller_subject(jwt_payload)
+    user_id = caller_subject(jwt_payload)
 
-    early_response: JSONResponse | None = None
-    try:
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                row = await conn.fetchrow(
-                    """
-                    SELECT alert_id, status
-                    FROM andon_alert
-                    WHERE alert_id = $1
-                    FOR UPDATE
-                    """,
-                    alertId,
-                )
+    # Fetch alert to confirm existence and capture station_id + pre-state
+    async with pool.acquire() as conn:
+        row = await fetch_alert(conn, alertId)
 
-                if row is None:
-                    early_response = JSONResponse(
-                        status_code=404,
-                        content=_error("ALERT_NOT_FOUND", f"Andon alert {alertId} not found"),
-                    )
-                else:
-                    current_status: str = row["status"]
-                    terminal_statuses = {"acknowledged", "resolved", "false_positive"}
-                    if current_status in terminal_statuses:
-                        early_response = JSONResponse(
-                            status_code=409,
-                            content=_error(
-                                "ALERT_ALREADY_ACKNOWLEDGED",
-                                f"Alert is already in terminal state: {current_status}",
-                            ),
-                        )
-                    else:
-                        await conn.execute(
-                            """
-                            UPDATE andon_alert
-                            SET status = 'acknowledged', acknowledged_at = $1, updated_at = $1
-                            WHERE alert_id = $2
-                            """,
-                            now,
-                            alertId,
-                        )
-    except Exception as exc:
-        logger.exception("Failed to acknowledge andon_alert %s: %s", alertId, exc)
-        return JSONResponse(
-            status_code=500,
-            content=_error("UPDATE_FAILED", "Failed to acknowledge Andon alert"),
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_error("ALERT_NOT_FOUND", f"Andon alert {alertId!r} not found"),
         )
 
-    if early_response is not None:
-        return early_response
+    pre_state = json.dumps(
+        {"alert_id": alertId, "status": row["status"]}, sort_keys=True
+    )
 
-    event_id = uuid.uuid4()
-    adoption_payload = {
-        "eventId": str(event_id),
-        "eventType": "ALERT_ACKNOWLEDGED",
-        "alertId": str(alertId),
-        "disposition": body.disposition.value,
-        "note": body.note,
-        "acknowledgedBy": caller,
-        "occurredAt": now.isoformat(),
+    async with pool.acquire() as conn:
+        try:
+            acknowledged_at = await acknowledge_alert(conn, alertId)
+        except AlreadyAcknowledgedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_error(
+                    "ALREADY_ACKNOWLEDGED",
+                    "Alert is already in a terminal state",
+                ),
+            ) from exc
+
+    post_state = json.dumps(
+        {"alert_id": alertId, "status": "acknowledged"}, sort_keys=True
+    )
+
+    # Fire immutable audit write within 1 second
+    fire_audit_write(
+        writer=audit_writer,
+        user_id=user_id,
+        action_type="MAINTENANCE_DISPATCH",
+        entity_id=alertId,
+        before_hash=sha256_hex(pre_state),
+        after_hash=sha256_hex(post_state),
+    )
+
+    event_id = str(uuid.uuid4())
+    now_iso = acknowledged_at.isoformat()
+
+    # Publish MaintenanceDispatchEvent
+    dispatch_payload = {
+        "eventId": event_id,
+        "eventType": "maintenance_dispatch",
+        "userId": user_id,
+        "stationId": row["station_id"],
+        "alertId": alertId,
+        "lineId": row["line_id"],
+        "timestamp": now_iso,
+        "disposition": body.disposition,
+        "source": "line-command",
     }
+    # Publish AdoptionEvent — sessionId is the JWT token ID (jti claim) per design decision
+    session_id = str(jwt_payload.get("jti") or uuid.uuid4())
+    adoption_payload = {
+        "eventId": event_id,
+        "eventType": "maintenance_dispatch",
+        "actionType": "maintenance_dispatch",
+        "userId": user_id,
+        "sessionId": session_id,
+        "stationId": row["station_id"],
+        "alertId": alertId,
+        "lineId": row["line_id"],
+        "timestamp": now_iso,
+        "source": "line-command",
+    }
+
     try:
+        await publish(TOPIC_MAINTENANCE_DISPATCH, dispatch_payload)
         await publish(TOPIC_ADOPTION_EVENT, adoption_payload)
     except Exception as kafka_exc:
-        logger.warning("Kafka publish failed for ALERT_ACKNOWLEDGED alertId=%s: %s", alertId, kafka_exc)
+        logger.warning(
+            "Kafka publish failed for alertId=%s corr=%s: %s",
+            alertId, event_id, kafka_exc,
+        )
 
     response = AlertAcknowledgeResponse(
-        alertId=alertId,
+        alertId=row["alert_id"],
         status="acknowledged",
-        acknowledgedAt=now.isoformat(),
-        eventId=event_id,
+        acknowledgedAt=acknowledged_at,
+        eventId=uuid.UUID(event_id),
     )
-    return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+    return JSONResponse(
+        status_code=200,
+        content=json.loads(response.model_dump_json()),
+    )
 
 
 @router.get(
@@ -353,9 +399,6 @@ async def list_line_command_andon_alerts(
         )
 
     # Map line-command status values back to andon_alert DB values where they differ.
-    # line-command uses 'escalated'/'monitoring' but DB only stores 'acknowledged'.
-    # For the alias endpoint we pass status through as-is; if status is one of the
-    # line-command-specific values (escalated/monitoring) we translate to the DB column.
     db_status = status
     if status in ("escalated", "monitoring"):
         db_status = "acknowledged"
@@ -387,5 +430,3 @@ async def list_line_command_andon_alerts(
         page=CursorPage(next_cursor=next_cursor, limit=limit),
     )
     return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
-
-

@@ -126,6 +126,24 @@
     "success": "Maintenance order submitted successfully.",
     "error": "Submission failed. Please try again."
   },
+  "station_detail": {
+    "title": "Station Detail",
+    "weld_trace_heading": "Weld Trace — Last 60 Minutes",
+    "current_series_label": "Current (A)",
+    "voltage_series_label": "Voltage (V)",
+    "threshold_crossing_label": "Threshold crossed",
+    "minutes_to_failure_label": "Minutes to predicted failure",
+    "recommended_action_label": "Recommended Action",
+    "dispatch_confirm_heading": "Confirm Maintenance Dispatch",
+    "dispatch_confirm_body": "This will log a maintenance dispatch event in the immutable audit trail. Proceed?",
+    "dispatch_confirm_yes": "Yes, Dispatch",
+    "dispatch_confirm_cancel": "Cancel",
+    "dispatch_success": "Maintenance dispatch logged and event published.",
+    "dispatch_error": "Dispatch failed. Please try again.",
+    "loading": "Loading station detail…",
+    "error": "Failed to load station detail.",
+    "no_alert_id": "No alert selected."
+  },
   "handover_builder": {
     "title": "Handover Builder",
     "shift_label": "Shift",

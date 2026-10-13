@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -80,8 +80,22 @@ class OeeSnapshotListResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Andon Alerts
+# Andon alert models
 # ---------------------------------------------------------------------------
+
+class WeldTracePoint(BaseModel):
+    timestamp: datetime
+    value: float
+
+
+class WeldTrace(BaseModel):
+    weld_current_a: list[WeldTracePoint]
+    weld_voltage_v: list[WeldTracePoint]
+
+
+AlertStatusEnum = Literal["open", "acknowledged", "resolved", "false_positive"]
+AlertTypeEnum = Literal["predictive", "reactive"]
+
 
 class AndonAlertStatus(str, Enum):
     open = "open"
@@ -97,17 +111,22 @@ class AndonAlertType(str, Enum):
 
 class AndonAlert(BaseModel):
     alertId: UUID
+    opcenterEventId: str | None = None
     stationId: str
     lineId: str
-    alertType: str
+    alertType: AlertTypeEnum
     predictedFailureType: str
-    minutesToPredictedFailure: int | None
+    minutesToPredictedFailure: int | None = None
     recommendedAction: str
-    status: str
-    detectedAt: str
-    resolvedAt: str | None = None
-    acknowledgedAt: str | None = None
-    opcenterEventId: str | None = None
+    status: AlertStatusEnum
+    detectedAt: datetime
+    receivedAt: datetime
+    acknowledgedAt: datetime | None = None
+    resolvedAt: datetime | None = None
+    correlationId: UUID
+    weldTrace: WeldTrace
+    thresholdCrossingAt: datetime
+    thresholdValue: float | None = None
 
 
 class AndonAlertListResponse(BaseModel):
@@ -128,8 +147,8 @@ class AlertAcknowledgeRequest(BaseModel):
 
 class AlertAcknowledgeResponse(BaseModel):
     alertId: UUID
-    status: str
-    acknowledgedAt: str
+    status: AlertStatusEnum
+    acknowledgedAt: datetime
     eventId: UUID
 
 

@@ -5,6 +5,7 @@ import i18n, {
   type SupportedLanguage,
 } from "./i18n";
 import { useTranslatedAlert } from "./useTranslatedAlert";
+import { GateCommandPage } from "./components/GateCommandPage";
 import { DefectDashboardPage, type DefectRow } from "./components/DefectDashboardPage";
 import { ProcessReplayPage } from "./components/ProcessReplayPage";
 import { ClusterAlertPanel } from "./components/ClusterAlertPanel";
@@ -14,12 +15,13 @@ import { DefectGenomePage } from "./components/DefectGenomePage";
 type Route =
   | { page: "dashboard" }
   | { page: "replay"; vin: string }
-  | { page: "alertDetail"; alertId: string };
+  | { page: "alertDetail"; alertId: string }
+  | { page: "gateCommand" }
+  | { page: "defectGenome" };
 
 // Mock OIDC context — in production this comes from the BMW Entra ID provider
 const MOCK_USER_ID = "kb-entra-001";
 const MOCK_USER_GROUPS = ["GRP-IFOS-PAINTENGINEER-MUC"];
-  | { page: "defectGenome" };
 
 function LanguageSwitcher() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -111,6 +113,24 @@ function QualityStudioShell() {
     setRoute(next);
   }
 
+  if (route.page === "gateCommand") {
+    return (
+      <main>
+        <h1>{t("app.title")}</h1>
+        <button
+          type="button"
+          onClick={() => navigate({ page: "dashboard" })}
+          data-testid="back-to-shell"
+        >
+          ← {t("nav.gateCommand")}
+        </button>
+        <Suspense fallback={<p>{t("gateCommand.loading")}</p>}>
+          <GateCommandPage vin="WBY73CF080NCH14427" />
+        </Suspense>
+      </main>
+    );
+  }
+
   return (
     <main>
       <h1>{t("app.title")}</h1>
@@ -149,7 +169,16 @@ function QualityStudioShell() {
               {t("nav.processReplay")}
             </button>
           </li>
-          <li>{t("nav.gateCommand")}</li>
+          <li>
+            <button
+              type="button"
+              onClick={() => navigate({ page: "gateCommand" })}
+              data-testid="nav-gate-command"
+              aria-current={route.page === "gateCommand" ? "page" : undefined}
+            >
+              {t("nav.gateCommand")}
+            </button>
+          </li>
           <li>{t("nav.certificateStudio")}</li>
         </ul>
       </nav>

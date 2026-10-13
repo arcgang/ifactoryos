@@ -116,24 +116,29 @@ paths:
         - Andon Alerts
       summary: Get a specific Andon alert by ID
       operationId: getAndonAlert
+      description: >
+        Returns the Andon alert detail including weld current/voltage traces for
+        the 60-minute window ending now, and threshold crossing metadata so the
+        frontend can render the crossing highlight on the trace.
       security:
         - BearerAuth: []
       parameters:
         - in: path
           name: alertId
           required: true
+          description: UUID of the Andon alert
           schema:
             type: string
             format: uuid
       responses:
         "200":
-          description: Andon alert detail
+          description: Andon alert detail with weld trace
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AndonAlert"
         "401":
-          description: Unauthorised
+          description: Missing or invalid bearer token
           content:
             application/json:
               schema:
@@ -154,14 +159,19 @@ paths:
     post:
       tags:
         - Andon Alerts
-      summary: Acknowledge a predictive Andon alert and record disposition
+      summary: Acknowledge an Andon alert (shift-lead only)
       operationId: acknowledgeAndonAlert
+      description: >
+        Transitions the alert status from open to acknowledged, fires an
+        immutable audit write, and publishes MaintenanceDispatchEvent and
+        AdoptionEvent to Kafka. Requires shift-lead role.
       security:
         - BearerAuth: []
       parameters:
         - in: path
           name: alertId
           required: true
+          description: UUID of the Andon alert
           schema:
             type: string
             format: uuid
@@ -185,13 +195,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: Unauthorised
+          description: Missing or invalid bearer token
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller does not have shift-lead role
+          description: Caller does not have the shift-lead role
           content:
             application/json:
               schema:
@@ -203,7 +213,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Alert already acknowledged
+          description: Alert is already in a terminal state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -304,12 +320,6 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Unauthorised
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Internal server error
           content:
             application/json:
               schema:
@@ -741,6 +751,34 @@ components:
             $ref: "#/components/schemas/OeeSnapshot"
         page:
           $ref: "#/components/schemas/CursorPage"
+    WeldTracePoint:
+      type: object
+      required:
+        - timestamp
+        - value
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+          format: double
+    WeldTrace:
+      type: object
+      required:
+        - weld_current_a
+        - weld_voltage_v
+      properties:
+        weld_current_a:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeldTracePoint"
+          description: Weld current trace (amperes) over the last 60 minutes
+        weld_voltage_v:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeldTracePoint"
+          description: Weld voltage trace (volts) over the last 60 minutes
     AndonAlert:
       type: object
       required:
@@ -749,14 +787,20 @@ components:
         - lineId
         - alertType
         - predictedFailureType
-        - minutesToPredictedFailure
         - recommendedAction
         - status
         - detectedAt
+        - receivedAt
+        - correlationId
+        - weldTrace
+        - thresholdCrossingAt
       properties:
         alertId:
           type: string
           format: uuid
+        opcenterEventId:
+          type: string
+          nullable: true
         stationId:
           type: string
         lineId:
@@ -769,9 +813,8 @@ components:
         predictedFailureType:
           type: string
         minutesToPredictedFailure:
-          type:
-            - integer
-            - "null"
+          type: integer
+          nullable: true
         recommendedAction:
           type: string
         status:
@@ -784,20 +827,30 @@ components:
         detectedAt:
           type: string
           format: date-time
-        resolvedAt:
-          type:
-            - string
-            - "null"
+        receivedAt:
+          type: string
           format: date-time
         acknowledgedAt:
-          type:
-            - string
-            - "null"
+          type: string
           format: date-time
-        opcenterEventId:
-          type:
-            - string
-            - "null"
+          nullable: true
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        correlationId:
+          type: string
+          format: uuid
+        weldTrace:
+          $ref: "#/components/schemas/WeldTrace"
+        thresholdCrossingAt:
+          type: string
+          format: date-time
+          description: Timestamp at which the alert threshold was crossed
+        thresholdValue:
+          type: number
+          format: double
+          nullable: true
     AndonAlertListResponse:
       type: object
       required:
@@ -824,6 +877,7 @@ components:
         note:
           type: string
           maxLength: 1000
+          nullable: true
     AlertAcknowledgeResponse:
       type: object
       required:
@@ -837,6 +891,11 @@ components:
           format: uuid
         status:
           type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+            - false_positive
         acknowledgedAt:
           type: string
           format: date-time

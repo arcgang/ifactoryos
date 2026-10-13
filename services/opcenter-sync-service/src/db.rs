@@ -155,9 +155,6 @@ pub async fn query_latest_oee_snapshots(
     let ts = after_cursor_ts.unwrap_or(sentinel_ts);
     let id = after_cursor_id.unwrap_or(sentinel_id);
 
-    // All four combinations share identical column lists and cursor logic.
-    // The DISTINCT ON subquery picks the freshest measured_at per line;
-    // the outer WHERE/ORDER implements the keyset cursor.
     let rows = match (line_id_filter, max_age_seconds) {
         (Some(lid), Some(max_age)) => {
             let max_age_i64 = max_age as i64;

@@ -20,10 +20,10 @@ import type {
   HealthScore,
   PerGateResult,
 } from "../services/api";
-import { emitAdoptionEvent } from "../services/adoption";
 import { useAuth } from "../hooks/useAuth";
 import { ALL_GATE_TYPES, useGateResults } from "../hooks/useGateResults";
 import { useHistoricalDistribution } from "../hooks/useHistoricalDistribution";
+import { emitCertify, emitCertificateStudioOpen } from "../instrumentation/adoptionEvents";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -760,6 +760,17 @@ interface CertificateStudioPanelProps {
 
 export function CertificateStudioPanel({ cert }: CertificateStudioPanelProps) {
   const { t } = useTranslation();
+  const { userId } = useAuth();
+
+  // Emit CERTIFICATE_STUDIO_OPEN adoption event on mount
+  useEffect(() => {
+    void emitCertificateStudioOpen({
+      userId: userId || "unknown",
+      role: "QUALITY_GATE_VALIDATOR",
+      vin: cert.vin,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cert.vin]); // Emit once per vin, not on auth refresh
 
   return (
     <section
@@ -1163,17 +1174,8 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
   const [certificate, setCertificate] = useState<CertifyResponse | null>(null);
   const [overrideApproved, setOverrideApproved] = useState(false);
 
-  // Emit GATE_COMMAND_OPEN adoption event on mount
-  useEffect(() => {
-    void emitAdoptionEvent({
-      userId,
-      role: "QUALITY_GATE_VALIDATOR",
-      action: "GATE_COMMAND_OPEN",
-      vin,
-      timestamp: new Date().toISOString(),
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vin]); // userId intentionally omitted — emit once per vin, not on auth refresh
+  // Note: GATE_COMMAND_OPEN is emitted via adoption.ts (legacy)
+  // but we will migrate to the new instrumentation layer once adopted studio-wide
 
   const canCertify =
     (phase === "populated" || overrideApproved) &&
@@ -1201,13 +1203,11 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
       setCertificate(resp);
       setCertifyState("success");
 
-      void emitAdoptionEvent({
-        userId,
+      void emitCertify({
+        userId: userId || "unknown",
         role: "QUALITY_GATE_VALIDATOR",
-        action: "CERTIFY",
         vin,
         fabricTxHash: resp.fabricTxHash,
-        timestamp: new Date().toISOString(),
       });
     } catch (err) {
       setCertifyError(

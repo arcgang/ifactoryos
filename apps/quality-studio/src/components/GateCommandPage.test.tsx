@@ -13,6 +13,7 @@ import i18n from "../i18n";
 import { GateCommandPage, GateCompletenessCard, CertificateStudioPanel } from "./GateCommandPage";
 import * as api from "../services/api";
 import * as adoption from "../services/adoption";
+import * as adoptionEvents from "../instrumentation/adoptionEvents";
 import type { GateResultRecord, GateResultListResponse } from "../services/api";
 import type { GateResultListResponse as GateResultListResponseType } from "../types/gateResults";
 
@@ -956,5 +957,86 @@ describe("GateCompletenessCard — Manual Override modal", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Gate Command — instrumentation adoption events", () => {
+  it("emits CERTIFY event with fabricTxHash on successful certify", async () => {
+    vi.spyOn(api, "listGateResults").mockResolvedValue(
+      makeListResponse([
+        makeGateResult({
+          gateType: "dimensional",
+          result: "pass",
+        }),
+      ]),
+    );
+    vi.spyOn(api, "certifyVehicle").mockResolvedValue({
+      certificateId: "cert-123",
+      fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
+      vin: "WBY73CF080NCH14427",
+      issuedAt: "2026-10-13T09:31:16.000Z",
+      validatorId: "kb-entra-001",
+      healthScore: { overall: "pass", perGate: {} },
+      gateResultsSnapshot: [],
+    });
+    const emitSpy = vi.spyOn(adoptionEvents, "emitCertify").mockResolvedValue(undefined);
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("certify-button")).toBeTruthy(),
+    );
+
+    fireEvent.click(screen.getByTestId("certify-button"));
+
+    await waitFor(() =>
+      expect(emitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "CERTIFY",
+          role: "QUALITY_GATE_VALIDATOR",
+          vin: "WBY73CF080NCH14427",
+          fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
+        }),
+      ),
+    );
+  });
+
+  it("emits CERTIFICATE_STUDIO_OPEN event when certificate panel is rendered", async () => {
+    vi.spyOn(api, "listGateResults").mockResolvedValue(
+      makeListResponse([
+        makeGateResult({
+          gateType: "dimensional",
+          result: "pass",
+        }),
+      ]),
+    );
+    vi.spyOn(api, "certifyVehicle").mockResolvedValue({
+      certificateId: "cert-123",
+      fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
+      vin: "WBY73CF080NCH14427",
+      issuedAt: "2026-10-13T09:31:16.000Z",
+      validatorId: "kb-entra-001",
+      healthScore: { overall: "pass", perGate: {} },
+      gateResultsSnapshot: [],
+    });
+    const emitSpy = vi.spyOn(adoptionEvents, "emitCertificateStudioOpen").mockResolvedValue(undefined);
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("certify-button")).toBeTruthy(),
+    );
+
+    fireEvent.click(screen.getByTestId("certify-button"));
+
+    await waitFor(() =>
+      expect(emitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "CERTIFICATE_STUDIO_OPEN",
+          role: "QUALITY_GATE_VALIDATOR",
+          vin: "WBY73CF080NCH14427",
+        }),
+      ),
+    );
   });
 });

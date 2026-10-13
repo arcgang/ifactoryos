@@ -37,6 +37,16 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Fail fast if Neo4j is outside the EU allowlist.
     assert_eu_residency(cfg.neo4j_uri, cfg.neo4j_eu_host_allowlist)
 
+    # Fail fast if required graph constraints/indexes are absent.
+    from neo4j import AsyncGraphDatabase
+
+    from app.neo4j_schema import validate_neo4j_schema
+
+    async with AsyncGraphDatabase.driver(
+        cfg.neo4j_uri, auth=(cfg.neo4j_user, cfg.neo4j_password)
+    ) as _schema_driver:
+        await validate_neo4j_schema(_schema_driver)
+
     from app.torque_consumer import start_torque_consumer
 
     await start_torque_consumer()

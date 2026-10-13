@@ -745,7 +745,11 @@ resource "kubectl_manifest" "otel_collector_config" {
 # injector at runtime (see platform/hashicorp-vault/main.tf).
 # The secret name is referenced by the Helm values above; it MUST exist before
 # the collector pod starts.  Terraform creates an empty placeholder; Vault
-# populates the keys AZURE_MONITOR_WORKSPACE_ID and AZURE_MONITOR_SHARED_KEY.
+# populates:
+#   AZURE_MONITOR_WORKSPACE_ID  — Azure Monitor Log Analytics workspace ID
+#   AZURE_MONITOR_SHARED_KEY    — Azure Monitor shared key for the LAW
+#   KAFKA_SASL_USERNAME         — SASL username for the line-command adoption topic consumer
+#   KAFKA_SASL_PASSWORD         — SASL password for the line-command adoption topic consumer
 resource "kubectl_manifest" "otel_azmon_secret_placeholder" {
   depends_on = [helm_release.otel_collector]
 
@@ -756,10 +760,12 @@ resource "kubectl_manifest" "otel_azmon_secret_placeholder" {
       name: otel-collector-azmon-credentials
       namespace: ${local.otel_namespace}
       annotations:
-        # Vault agent populates AZURE_MONITOR_WORKSPACE_ID and AZURE_MONITOR_SHARED_KEY
+        # Vault agent populates AZURE_MONITOR_WORKSPACE_ID, AZURE_MONITOR_SHARED_KEY,
+        # KAFKA_SASL_USERNAME, and KAFKA_SASL_PASSWORD.
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "otel-collector"
         vault.hashicorp.com/agent-inject-secret-azmon: "secret/data/otel/azmon"
+        vault.hashicorp.com/agent-inject-secret-kafka: "secret/data/otel/kafka-consumer"
     type: Opaque
     data: {}
   YAML
@@ -893,6 +899,127 @@ resource "azurerm_log_analytics_saved_search" "override_rate" {
     | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
     | project week_label, week_number, year_number, override_count
     | order by year_number asc, week_number asc
+  KQL
+}
+
+# ---------------------------------------------------------------------------
+# Line Command WAU saved queries — US-020 · BR-12
+#
+# Meaningful actions: ALERT_ACKNOWLEDGED, HANDOVER_SUBMITTED, AR_SESSION_STARTED,
+# TORQUE_LOG_SUBMITTED.  A user-day counts as active only when ≥1 meaningful
+# action was emitted for that userId on that calendar day.  Login-only days
+# (no meaningful action) are excluded from the WAU count per US-020 AC-19b649cd.
+#
+# Gate 1 targets:
+#   A4 — Shift Lead WAU      ≥85% (Gate 1 A3)
+#   A5 — Assembly Associate WAU ≥70% (Gate 1 A5)
+# ---------------------------------------------------------------------------
+
+resource "azurerm_log_analytics_saved_search" "line_command_shift_lead_wau" {
+  name                       = "line_command_shift_lead_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Line Command Shift Lead WAU — Gate 1 Metric A4 (target ≥85%)"
+  query                      = <<-KQL
+    // line_command_shift_lead_wau — Gate 1 metric A4
+    // Distinct shift_lead userId per week with ≥1 meaningful action (ALERT_ACKNOWLEDGED,
+    // HANDOVER_SUBMITTED, AR_SESSION_STARTED, TORQUE_LOG_SUBMITTED).
+    // Login-only days (no meaningful action) are excluded from the active-user count.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic([
+        "ALERT_ACKNOWLEDGED",
+        "HANDOVER_SUBMITTED",
+        "AR_SESSION_STARTED",
+        "TORQUE_LOG_SUBMITTED"
+    ]);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s    = tostring(Properties_d["component"]),
+        actionType_s   = tostring(Properties_d["actionType"]),
+        userId_s       = tostring(Properties_d["userId"]),
+        role_s         = tostring(Properties_d["role"])
+    | where component_s == "line-command" and role_s == "shift_lead"
+    | summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+        by userId_s, day_s = format_datetime(TimeGenerated, "yyyy-MM-dd"),
+           week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | where has_meaningful
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "line_command_associate_wau" {
+  name                       = "line_command_associate_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Line Command Assembly Associate WAU — Gate 1 Metric A5 (target ≥70%)"
+  query                      = <<-KQL
+    // line_command_associate_wau — Gate 1 metric A5
+    // Distinct assembly_associate userId per week with ≥1 meaningful action.
+    // Login-only days are excluded from the active-user count.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic([
+        "ALERT_ACKNOWLEDGED",
+        "HANDOVER_SUBMITTED",
+        "AR_SESSION_STARTED",
+        "TORQUE_LOG_SUBMITTED"
+    ]);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s    = tostring(Properties_d["component"]),
+        actionType_s   = tostring(Properties_d["actionType"]),
+        userId_s       = tostring(Properties_d["userId"]),
+        role_s         = tostring(Properties_d["role"])
+    | where component_s == "line-command" and role_s == "assembly_associate"
+    | summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+        by userId_s, day_s = format_datetime(TimeGenerated, "yyyy-MM-dd"),
+           week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | where has_meaningful
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "ar_device_adoption" {
+  name                       = "ar_device_adoption"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "AR Device Adoption — Gate 1 Metric A6 (HoloLens2 vs iPad per station)"
+  query                      = <<-KQL
+    // ar_device_adoption — Gate 1 metric A6
+    // AR session counts broken down by deviceType ('HoloLens2' vs 'iPad') per stationId per week.
+    // Asserts no biometric or gaze fields are present (schema-level enforcement via Avro).
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s   = tostring(Properties_d["component"]),
+        actionType_s  = tostring(Properties_d["actionType"]),
+        deviceType_s  = tostring(Properties_d["deviceType"]),
+        stationId_s   = tostring(Properties_d["stationId"])
+    | where component_s == "line-command" and actionType_s == "AR_SESSION_STARTED"
+    | extend
+        biometric_data_present = isnotempty(tostring(Properties_d["biometric_data"])),
+        gaze_vector_present    = isnotempty(tostring(Properties_d["gaze_vector"]))
+    | where not (biometric_data_present or gaze_vector_present)
+    | summarize ar_session_count = count()
+        by deviceType_s, stationId_s,
+           week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, deviceType_s, stationId_s, ar_session_count
+    | order by year_number asc, week_number asc, stationId_s asc, deviceType_s asc
   KQL
 }
 

@@ -16,6 +16,8 @@ _producer = None
 TOPIC_AR_SESSION_STARTED = "bmw.ifos.munich.line-command.ar-session.started.v1"
 TOPIC_ADOPTION_EVENT = "factory.munich.line-command.adoption.v1"
 TOPIC_EXPERT_CALL_ENDED = "bmw.ifos.munich.line-command.expert-call.ended.v1"
+TOPIC_HANDOVER_SUBMITTED = "factory.munich.line-command.handover.v1"
+TOPIC_TORQUE_SUBMITTED = "bmw.ifos.munich.line-command.torque.submitted.v1"
 
 
 async def get_producer():

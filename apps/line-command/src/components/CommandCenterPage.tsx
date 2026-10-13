@@ -114,10 +114,10 @@ async function fetchHandovers(lineId: string | undefined, signal: AbortSignal): 
   }
 }
 
-async function acknowledgeAlert(alertId: string, disposition: "resolved" | "escalated" | "monitoring"): Promise<void> {
+async function acknowledgeAlert(alertId: string, disposition: "resolved" | "escalated" | "monitoring", stationId: string): Promise<void> {
   await apiRequest(`/api/v1/andon/alerts/${encodeURIComponent(alertId)}/acknowledge`, {
     method: "POST",
-    body: JSON.stringify({ disposition }),
+    body: JSON.stringify({ disposition, stationId }),
   });
 }
 
@@ -844,9 +844,9 @@ export function CommandCenterPage({ lineId }: Props) {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
-  const handleAcknowledgeAlert = useCallback(async (alertId: string) => {
+  const handleAcknowledgeAlert = useCallback(async (alertId: string, stationId: string) => {
     try {
-      await acknowledgeAlert(alertId, "resolved");
+      await acknowledgeAlert(alertId, "resolved", stationId);
       setAlerts((prev) => prev.filter((a) => a.alertId !== alertId));
     } catch {
       // leave the alert in place; the user can retry
@@ -856,14 +856,18 @@ export function CommandCenterPage({ lineId }: Props) {
   const handleAcknowledgeHandover = useCallback(async (_handoverId: string) => {
     try {
       if (pendingHandover?.alertId) {
-        await acknowledgeAlert(pendingHandover.alertId, "resolved");
+        // Find the alert with this ID to get its stationId
+        const alert = alerts.find((a) => a.alertId === pendingHandover.alertId);
+        if (alert) {
+          await acknowledgeAlert(pendingHandover.alertId, "resolved", alert.stationId);
+        }
       }
     } catch {
       // best-effort
     }
     // Clear optimistically regardless of API result
     setPendingHandover(null);
-  }, [pendingHandover]);
+  }, [pendingHandover, alerts]);
 
   const handleRetryOee = useCallback(() => {
     const controller = new AbortController();
@@ -1236,7 +1240,7 @@ export function CommandCenterPage({ lineId }: Props) {
                 key={alert.alertId}
                 alert={alert}
                 serverResyncRef={alertResyncRef}
-                onAcknowledge={(id) => void handleAcknowledgeAlert(id)}
+                onAcknowledge={(id) => void handleAcknowledgeAlert(id, alert.stationId)}
               />
             ))}
 

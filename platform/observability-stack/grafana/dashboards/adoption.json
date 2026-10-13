@@ -17,7 +17,7 @@
       }
     ]
   },
-  "description": "Adoption Metrics (A1–A7) — Planning Cockpit Gate 1 evidence, US-019 · BR-12. Default window: Nov 1–28 2025.",
+  "description": "Adoption Metrics (A1–A7) — Planning Cockpit (US-019) and Line Command (US-020) Gate 1 evidence. Default window: Nov 1–28 2025.",
   "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -36,7 +36,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
-      "title": "Gate 1 Adoption KPIs — Nov 1–28 2025",
+      "title": "Planning Cockpit Gate 1 KPIs (US-019) — Nov 1–28 2025",
       "type": "row"
     },
     {
@@ -178,11 +178,163 @@
       ],
       "title": "Override Rate (A2) — Overrides per Week",
       "type": "barchart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 101,
+      "title": "Line Command Gate 1 KPIs (US-020) — Nov 1–28 2025",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+      "description": "Shift Lead WAU (A4) — distinct shift_lead userIds per week with ≥1 meaningful action (ALERT_ACKNOWLEDGED, HANDOVER_SUBMITTED, AR_SESSION_STARTED, TORQUE_LOG_SUBMITTED). Login-only days excluded. Target ≥85%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "Active Shift Leads",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "displayName": "WAU"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "// line_command_shift_lead_wau — Gate 1 A4 (target ≥85%)\nlet window_start = datetime(2025-11-01);\nlet window_end   = datetime(2025-11-28T23:59:59Z);\nlet meaningful_actions = dynamic([\"ALERT_ACKNOWLEDGED\",\"HANDOVER_SUBMITTED\",\"AR_SESSION_STARTED\",\"TORQUE_LOG_SUBMITTED\"]);\nAdoptionEvent_CL\n| where TimeGenerated >= window_start and TimeGenerated <= window_end\n| extend\n    component_s    = tostring(Properties_d[\"component\"]),\n    actionType_s   = tostring(Properties_d[\"actionType\"]),\n    userId_s       = tostring(Properties_d[\"userId\"]),\n    role_s         = tostring(Properties_d[\"role\"])\n| where component_s == \"line-command\" and role_s == \"shift_lead\"\n| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0\n    by userId_s, day_s = format_datetime(TimeGenerated, \"yyyy-MM-dd\"),\n       week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)\n| where has_meaningful\n| summarize wau = dcount(userId_s) by week_number, year_number\n| extend week_label = strcat(tostring(year_number), \"-W\", tostring(week_number))\n| project week_label, week_number, year_number, wau\n| order by year_number asc, week_number asc",
+            "workspace": "${law_workspace_id}",
+            "resultFormat": "time_series"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Shift Lead WAU (A4) — Target ≥85%",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+      "description": "Assembly Associate WAU (A5) — distinct assembly_associate userIds per week with ≥1 meaningful action. Login-only days excluded. Target ≥70%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "Active Associates",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "displayName": "WAU"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "// line_command_associate_wau — Gate 1 A5 (target ≥70%)\nlet window_start = datetime(2025-11-01);\nlet window_end   = datetime(2025-11-28T23:59:59Z);\nlet meaningful_actions = dynamic([\"ALERT_ACKNOWLEDGED\",\"HANDOVER_SUBMITTED\",\"AR_SESSION_STARTED\",\"TORQUE_LOG_SUBMITTED\"]);\nAdoptionEvent_CL\n| where TimeGenerated >= window_start and TimeGenerated <= window_end\n| extend\n    component_s    = tostring(Properties_d[\"component\"]),\n    actionType_s   = tostring(Properties_d[\"actionType\"]),\n    userId_s       = tostring(Properties_d[\"userId\"]),\n    role_s         = tostring(Properties_d[\"role\"])\n| where component_s == \"line-command\" and role_s == \"assembly_associate\"\n| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0\n    by userId_s, day_s = format_datetime(TimeGenerated, \"yyyy-MM-dd\"),\n       week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)\n| where has_meaningful\n| summarize wau = dcount(userId_s) by week_number, year_number\n| extend week_label = strcat(tostring(year_number), \"-W\", tostring(week_number))\n| project week_label, week_number, year_number, wau\n| order by year_number asc, week_number asc",
+            "workspace": "${law_workspace_id}",
+            "resultFormat": "time_series"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Assembly Associate WAU (A5) — Target ≥70%",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+      "description": "AR Device Adoption (A6) — AR session counts by deviceType (HoloLens2 vs iPad) per stationId per week. No biometric or gaze fields included (Works Council §87 BetrVG compliance).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "AR Sessions",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short",
+          "displayName": "Sessions"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "id": 6,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "// ar_device_adoption — Gate 1 A6\nlet window_start = datetime(2025-11-01);\nlet window_end   = datetime(2025-11-28T23:59:59Z);\nAdoptionEvent_CL\n| where TimeGenerated >= window_start and TimeGenerated <= window_end\n| extend\n    component_s   = tostring(Properties_d[\"component\"]),\n    actionType_s  = tostring(Properties_d[\"actionType\"]),\n    deviceType_s  = tostring(Properties_d[\"deviceType\"]),\n    stationId_s   = tostring(Properties_d[\"stationId\"])\n| where component_s == \"line-command\" and actionType_s == \"AR_SESSION_STARTED\"\n| extend\n    biometric_data_present = isnotempty(tostring(Properties_d[\"biometric_data\"])),\n    gaze_vector_present    = isnotempty(tostring(Properties_d[\"gaze_vector\"]))\n| where not (biometric_data_present or gaze_vector_present)\n| summarize ar_session_count = count()\n    by deviceType_s, stationId_s,\n       week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)\n| extend week_label = strcat(tostring(year_number), \"-W\", tostring(week_number))\n| project week_label, week_number, year_number, deviceType_s, stationId_s, ar_session_count\n| order by year_number asc, week_number asc, stationId_s asc, deviceType_s asc",
+            "workspace": "${law_workspace_id}",
+            "resultFormat": "time_series"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "AR Device Adoption (A6) — Sessions by Device Type and Station",
+      "type": "barchart"
     }
   ],
   "schemaVersion": 37,
   "style": "dark",
-  "tags": ["adoption", "gate1", "us-019", "br-12"],
+  "tags": ["adoption", "gate1", "us-019", "us-020", "br-12"],
   "templating": {
     "list": [
       {
@@ -218,5 +370,5 @@
   "timezone": "Europe/Berlin",
   "title": "Adoption Metrics (A1–A7)",
   "uid": "ifos-adoption-gate1",
-  "version": 1
+  "version": 2
 }

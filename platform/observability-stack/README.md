@@ -8,37 +8,43 @@ Centralised observability — Prometheus metrics, Grafana SLO dashboards (T1–T
 
 ---
 
-## Adoption Event Pipeline (US-019 · BR-12)
+## Adoption Event Pipeline (US-019 · US-020 · BR-12)
 
-Planning Cockpit emits OTLP session events (login, session_start, optimizer_run, override_applied, publish_confirmed, session_end) via the OpenTelemetry SDK.  The OTel Collector receives them on port 4317 (TLS 1.3) and forwards them to the Azure Monitor Log Analytics workspace **law-ifos-euwe-pr**, table `AdoptionEvent_CL`.
+Two ingestion paths feed the `AdoptionEvent_CL` table in Azure Monitor Log Analytics workspace **law-ifos-euwe-pr**:
+
+1. **Planning Cockpit (US-019):** emits OTLP session events via the OpenTelemetry SDK; received by the OTel Collector on port 4317 (TLS 1.3).  `component='planning-cockpit'`.
+2. **Line Command (US-020):** emits structured AdoptionEvents to the Kafka topic `factory.munich.line-command.adoption.v1` (Avro, schema-registry validated); consumed by the OTel Collector's Kafka receiver, consumer group `line-command-adoption-consumer`.  `component='line-command'`.
 
 **Retention:** 13 months (NFR-18) — enforced via `azurerm_log_analytics_workspace_table.adoption_event_cl` (395 days).
 
+**PII / Works Council §87 BetrVG:** The OTel Collector strips `biometric_data`, `gaze_vector`, and `eye_tracking` fields before any event reaches the LAW table.  All analytics exports aggregate at station/shift level — no operator-identifiable data in exported datasets.
+
 ### Gate 1 Pre-built Queries
 
-Three named saved queries are provisioned in `law-ifos-euwe-pr` (category `Gate1-Adoption`).  Product Ops Analysts run them directly in the Log Analytics portal — no code, ETL, or manual data extraction required.  Default time range: **Nov 1–28, 2025** (Gate 1 measurement window).
+Six named saved queries are provisioned in `law-ifos-euwe-pr` (category `Gate1-Adoption`).  Product Ops Analysts run them directly in the Log Analytics portal.  Default time range: **Nov 1–28, 2025**.
 
-| Query name | Gate 1 metric | Description |
-|---|---|---|
-| `planner_wau` | **A3** — Planner WAU | Distinct `userId` values per calendar week where the planner had ≥1 meaningful action (`optimizer_run`, `override_applied`, or `publish_confirmed`) OR a session ≥10 minutes.  Login-only sessions under 10 minutes with no meaningful action are excluded from the active-user count. |
-| `sequence_lock_pct` | **A1** — Sequence Lock % | Percentage of Monday lock windows (calendar weeks W44–W47, 2025) where at least one `publish_confirmed` event was emitted.  Formula: `weeks_with_publish / 4 × 100`.  Target ≥95%. |
-| `override_rate` | **A2** — Override Rate | Count of `override_applied` events per calendar week in the measurement window. |
+| Query name | Gate 1 metric | Target | Description |
+|---|---|---|---|
+| `planner_wau` | **A3** — Planner WAU | ≥90% | Distinct `userId` per week with ≥1 meaningful action OR session ≥10 min.  Login-only sessions excluded. |
+| `sequence_lock_pct` | **A1** — Sequence Lock % | ≥95% | % of Monday lock windows with ≥1 `publish_confirmed` event. |
+| `override_rate` | **A2** — Override Rate | — | Count of `override_applied` events per calendar week. |
+| `line_command_shift_lead_wau` | **A4** — Shift Lead WAU | **≥85%** | Distinct `shift_lead` userId per week with ≥1 meaningful action (`ALERT_ACKNOWLEDGED`, `HANDOVER_SUBMITTED`, `AR_SESSION_STARTED`, `TORQUE_LOG_SUBMITTED`).  Login-only days excluded. |
+| `line_command_associate_wau` | **A5** — Associate WAU | **≥70%** | Distinct `assembly_associate` userId per week with ≥1 meaningful action.  Login-only days excluded. |
+| `ar_device_adoption` | **A6** — AR Device Adoption | — | AR session counts by `deviceType` (`HoloLens2` / `iPad`) per `stationId` per week.  Asserts no biometric/gaze fields present. |
 
-All three queries are also wired as panels in the **Adoption Metrics (A1–A7)** Grafana dashboard (`grafana/dashboards/adoption.json`, uid `ifos-adoption-gate1`), provisioned via the `adoption-metrics-dashboard` ConfigMap.
+All six queries are wired as panels in the **Adoption Metrics (A1–A7)** Grafana dashboard (`grafana/dashboards/adoption.json`, uid `ifos-adoption-gate1`).
 
-### Session filter logic
+### WAU login-only exclusion rule (US-020 AC-19b649cd)
 
-The `planner_wau` query enforces the Gate 1 measurement definition:
+For Line Command, a user-day counts as active only when at least one `AdoptionEvent` for that `userId` on that calendar day has `actionType IN ('ALERT_ACKNOWLEDGED', 'HANDOVER_SUBMITTED', 'AR_SESSION_STARTED', 'TORQUE_LOG_SUBMITTED')`.  A kiosk-login-only session (no subsequent meaningful action) does **not** count as an active day and is excluded from the WAU count.
 
-- A session is **included** if `session_duration_minutes ≥ 10` **OR** `meaningful_action_count > 0`.
-- A session is **excluded** if it contains only a `login` / `session_start` event and ends in under 10 minutes with no optimizer_run, override_applied, or publish_confirmed event.
-
-`sessionStartedAt` is emitted by planning-cockpit at `session_start`; `sessionDurationSeconds` is emitted at `session_end`.
+This rule is verified by the integration tests in `tests/test_wau_login_only_exclusion.py`.
 
 ### Files
 
 | Path | Purpose |
 |---|---|
-| `otel-collector/otel-collector.yaml` | OTel Collector pipeline — OTLP gRPC receiver (port 4317, TLS 1.3), PII redaction processor, Azure Monitor exporter |
-| `queries/adoption_queries.kql` | KQL source for all three pre-built queries (also committed for review/diff purposes) |
-| `grafana/dashboards/adoption.json` | Grafana dashboard — three panels: Planner WAU (A3), Sequence Lock % (A1), Override Rate (A2) |
+| `otel-collector/otel-collector.yaml` | OTel Collector pipeline — OTLP gRPC receiver (port 4317) + Kafka receiver (line-command adoption topic), PII redaction, Azure Monitor exporter |
+| `queries/adoption_queries.kql` | KQL source for all six pre-built queries |
+| `grafana/dashboards/adoption.json` | Grafana dashboard — six panels: A1–A3 (Planning Cockpit) + A4–A6 (Line Command) |
+| `tests/test_wau_login_only_exclusion.py` | Integration tests for WAU login-only exclusion rule |

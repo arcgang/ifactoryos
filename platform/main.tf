@@ -61,8 +61,9 @@ module "immutable_audit_log" {
 }
 
 module "observability_stack" {
-  source      = "./observability-stack"
-  environment = var.environment
+  source                = "./observability-stack"
+  environment           = var.environment
+  azure_subscription_id = var.azure_subscription_id
 }
 
 module "postgresql_citus" {

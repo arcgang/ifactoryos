@@ -1,11 +1,21 @@
 # Verifies that each IFOS security group resolves to the correct OAuth scope set.
-# Uses mock_provider so no Azure credentials are required; the test confirms the
-# role_scope_map output matches the §5.1.3.1 contract exactly.
+# Uses mock_provider so no Azure or PostgreSQL credentials are required; the test
+# confirms the role_scope_map output matches the §5.1.3.1 contract exactly.
 
 mock_provider "azuread" {}
+mock_provider "postgresql" {}
 
 variables {
   environment = "dev"
+
+  # Entra ID tenant — placeholder value; plan-only test, not applied
+  entra_tenant_id = "00000000-0000-0000-0000-000000000000"
+
+  # Identity DB — placeholder values; plan-only test, not applied
+  identity_db_host               = "citus-dev.internal.ifos.bmwgroup.net"
+  identity_db_superuser          = "postgres"
+  identity_db_superuser_password = "placeholder"
+  identity_service_db_password   = "placeholder"
 }
 
 # ---------------------------------------------------------------------------
@@ -169,5 +179,32 @@ run "all_six_security_groups_exist" {
       contains(keys(output.role_scope_map), "GRP-IFOS-PLATFORM-ADMIN"),
     ])
     error_message = "One or more expected IFOS security groups are missing from role_scope_map"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# GDPR claim mapping output — pseudonymous_token replaces raw employee_id
+# ---------------------------------------------------------------------------
+run "pseudonymous_token_claim_mapping_is_documented" {
+  command = plan
+
+  assert {
+    condition     = output.pseudonymous_token_claim_mapping["source_claim"] == "oid"
+    error_message = "source_claim must be 'oid' (Entra ID v2 object ID claim)"
+  }
+
+  assert {
+    condition     = output.pseudonymous_token_claim_mapping["resolved_field"] == "pseudonymous_token"
+    error_message = "resolved_field must be 'pseudonymous_token'"
+  }
+
+  assert {
+    condition     = output.pseudonymous_token_claim_mapping["audit_field"] == "user_id"
+    error_message = "audit_field must be 'user_id' — the field name used in audit_client.write_event"
+  }
+
+  assert {
+    condition     = output.pseudonymous_token_claim_mapping["rejection_pattern"] == "^\\d{8}$"
+    error_message = "rejection_pattern must match the 8-digit employee ID pattern rejected by audit_client SDK"
   }
 }

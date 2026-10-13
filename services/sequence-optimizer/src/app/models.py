@@ -50,3 +50,226 @@ class ConstraintAlertEvent(BaseModel):
     currentValue: float
     warningLevel: float
     detectedAt: str
+
+
+# ---------------------------------------------------------------------------
+# Alert persistence models
+# ---------------------------------------------------------------------------
+
+class AlertStatus(str, Enum):
+    active = "active"
+    acknowledged = "acknowledged"
+    resolved = "resolved"
+
+
+class ConstraintAlertRecord(BaseModel):
+    alertId: UUID
+    constraintType: ConstraintType
+    currentValue: float
+    thresholdValue: float
+    affectedVins: list[str]
+    status: AlertStatus
+    detectedAt: str
+    acknowledgedAt: str | None = None
+    acknowledgedBy: str | None = None
+    resolvedAt: str | None = None
+
+
+class AlertListResponse(BaseModel):
+    data: list[ConstraintAlertRecord]
+    page: CursorPage
+
+
+# ---------------------------------------------------------------------------
+# Optimizer request / response models
+# ---------------------------------------------------------------------------
+
+class ModelYear(str, Enum):
+    MY25 = "MY25"
+    MY26 = "MY26"
+
+
+class ResultType(str, Enum):
+    monte_carlo = "monte_carlo"
+    heuristic_fallback = "heuristic_fallback"
+
+
+class VinInput(BaseModel):
+    vin: str = Field(pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    modelYear: ModelYear | None = None
+    paintCode: str | None = None
+    optionCodes: list[str] = Field(default_factory=list)
+    vipPriority: bool = False
+    regulatoryHold: bool = False
+
+
+class MaintenanceWindow(BaseModel):
+    windowId: UUID
+    stationId: str
+    startsAt: str
+    endsAt: str
+    description: str | None = None
+
+
+class ConstraintSnapshot(BaseModel):
+    snapshotTimestamp: str
+    paintCapacityUtilisation: float = Field(ge=0, le=100)
+    bodyWipQueueDepth: int = Field(ge=0)
+    kittingReadinessPct: float = Field(ge=0, le=100)
+    maintenanceWindows: list[MaintenanceWindow] = Field(default_factory=list)
+    unsLatencyMs: int | None = None
+
+
+class OptimizeRequest(BaseModel):
+    weekIso: str = Field(pattern=r"^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$")
+    vins: list[VinInput] = Field(min_length=1, max_length=500)
+    constraintSnapshot: ConstraintSnapshot
+    monteCarloRuns: int = Field(default=50, ge=1, le=50)
+    idempotencyKey: UUID | None = None
+    my26ConfigVersion: str | None = None
+
+
+class RankedVin(BaseModel):
+    vin: str = Field(pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    position: int = Field(ge=1)
+    constraintScore: float
+    vipPriority: bool | None = None
+    regulatoryHold: bool | None = None
+
+
+class OptimizeResponse(BaseModel):
+    runId: UUID
+    weekIso: str
+    resultType: ResultType
+    rankedSequence: list[RankedVin]
+    completedAt: str
+    durationMs: int
+    confidenceScore: float = Field(ge=0, le=1)
+    my26ConfigVersion: str | None = None
+    constraintSnapshotTimestamp: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Re-sequence request model (placed after VinInput / ConstraintSnapshot)
+# ---------------------------------------------------------------------------
+
+class ResequenceRequest(BaseModel):
+    alertId: UUID
+    affectedVins: list[VinInput] = Field(min_length=1, max_length=500)
+    constraintSnapshot: ConstraintSnapshot
+    idempotencyKey: UUID | None = None
+
+
+# ---------------------------------------------------------------------------
+# MY26 configuration models
+# ---------------------------------------------------------------------------
+
+
+class My26ConfigStatus(str, Enum):
+    draft = "draft"
+    validated = "validated"
+    active = "active"
+    superseded = "superseded"
+
+
+class OptionCodeEntry(BaseModel):
+    code: str
+    description: str
+    constraintMappings: list[str] = Field(default_factory=list)
+
+
+class PaintPaletteEntry(BaseModel):
+    paintCode: str
+    batchGroup: str
+    changeoverPenaltyMinutes: int | None = Field(default=None, ge=0)
+
+
+class My26Config(BaseModel):
+    configId: UUID
+    version: str
+    status: My26ConfigStatus
+    optionCodes: list[OptionCodeEntry]
+    paintPalette: list[PaintPaletteEntry]
+    kittingRules: list[dict[str, Any]] = Field(default_factory=list)
+    createdAt: str
+    createdBy: str
+    activatedAt: str | None = None
+
+
+class My26ConfigDraft(BaseModel):
+    optionCodes: list[OptionCodeEntry]
+    paintPalette: list[PaintPaletteEntry]
+    kittingRules: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class My26ValidationSeverity(str, Enum):
+    error = "error"
+    warning = "warning"
+
+
+class My26ValidationIssue(BaseModel):
+    severity: My26ValidationSeverity
+    field: str
+    message: str
+
+
+class My26ValidationResult(BaseModel):
+    valid: bool
+    issues: list[My26ValidationIssue]
+
+
+# ---------------------------------------------------------------------------
+# Override log models
+# ---------------------------------------------------------------------------
+
+
+class OverrideRequest(BaseModel):
+    runId: UUID
+    vin: str = Field(pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    originalPosition: int = Field(ge=1)
+    newPosition: int = Field(ge=1)
+    justification: str = Field(min_length=10, max_length=2000)
+
+
+class OverrideRecord(BaseModel):
+    overrideId: UUID
+    runId: UUID
+    vin: str
+    originalPosition: int
+    newPosition: int
+    justification: str
+    plannerId: str
+    createdAt: str
+
+
+class OverrideListResponse(BaseModel):
+    data: list[OverrideRecord]
+    page: CursorPage
+
+
+# ---------------------------------------------------------------------------
+# VIN constraint explanation models
+# ---------------------------------------------------------------------------
+
+
+class ConstraintFactorName(str, Enum):
+    paint_batch_conflict = "paint_batch_conflict"
+    changeover_penalty = "changeover_penalty"
+    maintenance_window = "maintenance_window"
+    kitting_gap = "kitting_gap"
+    vip_priority = "vip_priority"
+    regulatory_hold = "regulatory_hold"
+
+
+class ConstraintFactor(BaseModel):
+    factorName: ConstraintFactorName
+    weightedScore: float
+    dataSource: str
+    rawValue: float | None = None
+
+
+class VinExplanation(BaseModel):
+    runId: UUID
+    vin: str
+    position: int
+    topFactors: list[ConstraintFactor] = Field(min_length=1, max_length=3)

@@ -1,0 +1,10 @@
+# Direct dependencies only.
+uvicorn[standard]
+asyncpg
+fastapi>=0.115
+pydantic>=2.7
+pydantic-settings>=2.3
+azure-identity>=1.17
+azure-storage-blob>=12.20
+pytest
+pytest-asyncio>=0.23

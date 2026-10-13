@@ -1,0 +1,83 @@
+# OpenTelemetry Collector — Adoption Event Pipeline
+#
+# Receives OTLP gRPC from planning-cockpit (port 4317, TLS 1.3).
+# Routes to Azure Monitor Log Analytics workspace law-ifos-euwe-pr
+# via the azuremonitor exporter (adoptionevent table).
+#
+# Realises: US-019 · BR-12
+# NFR-18: 13-month retention applied at LAW table level (see main.tf).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+        tls:
+          cert_file: /etc/otel/tls/tls.crt
+          key_file:  /etc/otel/tls/tls.key
+          min_version: "1.3"
+          client_ca_file: /etc/otel/tls/ca.crt
+
+processors:
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+
+  # Drop any field whose name contains "email", "ip", or "name" to prevent
+  # accidental PII reaching the LAW table (works-council co-determination,
+  # nfr:pii-anonymisation-station-level-works-council).
+  attributes/redact_pii:
+    actions:
+      - key: user.email
+        action: delete
+      - key: http.client_ip
+        action: delete
+      - key: enduser.email
+        action: delete
+
+  # Add plant/region label for Azure Monitor resource routing.
+  resource/label:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: service.name
+        value: planning-cockpit
+        action: upsert
+      - key: plant
+        value: munich
+        action: upsert
+
+  # Filter: only forward adoption session events, drop everything else
+  # so the pipeline doesn't mix operational traces with Gate 1 metrics.
+  filter/adoption_only:
+    spans:
+      include:
+        match_type: regexp
+        attributes:
+          - key: actionType
+            value: "login|session_start|session_end|optimizer_run|override_applied|publish_confirmed"
+
+exporters:
+  # Azure Monitor — Log Analytics workspace law-ifos-euwe-pr
+  # The workspace ID and shared key are injected via Kubernetes secret
+  # otel-collector-azmon-credentials (see main.tf).
+  azuremonitor:
+    workspace_id: "${AZURE_MONITOR_WORKSPACE_ID}"
+    shared_key: "${AZURE_MONITOR_SHARED_KEY}"
+    log_type: "AdoptionEvent"
+
+  # Local Prometheus metrics on the collector itself (optional scrape endpoint).
+  prometheus:
+    endpoint: "0.0.0.0:8888"
+
+service:
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [batch, attributes/redact_pii, resource/label, filter/adoption_only]
+      exporters:  [azuremonitor]
+    metrics:
+      receivers:  [otlp]
+      processors: [batch, resource/label]
+      exporters:  [prometheus]

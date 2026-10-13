@@ -23,3 +23,8 @@ variable "audit_log_endpoint" {
   type        = string
   description = "Base URL of the immutable-audit-log service; read from AUDIT_LOG_ENDPOINT environment variable"
 }
+
+variable "azure_subscription_id" {
+  type        = string
+  description = "Azure subscription ID; read from ARM_SUBSCRIPTION_ID environment variable"
+}

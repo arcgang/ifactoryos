@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.routers.events import router as events_router
+from app.routers.thread import router as thread_router
 
 
 def _error_body(
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(events_router)
+    app.include_router(thread_router)
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(

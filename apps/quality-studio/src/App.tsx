@@ -1,10 +1,13 @@
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import i18n, {
   SUPPORTED_LANGUAGES,
   type SupportedLanguage,
 } from "./i18n";
 import { useTranslatedAlert } from "./useTranslatedAlert";
+import { GateCommandPage } from "./components/GateCommandPage";
+
+type Screen = "shell" | "gate-command";
 
 function LanguageSwitcher() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -59,6 +62,25 @@ function DefectClusterAlertDemo() {
 
 function QualityStudioShell() {
   const { t } = useTranslation();
+  const [screen, setScreen] = useState<Screen>("shell");
+
+  if (screen === "gate-command") {
+    return (
+      <main>
+        <h1>{t("app.title")}</h1>
+        <button
+          type="button"
+          onClick={() => setScreen("shell")}
+          data-testid="back-to-shell"
+        >
+          ← {t("nav.gateCommand")}
+        </button>
+        <Suspense fallback={<p>{t("gateCommand.loading")}</p>}>
+          <GateCommandPage vin="WBY73CF080NCH14427" />
+        </Suspense>
+      </main>
+    );
+  }
 
   return (
     <main>
@@ -69,7 +91,15 @@ function QualityStudioShell() {
           <li>{t("nav.arWorkbench")}</li>
           <li>{t("nav.defectDashboard")}</li>
           <li>{t("nav.processReplay")}</li>
-          <li>{t("nav.gateCommand")}</li>
+          <li>
+            <button
+              type="button"
+              onClick={() => setScreen("gate-command")}
+              data-testid="nav-gate-command"
+            >
+              {t("nav.gateCommand")}
+            </button>
+          </li>
           <li>{t("nav.certificateStudio")}</li>
         </ul>
       </nav>

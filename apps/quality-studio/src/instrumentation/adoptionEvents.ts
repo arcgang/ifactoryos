@@ -9,6 +9,12 @@ export interface ClusterAlertViewedEvent {
   action: "CLUSTER_ALERT_VIEWED";
   alertId: string;
   clusterId: string;
+}
+export interface DefectGenomeQueryEvent {
+  action: "DEFECT_GENOME_QUERY";
+  userId: string;
+  role: string;
+  defectClass: string;
   sessionId: string;
   timestamp: string;
 }
@@ -18,6 +24,12 @@ export interface ClusterAlertAcknowledgedEvent {
   alertId: string;
   clusterId: string;
   sessionId: string;
+}
+export interface RootCauseAssignedEvent {
+  action: "ROOT_CAUSE_ASSIGNED";
+  userId: string;
+  role: string;
+  clusterId: string;
   timestamp: string;
 }
 
@@ -48,11 +60,10 @@ const COLLECTOR_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_OTLP_ENDPOINT ??
   "/api/v1/ingest/events";
 
-function emit(event: ProcessReplayLaunchEvent | ClusterAlertViewedEvent | ClusterAlertAcknowledgedEvent): void {
+function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCauseAssignedEvent | ClusterAlertViewedEvent | ClusterAlertAcknowledgedEvent): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
   }
-
   if (typeof fetch !== "undefined") {
     void fetch(COLLECTOR_URL, {
       method: "POST",
@@ -79,6 +90,16 @@ export function emitClusterAlertViewed(alertId: string, clusterId: string): void
     action: "CLUSTER_ALERT_VIEWED",
     alertId,
     clusterId,
+export function emitDefectGenomeQuery(params: {
+  userId: string;
+  role: string;
+  defectClass: string;
+}): void {
+  emit({
+    action: "DEFECT_GENOME_QUERY",
+    userId: params.userId,
+    role: params.role,
+    defectClass: params.defectClass,
     sessionId: _sessionId,
     timestamp: new Date().toISOString(),
   });
@@ -90,6 +111,16 @@ export function emitClusterAlertAcknowledged(alertId: string, clusterId: string)
     alertId,
     clusterId,
     sessionId: _sessionId,
+export function emitRootCauseAssigned(params: {
+  userId: string;
+  role: string;
+  clusterId: string;
+}): void {
+  emit({
+    action: "ROOT_CAUSE_ASSIGNED",
+    userId: params.userId,
+    role: params.role,
+    clusterId: params.clusterId,
     timestamp: new Date().toISOString(),
   });
 }

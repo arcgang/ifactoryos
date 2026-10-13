@@ -9,6 +9,7 @@ import { DefectDashboardPage, type DefectRow } from "./components/DefectDashboar
 import { ProcessReplayPage } from "./components/ProcessReplayPage";
 import { ClusterAlertPanel } from "./components/ClusterAlertPanel";
 import { AlertDetailView } from "./components/AlertDetailView";
+import { DefectGenomePage } from "./components/DefectGenomePage";
 
 type Route =
   | { page: "dashboard" }
@@ -18,6 +19,7 @@ type Route =
 // Mock OIDC context — in production this comes from the BMW Entra ID provider
 const MOCK_USER_ID = "kb-entra-001";
 const MOCK_USER_GROUPS = ["GRP-IFOS-PAINTENGINEER-MUC"];
+  | { page: "defectGenome" };
 
 function LanguageSwitcher() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -128,6 +130,15 @@ function QualityStudioShell() {
           <li>
             <button
               type="button"
+              onClick={() => navigate({ page: "defectGenome" })}
+              aria-current={route.page === "defectGenome" ? "page" : undefined}
+            >
+              {t("defectGenome.breadcrumbParent")}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
               onClick={() =>
                 route.page === "replay"
                   ? undefined
@@ -183,6 +194,10 @@ function QualityStudioShell() {
           vin={route.vin}
           onBack={() => navigate({ page: "dashboard" })}
         />
+      )}
+
+      {route.page === "defectGenome" && (
+        <DefectGenomePage />
       )}
     </main>
   );

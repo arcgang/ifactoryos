@@ -10,6 +10,17 @@ import type {
   ClusterAlert,
   CorrectiveActionRequest,
   CorrectiveActionResult,
+  ClusterListResponse,
+  ClusterQueryRequest,
+  ClusterQueryResult,
+  ConfidenceThresholdConfig,
+  CorrectiveActionRequest,
+  CorrectiveActionResult,
+  DefectClass,
+  DefectCluster,
+  ClusterStatus,
+  ModelFeedbackRequest,
+  ModelFeedbackAck,
 } from "../types/defectGenome";
 
 const BASE_URL =
@@ -95,6 +106,23 @@ export async function getDefectGenomeAlerts(params: {
   limit?: number;
 } = {}): Promise<AlertListResponse> {
   const q = new URLSearchParams();
+export async function runClusterQuery(
+  body: ClusterQueryRequest,
+): Promise<ClusterQueryResult> {
+  return request<ClusterQueryResult>("/defect/cluster-query", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listClusters(params: {
+  defectClass?: DefectClass;
+  status?: ClusterStatus;
+  cursor?: string;
+  limit?: number;
+} = {}): Promise<ClusterListResponse> {
+  const q = new URLSearchParams();
+  if (params.defectClass) q.set("defectClass", params.defectClass);
   if (params.status) q.set("status", params.status);
   if (params.cursor) q.set("cursor", params.cursor);
   if (params.limit != null) q.set("limit", String(params.limit));
@@ -114,6 +142,15 @@ export async function acknowledgeClusterAlert(
     `/defect-genome/alerts/${encodeURIComponent(alertId)}/acknowledge`,
     { method: "POST", body: JSON.stringify(body) },
   );
+  return request<ClusterListResponse>(`/defect/clusters${qs}`);
+}
+
+export async function getCluster(clusterId: string): Promise<DefectCluster> {
+  return request<DefectCluster>(`/defect/clusters/${encodeURIComponent(clusterId)}`);
+}
+
+export async function getConfidenceThreshold(): Promise<ConfidenceThresholdConfig> {
+  return request<ConfidenceThresholdConfig>("/models/confidence-threshold");
 }
 
 export async function createCorrectiveAction(
@@ -124,4 +161,13 @@ export async function createCorrectiveAction(
     `/defect/clusters/${encodeURIComponent(clusterId)}/corrective-action`,
     { method: "POST", body: JSON.stringify(body) },
   );
+}
+
+export async function submitModelFeedback(
+  body: ModelFeedbackRequest,
+): Promise<ModelFeedbackAck> {
+  return request<ModelFeedbackAck>("/models/feedback", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }

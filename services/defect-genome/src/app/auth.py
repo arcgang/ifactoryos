@@ -1,4 +1,9 @@
 """JWT bearer authentication for defect-genome."""
+"""JWT Bearer authentication and role enforcement for defect-genome.
+
+Supports both service-to-service (Client Credentials) and user-context (OBO)
+tokens from BMW Entra ID.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ async def require_bearer(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> dict[str, Any]:
     """Dependency: returns decoded JWT payload or raises 401."""
+    """Dependency: returns the decoded JWT payload or raises 401."""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -46,4 +52,5 @@ async def require_bearer(
 
 
 def caller_subject(payload: dict[str, Any]) -> str:
-    return str(payload.get("sub") or payload.get("oid") or "unknown")
+    """Extract the JWT subject (caller identity) for audit records."""
+    return payload.get("sub") or payload.get("oid") or payload.get("appid") or "unknown"

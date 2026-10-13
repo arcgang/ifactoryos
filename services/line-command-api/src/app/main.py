@@ -38,11 +38,14 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     consumer_task: asyncio.Task | None = None
 
+    andon_consumer_task: asyncio.Task | None = None
+
+    from app.db import get_pool
+    pool = await get_pool()
+
     if settings.torque_consumer_enabled:
-        from app.db import get_pool
         from app.torque_consumer import run_torque_consumer
 
-        pool = await get_pool()
         consumer_task = asyncio.create_task(
             run_torque_consumer(
                 bootstrap_servers=settings.kafka_bootstrap_servers,
@@ -54,12 +57,31 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
         )
 
+    if settings.andon_consumer_enabled:
+        from app.andon_consumer import run_andon_consumer
+
+        andon_consumer_task = asyncio.create_task(
+            run_andon_consumer(
+                bootstrap_servers=settings.kafka_bootstrap_servers,
+                sasl_username=settings.kafka_sasl_username,
+                sasl_password=settings.kafka_sasl_password,
+                pool=pool,
+            )
+        )
+
     yield
 
     if consumer_task is not None:
         consumer_task.cancel()
         try:
             await consumer_task
+        except asyncio.CancelledError:
+            pass
+
+    if andon_consumer_task is not None:
+        andon_consumer_task.cancel()
+        try:
+            await andon_consumer_task
         except asyncio.CancelledError:
             pass
 
@@ -83,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(ar_sessions_router)
     app.include_router(oee_router)
     app.include_router(andon_router)
+    app.include_router(handover_router)
     app.include_router(expert_calls_router)
     app.include_router(handover_router)
     app.include_router(torque_router)

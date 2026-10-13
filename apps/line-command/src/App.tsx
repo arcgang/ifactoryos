@@ -5,6 +5,8 @@ import { ForbiddenScreen } from "./components/ForbiddenScreen";
 import { AccessRestrictedToast } from "./components/AccessRestrictedToast";
 import { ARWorkbenchPage } from "./components/ARWorkbenchPage";
 import { CommandCenterPage } from "./components/CommandCenterPage";
+import { HandoverBuilderPage } from "./components/HandoverBuilderPage";
+import { PlantManagerHandoverTable } from "./components/PlantManagerHandoverTable";
 import { TorqueOutOfToleranceToast, type TorqueOotPayload } from "./components/TorqueOutOfToleranceToast";
 import { useRbac } from "./hooks/useRbac";
 
@@ -17,6 +19,7 @@ type Route =
   | "station-detail"
   | "andon-log"
   | "handover-builder"
+  | "plant-manager-review"
   | "ar-workbench"
   | "settings";
 
@@ -25,6 +28,7 @@ const ASSOCIATE_BLOCKED_ROUTES: Route[] = [
   "command-center",
   "station-detail",
   "handover-builder",
+  "plant-manager-review",
 ];
 
 // ---------------------------------------------------------------------------
@@ -194,6 +198,17 @@ export function App() {
                 <span className="icon" aria-hidden="true">↗</span>
                 {t("nav.handover_builder")}
               </button>
+              {(role === "shift_lead") && (
+                <button
+                  type="button"
+                  className={`nav-item${currentRoute === "plant-manager-review" ? " active" : ""}`}
+                  aria-current={currentRoute === "plant-manager-review" ? "page" : undefined}
+                  onClick={() => navigate("plant-manager-review")}
+                >
+                  <span className="icon" aria-hidden="true">☰</span>
+                  {t("nav.plant_manager_review")}
+                </button>
+              )}
             </>
           )}
 
@@ -244,9 +259,11 @@ export function App() {
           )}
 
           {currentRoute === "handover-builder" && !isAssociate && (
-            <div className="placeholder-view">
-              <h2>{t("nav.handover_builder")}</h2>
-            </div>
+            <HandoverBuilderPage userId={userId} />
+          )}
+
+          {currentRoute === "plant-manager-review" && !isAssociate && (
+            <PlantManagerHandoverTable />
           )}
 
           {currentRoute === "settings" && (

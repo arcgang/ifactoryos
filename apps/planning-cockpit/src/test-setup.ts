@@ -1,5 +1,9 @@
 import "@testing-library/jest-dom";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 // Provide a no-op fetch so components that call APIs in effects
 // don't crash tests that aren't testing network behaviour.

@@ -1,0 +1,125 @@
+# Paint prep stage configuration — static source of truth for completeness calculation.
+# 14 stages in tunnel order. Changes require a service deployment.
+# Each stage lists: number, human-readable name, expected parameter keys, expected samples per VIN.
+stages:
+  - number: 1
+    name: "Pre-Degreasing"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - ph_value
+      - concentration_g_l
+    expected_samples: 10
+
+  - number: 2
+    name: "Degreasing"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - ph_value
+      - concentration_g_l
+      - conductivity_ms_cm
+    expected_samples: 12
+
+  - number: 3
+    name: "Rinsing 1"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - conductivity_ms_cm
+    expected_samples: 8
+
+  - number: 4
+    name: "Activation"
+    expected_parameters:
+      - temperature_c
+      - ph_value
+      - concentration_g_l
+    expected_samples: 8
+
+  - number: 5
+    name: "Phosphating"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - ph_value
+      - phosphate_concentration_g_l
+      - accelerator_points
+      - free_acid_points
+      - total_acid_points
+    expected_samples: 15
+
+  - number: 6
+    name: "Rinsing 2"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - conductivity_ms_cm
+    expected_samples: 8
+
+  - number: 7
+    name: "Passivation"
+    expected_parameters:
+      - temperature_c
+      - ph_value
+      - concentration_g_l
+    expected_samples: 8
+
+  - number: 8
+    name: "Rinsing 3 (DI Water)"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - conductivity_ms_cm
+    expected_samples: 8
+
+  - number: 9
+    name: "E-Coat Dip"
+    expected_parameters:
+      - ecoat_voltage_v
+      - temperature_c
+      - conductivity_ms_cm
+      - solid_content_pct
+      - ph_value
+    expected_samples: 20
+
+  - number: 10
+    name: "E-Coat Rinsing"
+    expected_parameters:
+      - temperature_c
+      - pressure_bar
+      - conductivity_ms_cm
+    expected_samples: 8
+
+  - number: 11
+    name: "E-Coat Oven"
+    expected_parameters:
+      - temperature_c
+      - humidity_pct
+      - conveyor_speed_m_min
+    expected_samples: 20
+
+  - number: 12
+    name: "Seam Sealing"
+    expected_parameters:
+      - temperature_c
+      - humidity_pct
+      - material_pressure_bar
+    expected_samples: 10
+
+  - number: 13
+    name: "PVC Underbody"
+    expected_parameters:
+      - temperature_c
+      - humidity_pct
+      - material_pressure_bar
+      - application_weight_g
+    expected_samples: 12
+
+  - number: 14
+    name: "Primer Oven"
+    expected_parameters:
+      - temperature_c
+      - humidity_pct
+      - conveyor_speed_m_min
+    expected_samples: 20

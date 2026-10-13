@@ -1,10 +1,16 @@
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import i18n, {
   SUPPORTED_LANGUAGES,
   type SupportedLanguage,
 } from "./i18n";
 import { useTranslatedAlert } from "./useTranslatedAlert";
+import { DefectDashboardPage, type DefectRow } from "./components/DefectDashboardPage";
+import { ProcessReplayPage } from "./components/ProcessReplayPage";
+
+type Route =
+  | { page: "dashboard" }
+  | { page: "replay"; vin: string };
 
 function LanguageSwitcher() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -57,8 +63,44 @@ function DefectClusterAlertDemo() {
   );
 }
 
+// Sample rows for the dashboard — in production these come from the defect API.
+const SAMPLE_ROWS: DefectRow[] = [
+  {
+    vin: "WBS4E0108RG271034",
+    defectType: "Crater",
+    aiConfidence: 73,
+    suspectStage: "Stage 6 – E-coat",
+    flaggedAt: "08:47:12",
+    dataCompleteness: 91,
+    status: "in_review",
+  },
+  {
+    vin: "WBS4E0106RG270891",
+    defectType: "Dust",
+    aiConfidence: 58,
+    suspectStage: "Stage 9 – Sealer",
+    flaggedAt: "07:12:55",
+    dataCompleteness: 100,
+    status: "awaiting_root_cause",
+  },
+  {
+    vin: "WBS4E0102RG271201",
+    defectType: "Orange peel",
+    aiConfidence: 81,
+    suspectStage: "Booth 3 – Basecoat",
+    flaggedAt: "06:34:08",
+    dataCompleteness: 100,
+    status: "awaiting_root_cause",
+  },
+];
+
 function QualityStudioShell() {
   const { t } = useTranslation();
+  const [route, setRoute] = useState<Route>({ page: "dashboard" });
+
+  function navigate(next: Route) {
+    setRoute(next);
+  }
 
   return (
     <main>
@@ -67,8 +109,28 @@ function QualityStudioShell() {
       <nav aria-label={t("nav.manufacturing")}>
         <ul>
           <li>{t("nav.arWorkbench")}</li>
-          <li>{t("nav.defectDashboard")}</li>
-          <li>{t("nav.processReplay")}</li>
+          <li>
+            <button
+              type="button"
+              onClick={() => navigate({ page: "dashboard" })}
+              aria-current={route.page === "dashboard" ? "page" : undefined}
+            >
+              {t("nav.defectDashboard")}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              onClick={() =>
+                route.page === "replay"
+                  ? undefined
+                  : navigate({ page: "dashboard" })
+              }
+              aria-current={route.page === "replay" ? "page" : undefined}
+            >
+              {t("nav.processReplay")}
+            </button>
+          </li>
           <li>{t("nav.gateCommand")}</li>
           <li>{t("nav.certificateStudio")}</li>
         </ul>
@@ -86,6 +148,20 @@ function QualityStudioShell() {
         <h2 id="alerts-heading">{t("nav.defectDashboard")}</h2>
         <DefectClusterAlertDemo />
       </section>
+
+      {route.page === "dashboard" && (
+        <DefectDashboardPage
+          rows={SAMPLE_ROWS}
+          onLaunchReplay={(vin) => navigate({ page: "replay", vin })}
+        />
+      )}
+
+      {route.page === "replay" && (
+        <ProcessReplayPage
+          vin={route.vin}
+          onBack={() => navigate({ page: "dashboard" })}
+        />
+      )}
     </main>
   );
 }

@@ -1,6 +1,6 @@
-"""GET /defect-genome/alerts and POST /defect-genome/alerts/{alertId}/acknowledge.
+"""GET /defect-genome/alerts, GET /defect-genome/alerts/{alertId}, and POST /defect-genome/alerts/{alertId}/acknowledge.
 
-Implements operationIds: listClusterAlerts, acknowledgeClusterAlert.
+Implements operationIds: listClusterAlerts, getClusterAlert, acknowledgeClusterAlert.
 """
 
 from __future__ import annotations
@@ -108,6 +108,45 @@ def _filter_alerts(
         except ValueError:
             result = []
     return result
+
+
+# ---------------------------------------------------------------------------
+# GET /defect-genome/alerts/{alertId}
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/defect-genome/alerts/{alertId}",
+    operation_id="getClusterAlert",
+    summary="Get a specific cluster alert by ID",
+    status_code=200,
+    responses={
+        200: {},
+        401: {},
+        404: {},
+        500: {},
+    },
+)
+async def get_cluster_alert(
+    alertId: str,
+    jwt_payload: dict[str, Any] = Depends(require_bearer),
+    alert_store: list[dict[str, Any]] = Depends(get_alert_store),
+) -> JSONResponse:
+    try:
+        alert_uuid = str(uuid.UUID(alertId))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_error("INVALID_ALERT_ID", "alertId must be a valid UUID"),
+        )
+
+    alert = _find_alert(alert_store, alert_uuid)
+    if alert is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_error("ALERT_NOT_FOUND", f"No alert found with id {alertId}"),
+        )
+
+    return JSONResponse(status_code=200, content=_row_to_alert(alert))
 
 
 # ---------------------------------------------------------------------------

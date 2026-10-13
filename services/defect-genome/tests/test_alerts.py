@@ -166,6 +166,111 @@ class TestListClusterAlerts:
 
 
 # ---------------------------------------------------------------------------
+# GET /defect-genome/alerts/{alertId}
+# ---------------------------------------------------------------------------
+
+class TestGetClusterAlert:
+    def test_returns_200_with_full_alert_body(self) -> None:
+        alert_id = str(uuid.uuid4())
+        store = [_make_alert(alert_id=alert_id)]
+        client = _make_client(store)
+        resp = client.get(f"/defect-genome/alerts/{alert_id}", headers=_auth())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["alert_id"] == alert_id
+
+    def test_response_contains_all_required_fields(self) -> None:
+        alert_id = str(uuid.uuid4())
+        cluster_id = str(uuid.uuid4())
+        store = [_make_alert(alert_id=alert_id, cluster_id=cluster_id)]
+        client = _make_client(store)
+        resp = client.get(f"/defect-genome/alerts/{alert_id}", headers=_auth())
+        assert resp.status_code == 200
+        body = resp.json()
+        required = {
+            "alert_id", "cluster_id", "defect_class", "status",
+            "affected_vin_count", "root_cause_signature", "confidence_score",
+            "most_recent_vin", "process_replay_url", "triggered_at",
+            "created_at", "updated_at",
+        }
+        for field in required:
+            assert field in body, f"missing field: {field}"
+        assert body["cluster_id"] == cluster_id
+
+    def test_response_field_values_match_store(self) -> None:
+        alert_id = str(uuid.uuid4())
+        store = [_make_alert(
+            alert_id=alert_id,
+            status="in_progress",
+            defect_class="dust",
+            affected_vin_count=7,
+            confidence_score=0.92,
+        )]
+        client = _make_client(store)
+        resp = client.get(f"/defect-genome/alerts/{alert_id}", headers=_auth())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "in_progress"
+        assert body["defect_class"] == "dust"
+        assert body["affected_vin_count"] == 7
+        assert body["confidence_score"] == 0.92
+
+    def test_returns_404_for_unknown_alert_id(self) -> None:
+        client = _make_client([])
+        unknown_id = str(uuid.uuid4())
+        resp = client.get(f"/defect-genome/alerts/{unknown_id}", headers=_auth())
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["code"] == "ALERT_NOT_FOUND"
+        assert "correlation_id" in body
+
+    def test_returns_400_for_non_uuid_alert_id(self) -> None:
+        client = _make_client([])
+        resp = client.get("/defect-genome/alerts/not-a-uuid", headers=_auth())
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "INVALID_ALERT_ID"
+
+    def test_returns_401_without_bearer(self) -> None:
+        alert_id = str(uuid.uuid4())
+        store = [_make_alert(alert_id=alert_id)]
+        client = _make_client(store)
+        resp = client.get(f"/defect-genome/alerts/{alert_id}")
+        assert resp.status_code == 401
+        body = resp.json()
+        assert body["code"] == "MISSING_TOKEN"
+        assert "correlation_id" in body
+
+    def test_nullable_fields_present_when_null(self) -> None:
+        alert_id = str(uuid.uuid4())
+        store = [_make_alert(alert_id=alert_id, acknowledged_at=None, acknowledged_by_user_id=None)]
+        client = _make_client(store)
+        resp = client.get(f"/defect-genome/alerts/{alert_id}", headers=_auth())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["acknowledged_at"] is None
+        assert body["acknowledged_by_user_id"] is None
+        assert body["corrective_action_jira_id"] is None
+
+    def test_nullable_fields_populated_when_acknowledged(self) -> None:
+        alert_id = str(uuid.uuid4())
+        store = [_make_alert(
+            alert_id=alert_id,
+            status="acknowledged",
+            acknowledged_at=_FAR_FUTURE,
+            acknowledged_by_user_id="user-99",
+            corrective_action_jira_id="IFOSQUALITY-42",
+        )]
+        client = _make_client(store)
+        resp = client.get(f"/defect-genome/alerts/{alert_id}", headers=_auth())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["acknowledged_by_user_id"] == "user-99"
+        assert body["corrective_action_jira_id"] == "IFOSQUALITY-42"
+        assert body["acknowledged_at"] is not None
+
+
+# ---------------------------------------------------------------------------
 # POST /defect-genome/alerts/{alertId}/acknowledge
 # ---------------------------------------------------------------------------
 

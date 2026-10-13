@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.health import Health, health
 from app.routers.alerts import router as alerts_router
+from app.routers.corrective_action import router as corrective_action_router
 
 
 def _error_body(code: str, message: str, details: list[Any] | None = None) -> dict[str, Any]:
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(alerts_router)
+    app.include_router(corrective_action_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])
     def health_check() -> Health:

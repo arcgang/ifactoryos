@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     jira_base_url: str = "https://bmwgroup.atlassian.net"
     jira_project_key: str = "IFOSQUALITY"
 
+    # Jira custom field IDs — resolved from Terraform outputs and stored in Vault.
+    # The Vault Agent Injector writes JIRA_FIELD_* env vars into the pod at runtime.
+    # Values are Jira customfield_NNNNN identifiers (e.g. "customfield_10100").
+    jira_field_cluster_id: str = "customfield_10100"
+    jira_field_root_cause_probability: str = "customfield_10101"
+    jira_field_affected_vin_count: str = "customfield_10102"
+    jira_field_prep_stage_adjustment: str = "customfield_10103"
+
     # Process Replay base URL for constructing deep-links
     quality_studio_base_url: str = "https://quality-studio.internal.bmw-factory-os.eu"
 

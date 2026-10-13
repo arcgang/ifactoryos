@@ -59,12 +59,25 @@ interface AndonAlertListResponse {
   page: { next_cursor: string | null; limit: number };
 }
 
+interface HandoverAlertDisposition {
+  alertId: string;
+  disposition: "resolved" | "escalated" | "monitoring";
+  note: string | null;
+}
+
 export interface Handover {
   handoverId: string;
   lineId: string | null;
   submittedAt: string;
   acknowledged: boolean;
   alertId?: string;
+  // Full record fields — present when fetched from GET /handovers/{handoverId}
+  oeeDeltaPct?: number;
+  alertDispositions?: HandoverAlertDisposition[];
+  heldVins?: string[];
+  shiftStartTs?: string;
+  shiftEndTs?: string;
+  submittedByUserId?: string;
 }
 
 interface HandoverListResponse {
@@ -360,6 +373,14 @@ interface HandoverItemProps {
 
 function HandoverQueueItem({ handover, onAcknowledge }: HandoverItemProps) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+
+  const hasDetail =
+    handover.oeeDeltaPct !== undefined ||
+    (handover.alertDispositions && handover.alertDispositions.length > 0) ||
+    (handover.heldVins && handover.heldVins.length > 0);
+
+  const deltaPositive = (handover.oeeDeltaPct ?? 0) >= 0;
 
   return (
     <li
@@ -397,6 +418,165 @@ function HandoverQueueItem({ handover, onAcknowledge }: HandoverItemProps) {
           }),
         })}
       </div>
+
+      {/* OEE delta summary */}
+      {handover.oeeDeltaPct !== undefined && (
+        <div
+          aria-label={
+            deltaPositive
+              ? t("command_center.handover_oee_above", { value: Math.abs(handover.oeeDeltaPct).toFixed(1) })
+              : t("command_center.handover_oee_below", { value: Math.abs(handover.oeeDeltaPct).toFixed(1) })
+          }
+          style={{
+            alignItems: "center",
+            display: "flex",
+            fontSize: "11px",
+            fontVariantNumeric: "tabular-nums",
+            fontWeight: 700,
+            gap: "4px",
+            marginBottom: "6px",
+          }}
+        >
+          <span style={{ color: "var(--lc-text-muted, #7b83a3)" }}>
+            {t("command_center.handover_oee_delta_label")}
+          </span>
+          <span style={{ color: deltaPositive ? "var(--lc-good, #22c55e)" : "var(--lc-crit, #ef4444)" }}>
+            {deltaPositive ? "+" : "−"}{Math.abs(handover.oeeDeltaPct).toFixed(1)} pp
+          </span>
+        </div>
+      )}
+
+      {/* Expand/collapse detail */}
+      {hasDetail && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((p) => !p)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#c4b5fd",
+            cursor: "pointer",
+            fontSize: "10px",
+            fontWeight: 600,
+            marginBottom: "8px",
+            padding: 0,
+          }}
+        >
+          {expanded ? t("command_center.handover_collapse") : t("command_center.handover_expand")}
+        </button>
+      )}
+
+      {/* Expanded summary */}
+      {expanded && (
+        <div
+          style={{
+            background: "var(--lc-surface, #13151f)",
+            borderRadius: "5px",
+            marginBottom: "8px",
+            padding: "10px 12px",
+          }}
+        >
+          {/* Alert dispositions */}
+          {handover.alertDispositions && handover.alertDispositions.length > 0 && (
+            <div style={{ marginBottom: "8px" }}>
+              <div
+                style={{
+                  color: "var(--lc-text-muted, #7b83a3)",
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  marginBottom: "5px",
+                  textTransform: "uppercase",
+                }}
+              >
+                {t("command_center.handover_dispositions_label")}
+              </div>
+              <ul style={{ display: "flex", flexDirection: "column", gap: "4px", listStyle: "none", margin: 0, padding: 0 }}>
+                {handover.alertDispositions.map((d) => (
+                  <li
+                    key={d.alertId}
+                    style={{ alignItems: "center", display: "flex", fontSize: "10px", gap: "6px" }}
+                  >
+                    <span
+                      style={{
+                        background:
+                          d.disposition === "resolved"
+                            ? "rgba(34,197,94,.12)"
+                            : d.disposition === "escalated"
+                              ? "rgba(239,68,68,.12)"
+                              : "rgba(245,158,11,.12)",
+                        border: `1px solid ${
+                          d.disposition === "resolved"
+                            ? "rgba(34,197,94,.3)"
+                            : d.disposition === "escalated"
+                              ? "rgba(239,68,68,.3)"
+                              : "rgba(245,158,11,.3)"
+                        }`,
+                        borderRadius: "3px",
+                        color:
+                          d.disposition === "resolved"
+                            ? "var(--lc-good, #22c55e)"
+                            : d.disposition === "escalated"
+                              ? "var(--lc-crit, #ef4444)"
+                              : "var(--lc-warn, #f59e0b)",
+                        flexShrink: 0,
+                        fontSize: "8px",
+                        fontWeight: 700,
+                        padding: "1px 5px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {d.disposition}
+                    </span>
+                    <span style={{ color: "var(--lc-text-muted, #7b83a3)", fontFamily: "monospace" }}>
+                      {d.alertId.slice(0, 8)}…
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Held VINs */}
+          {handover.heldVins && handover.heldVins.length > 0 && (
+            <div>
+              <div
+                style={{
+                  color: "var(--lc-text-muted, #7b83a3)",
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  marginBottom: "5px",
+                  textTransform: "uppercase",
+                }}
+              >
+                {t("command_center.handover_held_vins_label")}
+              </div>
+              <ul style={{ display: "flex", flexWrap: "wrap", gap: "4px", listStyle: "none", margin: 0, padding: 0 }}>
+                {handover.heldVins.map((vin) => (
+                  <li key={vin}>
+                    <span
+                      style={{
+                        background: "rgba(124,58,237,.12)",
+                        border: "1px solid rgba(124,58,237,.3)",
+                        borderRadius: "3px",
+                        color: "#c4b5fd",
+                        fontFamily: "monospace",
+                        fontSize: "10px",
+                        padding: "2px 6px",
+                      }}
+                    >
+                      {vin}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: "8px" }}>
         <button
           type="button"

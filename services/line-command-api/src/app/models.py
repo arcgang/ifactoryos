@@ -134,9 +134,69 @@ class AlertAcknowledgeResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Shift Handover
+# Shared validators
 # ---------------------------------------------------------------------------
 
+_VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+
+
+# ---------------------------------------------------------------------------
+# Shift Handover (LLD contract)
+# ---------------------------------------------------------------------------
+
+class AlertDispositionItem(BaseModel):
+    alertId: UUID
+    disposition: DispositionEnum
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class HandoverRequest(BaseModel):
+    shiftId: UUID
+    lineId: str
+    shiftStartTs: str
+    shiftEndTs: str
+    alertDispositions: list[AlertDispositionItem]
+    oeeDeltaPct: float
+    heldVins: list[str] = Field(default_factory=list)
+    notes: str | None = Field(default=None, max_length=4000)
+    idempotencyKey: UUID | None = None
+
+    @field_validator("heldVins")
+    @classmethod
+    def vins_must_match_pattern(cls, v: list[str]) -> list[str]:
+        for vin in v:
+            if not _VIN_RE.match(vin):
+                raise ValueError(f"VIN must match ^[A-HJ-NPR-Z0-9]{{17}}$: {vin!r}")
+        return v
+
+
+class HandoverResponse(BaseModel):
+    handoverId: UUID
+    submittedAt: str
+    submittedByUserId: str
+
+
+class HandoverRecord(BaseModel):
+    handoverId: UUID
+    shiftId: UUID
+    lineId: str
+    shiftStartTs: str
+    shiftEndTs: str
+    submittedByUserId: str
+    alertDispositions: list[AlertDispositionItem]
+    oeeDeltaPct: float
+    heldVins: list[str]
+    notes: str | None = None
+    createdAt: str
+    updatedAt: str | None = None
+
+
+class HandoverListResponse(BaseModel):
+    data: list[HandoverRecord]
+    page: CursorPage
+
+
+# Legacy internal shape used by the Command Center list endpoint.
 class ShiftHandover(BaseModel):
     id: UUID
     shift_id: UUID
@@ -161,8 +221,6 @@ class ShiftHandoverListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Expert Calls
 # ---------------------------------------------------------------------------
-
-_VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 
 
 class ExpertCallRequest(BaseModel):

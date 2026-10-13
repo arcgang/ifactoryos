@@ -20,6 +20,7 @@ from app.auth import (
 )
 from app.models import (
     AlertListResponse,
+    ConstraintAlertRecord,
     ConstraintThreshold,
     My26Config,
     My26ConfigDraft,
@@ -268,9 +269,9 @@ alerts_router = APIRouter(tags=["Alerts"])
 
 
 @alerts_router.get(
-    "/api/v1/alerts",
+    "/alerts",
     response_model=AlertListResponse,
-    operation_id="listConstraintAlerts",
+    operation_id="listAlerts",
 )
 async def list_constraint_alerts(
     status_filter: str | None = Query(default="active", alias="status"),
@@ -287,6 +288,36 @@ async def list_constraint_alerts(
         limit=limit,
         status_filter=status_filter,
     )
+
+
+@alerts_router.post(
+    "/alerts/{alertId}/acknowledge",
+    response_model=ConstraintAlertRecord,
+    operation_id="acknowledgeAlert",
+)
+async def acknowledge_alert_endpoint(
+    alertId: uuid.UUID,
+    payload: dict[str, Any] = Depends(require_bearer),
+    pool: asyncpg.Pool = Depends(_get_pool),
+) -> ConstraintAlertRecord:
+    from app.resequence import AlertNotFoundError, acknowledge_alert_db
+
+    acknowledged_by = caller_subject(payload)
+    try:
+        return await acknowledge_alert_db(
+            alert_id=alertId,
+            acknowledged_by=acknowledged_by,
+            pool=pool,
+        )
+    except AlertNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "ALERT_NOT_FOUND",
+                "message": f"Alert {alertId} not found",
+                "correlation_id": str(uuid.uuid4()),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -642,7 +642,7 @@ def test_post_resequence_200_returns_optimize_response():
 
 
 # ---------------------------------------------------------------------------
-# API endpoint tests — GET /api/v1/alerts
+# API endpoint tests — GET /alerts and POST /alerts/{alertId}/acknowledge
 # ---------------------------------------------------------------------------
 
 
@@ -653,7 +653,7 @@ def test_get_alerts_401_when_no_bearer_token():
     application.dependency_overrides[_get_pool] = lambda: MagicMock()
 
     client = TestClient(application, raise_server_exceptions=False)
-    resp = client.get("/api/v1/alerts")
+    resp = client.get("/alerts")
     assert resp.status_code == 401
     body = resp.json()
     assert body["code"] == "MISSING_TOKEN"
@@ -688,7 +688,7 @@ def test_get_alerts_200_returns_active_alerts():
     resequence_mod.list_active_alerts = _mock_list
     try:
         client = TestClient(application, raise_server_exceptions=False)
-        resp = client.get("/api/v1/alerts", headers={"Authorization": _BEARER})
+        resp = client.get("/alerts", headers={"Authorization": _BEARER})
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["data"]) == 1
@@ -697,3 +697,89 @@ def test_get_alerts_200_returns_active_alerts():
         assert body["page"]["next_cursor"] is None
     finally:
         resequence_mod.list_active_alerts = original
+
+
+# ---------------------------------------------------------------------------
+# API endpoint tests — POST /alerts/{alertId}/acknowledge
+# ---------------------------------------------------------------------------
+
+_ACKNOWLEDGED_AT = "2099-01-01T00:00:00+00:00"
+
+
+def test_post_acknowledge_401_when_no_bearer_token():
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    client = TestClient(application, raise_server_exceptions=False)
+    resp = client.post(f"/alerts/{_ALERT_ID}/acknowledge")
+    assert resp.status_code == 401
+    assert resp.json()["code"] == "MISSING_TOKEN"
+
+
+def test_post_acknowledge_200_returns_acknowledged_record():
+    import app.resequence as resequence_mod
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    acknowledged_record = ConstraintAlertRecord(
+        alertId=_ALERT_ID,
+        constraintType=ConstraintType.paint_capacity,
+        currentValue=92.5,
+        thresholdValue=85.0,
+        affectedVins=[_VIN_A],
+        status=AlertStatus.acknowledged,
+        detectedAt=_FAR_FUTURE,
+        acknowledgedAt=_ACKNOWLEDGED_AT,
+        acknowledgedBy="planner@bmwgroup.net",
+    )
+
+    original = resequence_mod.acknowledge_alert_db
+
+    async def _mock_ack(alert_id: Any, acknowledged_by: Any, pool: Any, now: Any = None) -> ConstraintAlertRecord:
+        return acknowledged_record
+
+    resequence_mod.acknowledge_alert_db = _mock_ack
+    try:
+        client = TestClient(application, raise_server_exceptions=False)
+        resp = client.post(
+            f"/alerts/{_ALERT_ID}/acknowledge",
+            headers={"Authorization": _BEARER},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["alertId"] == str(_ALERT_ID)
+        assert body["status"] == "acknowledged"
+        assert body["acknowledgedAt"] == _ACKNOWLEDGED_AT
+        assert body["acknowledgedBy"] == "planner@bmwgroup.net"
+    finally:
+        resequence_mod.acknowledge_alert_db = original
+
+
+def test_post_acknowledge_404_when_alert_not_found():
+    import app.resequence as resequence_mod
+    from app.router import _get_pool
+
+    application = _build_test_app()
+    application.dependency_overrides[_get_pool] = lambda: MagicMock()
+
+    original = resequence_mod.acknowledge_alert_db
+
+    async def _mock_ack_not_found(alert_id: Any, acknowledged_by: Any, pool: Any, now: Any = None) -> ConstraintAlertRecord:
+        raise resequence_mod.AlertNotFoundError(f"Alert {alert_id!r} not found")
+
+    resequence_mod.acknowledge_alert_db = _mock_ack_not_found
+    try:
+        missing_id = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        client = TestClient(application, raise_server_exceptions=False)
+        resp = client.post(
+            f"/alerts/{missing_id}/acknowledge",
+            headers={"Authorization": _BEARER},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ALERT_NOT_FOUND"
+    finally:
+        resequence_mod.acknowledge_alert_db = original

@@ -117,12 +117,36 @@ class FakePool:
         return self._store
 
 
+class _FakeResult:
+    """Minimal stand-in for neo4j AsyncResult — supports .data() only."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    async def data(self) -> list[dict]:
+        return list(self._rows)
+
+
+# Names returned by the schema validation queries (CALL db.constraints/indexes).
+_SCHEMA_NAMES: list[dict] = [
+    {"name": "vin_unique"},
+    {"name": "event_unique"},
+    {"name": "event_by_type_time"},
+    {"name": "event_by_stage_number"},
+    {"name": "event_by_shop"},
+]
+
+
 class FakeNeo4jSession:
     def __init__(self, store: list) -> None:
         self._store = store
 
-    async def run(self, query: str, **kwargs: Any) -> None:
+    async def run(self, query: str, **kwargs: Any) -> _FakeResult:
         self._store.append(kwargs)
+        # Return schema names for startup validation queries.
+        if "db.constraints" in query or "db.indexes" in query:
+            return _FakeResult(_SCHEMA_NAMES)
+        return _FakeResult([])
 
     async def __aenter__(self) -> "FakeNeo4jSession":
         return self

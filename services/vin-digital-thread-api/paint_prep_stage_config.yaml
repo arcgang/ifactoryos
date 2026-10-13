@@ -1,0 +1,121 @@
+# Paint prep stage configuration — 14 stages, each with its expected parameter keys
+# and expected sample count per VIN pass.
+# expectedSampleCount is the denominator for per-stage completeness calculation.
+# Changes require a service deployment (static config per design decision).
+stages:
+  - stageNumber: 1
+    stageName: "Pre-Clean Rinse"
+    expectedSampleCount: 3
+    expectedParameters:
+      - temperature_c
+      - pressure_bar
+      - flow_rate_l_min
+
+  - stageNumber: 2
+    stageName: "Alkaline Degreaser"
+    expectedSampleCount: 4
+    expectedParameters:
+      - temperature_c
+      - concentration_pct
+      - ph_level
+      - conductivity_ms_cm
+
+  - stageNumber: 3
+    stageName: "Rinse 1"
+    expectedSampleCount: 2
+    expectedParameters:
+      - temperature_c
+      - conductivity_ms_cm
+
+  - stageNumber: 4
+    stageName: "Activation"
+    expectedSampleCount: 3
+    expectedParameters:
+      - temperature_c
+      - ph_level
+      - titanium_concentration_g_l
+
+  - stageNumber: 5
+    stageName: "Phosphating"
+    expectedSampleCount: 5
+    expectedParameters:
+      - temperature_c
+      - phosphate_concentration_g_l
+      - zinc_concentration_g_l
+      - nitrite_concentration_g_l
+      - ph_level
+
+  - stageNumber: 6
+    stageName: "Rinse 2"
+    expectedSampleCount: 2
+    expectedParameters:
+      - temperature_c
+      - conductivity_ms_cm
+
+  - stageNumber: 7
+    stageName: "Passivation Rinse"
+    expectedSampleCount: 3
+    expectedParameters:
+      - temperature_c
+      - ph_level
+      - fluoride_concentration_ppm
+
+  - stageNumber: 8
+    stageName: "Deionised Rinse"
+    expectedSampleCount: 2
+    expectedParameters:
+      - temperature_c
+      - conductivity_us_cm
+
+  - stageNumber: 9
+    stageName: "e-Coat Dip"
+    expectedSampleCount: 6
+    expectedParameters:
+      - ecoat_voltage_v
+      - ecoat_current_a
+      - bath_temperature_c
+      - ph_level
+      - conductivity_ms_cm
+      - solid_content_pct
+
+  - stageNumber: 10
+    stageName: "e-Coat Rinse"
+    expectedSampleCount: 3
+    expectedParameters:
+      - temperature_c
+      - conductivity_us_cm
+      - ultrafiltrate_conductivity_us_cm
+
+  - stageNumber: 11
+    stageName: "e-Coat Bake Pre-Heat"
+    expectedSampleCount: 3
+    expectedParameters:
+      - temperature_c
+      - humidity_pct
+      - conveyor_speed_m_min
+
+  - stageNumber: 12
+    stageName: "e-Coat Bake"
+    expectedSampleCount: 4
+    expectedParameters:
+      - temperature_c
+      - humidity_pct
+      - dwell_time_min
+      - conveyor_speed_m_min
+
+  - stageNumber: 13
+    stageName: "e-Coat Bake Cool-Down"
+    expectedSampleCount: 3
+    expectedParameters:
+      - temperature_c
+      - humidity_pct
+      - conveyor_speed_m_min
+
+  - stageNumber: 14
+    stageName: "Final Quality Check"
+    expectedSampleCount: 4
+    expectedParameters:
+      - film_thickness_um
+      - adhesion_grade
+      - surface_roughness_ra
+      - visual_inspection_result

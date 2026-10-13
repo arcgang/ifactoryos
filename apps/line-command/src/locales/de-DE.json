@@ -138,6 +138,29 @@
       "alert_id_label": "Alarm-ID"
     }
   },
+  "expert_call": {
+    "call_button_label": "Fernspezialist für diese seltene Variante anrufen",
+    "call_button_text": "Experten anrufen",
+    "connecting_label": "Verbindung mit Fernspezialist wird hergestellt",
+    "connecting_text": "Verbindung wird hergestellt…",
+    "sla_hint": "Verbindung muss innerhalb von 10 Sekunden bestehen",
+    "cancel_label": "Expertenanruf abbrechen",
+    "cancel_text": "Abbrechen",
+    "active_video_label": "Video-Expertenanruf aktiv",
+    "active_voice_label": "Sprachanruf mit Experten aktiv",
+    "mode_video": "Videoanruf · Aktiv",
+    "mode_voice": "Nur-Sprache-Anruf · Aktiv",
+    "no_biometrics_note": "Nur Sichtfeld · Keine biometrischen oder Blickdaten übertragen",
+    "voice_only_note": "Nur Audiokanal · Keine Video- oder Blickdaten übertragen",
+    "duration_label": "Anrufdauer",
+    "end_call_label": "Expertenanruf beenden und im Audit-Trail protokollieren",
+    "end_call_text": "Anruf beenden",
+    "ended_label": "Expertenanruf beendet und Audit protokolliert",
+    "ended_text": "Anruf beendet — Sitzung im digitalen VIN-Thread protokolliert",
+    "audit_entry_label": "Audit-Eintrags-ID",
+    "retry_text": "Erneut versuchen",
+    "annotations_label": "Holografische Anmerkungen des Experten"
+  },
   "errors": {
     "generic": "Ein Fehler ist aufgetreten. Bitte Seite neu laden.",
     "not_found": "Seite nicht gefunden.",

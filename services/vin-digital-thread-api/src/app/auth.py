@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from jose import JWTError, jwt
 
 _bearer = HTTPBearer(auto_error=False)
@@ -51,6 +52,11 @@ def _extract_user_id(claims: dict[str, Any]) -> str:
 def _has_role(claims: dict[str, Any], role: str) -> bool:
     roles = claims.get("roles") or claims.get("scp", "").split()
     return role in roles
+
+
+def _has_any_role(claims: dict[str, Any], roles: set[str]) -> bool:
+    token_roles: list[str] = claims.get("roles") or claims.get("scp", "").split()
+    return bool(roles.intersection(token_roles))
 
 
 class CallerIdentity:
@@ -142,6 +148,45 @@ def require_ingestor_role(
     return payload
 
 
+def require_quality_reader(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless JWT carries quality-engineer or quality-lead role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
+    allowed = cfg.reader_role_set()
+    if not _has_any_role(payload, allowed):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "INSUFFICIENT_ROLE",
+                "Caller lacks required role: quality-engineer or quality-lead",
+            ),
+        )
+    return payload
+
+
 def caller_subject(payload: dict[str, Any]) -> str:
     """Extract the JWT subject (caller identity) for audit records."""
     return payload.get("sub") or "unknown"
+
+
+def require_quality_role(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless the JWT carries quality-engineer or quality-lead role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
+    allowed_roles: set[str] = {r.strip() for r in cfg.quality_reader_roles.split(",") if r.strip()}
+    caller_roles: list[str] = payload.get("roles", []) or []
+    if not any(r in allowed_roles for r in caller_roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "INSUFFICIENT_ROLE",
+                f"Caller lacks required role: {cfg.quality_reader_roles}",
+            ),
+        )
+    return payload

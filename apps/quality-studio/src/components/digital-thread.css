@@ -1,0 +1,219 @@
+/* Digital Thread Panel — vertical event timeline */
+
+.digital-thread-panel {
+  padding: 1rem 1.5rem;
+}
+
+.digital-thread-panel h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-block-end: 1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.dt-vin-label {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-secondary, #6c757d);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Timeline list */
+.dt-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dt-timeline-item {
+  position: relative;
+}
+
+/* Shop boundary divider */
+.dt-shop-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2, #f8f9fa);
+  border: 1px solid var(--border-light, #dee2e6);
+  border-radius: 0.25rem;
+  margin-block: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-secondary, #6c757d);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dt-shop-arrow {
+  font-size: 1rem;
+  color: var(--text-muted, #adb5bd);
+}
+
+.dt-shop-name {
+  color: var(--text-primary, #1a1a2e);
+}
+
+/* Gap indicator */
+.dt-gap-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--red-bg, #fee2e2);
+  border: 1px solid var(--red-border, #fca5a5);
+  border-radius: 0.25rem;
+  margin-block: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.dt-gap-icon {
+  color: var(--red, #991b1b);
+  font-size: 1rem;
+}
+
+.dt-gap-text {
+  font-weight: 700;
+  color: var(--red, #991b1b);
+}
+
+.dt-gap-shop {
+  color: var(--red, #991b1b);
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* Event card */
+.dt-event-card {
+  border: 1px solid var(--border-light, #dee2e6);
+  border-radius: 0.25rem;
+  padding: 0.625rem 0.75rem;
+  margin-block: 0.25rem;
+  background: var(--surface-1, #fff);
+  min-width: 0;
+}
+
+.dt-event-card--skeleton {
+  background: var(--skeleton-bg, #e9ecef);
+  height: 4.5rem;
+}
+
+.dt-skeleton-line {
+  height: 0.75rem;
+  border-radius: 0.25rem;
+  background: var(--skeleton-line, #dee2e6);
+  margin-block-end: 0.5rem;
+  width: 100%;
+}
+
+.dt-skeleton-line--short {
+  width: 40%;
+}
+
+/* Chain Complete badge */
+.dt-chain-complete-badge {
+  display: inline-block;
+  padding: 0.125rem 0.625rem;
+  background: var(--green-bg, #d1fae5);
+  color: var(--green, #065f46);
+  border: 1px solid var(--green-border, #6ee7b7);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-block-end: 0.375rem;
+}
+
+.dt-event-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-block-end: 0.25rem;
+}
+
+.dt-event-time {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #6c757d);
+}
+
+.dt-event-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dt-event-meta {
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #6c757d);
+  margin-block-end: 0.375rem;
+}
+
+.dt-event-sep {
+  color: var(--border-light, #dee2e6);
+}
+
+.dt-event-shop,
+.dt-event-station,
+.dt-event-source {
+  color: var(--text-secondary, #6c757d);
+}
+
+.dt-event-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+
+.dt-param-row {
+  display: flex;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.dt-param-key {
+  color: var(--text-muted, #adb5bd);
+}
+
+.dt-param-val {
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+}
+
+/* Error and empty states */
+.dt-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--red-bg, #fee2e2);
+  border: 1px solid var(--red-border, #fca5a5);
+  border-radius: 0.375rem;
+  max-width: 32rem;
+}
+
+.dt-error p {
+  margin: 0;
+  color: var(--red, #991b1b);
+  font-size: 0.875rem;
+}
+
+.dt-empty {
+  color: var(--text-muted, #adb5bd);
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dt-timeline {
+    scroll-behavior: auto;
+  }
+}

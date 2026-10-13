@@ -35,3 +35,7 @@ tower = { version = "0.4", features = ["util"] }
 [[test]]
 name = "andon_alerts_test"
 required-features = ["test-helpers"]
+
+[[test]]
+name = "gate_results_test"
+required-features = ["test-helpers"]

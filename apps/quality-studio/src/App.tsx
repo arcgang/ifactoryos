@@ -7,10 +7,17 @@ import i18n, {
 import { useTranslatedAlert } from "./useTranslatedAlert";
 import { DefectDashboardPage, type DefectRow } from "./components/DefectDashboardPage";
 import { ProcessReplayPage } from "./components/ProcessReplayPage";
+import { ClusterAlertPanel } from "./components/ClusterAlertPanel";
+import { AlertDetailView } from "./components/AlertDetailView";
 
 type Route =
   | { page: "dashboard" }
-  | { page: "replay"; vin: string };
+  | { page: "replay"; vin: string }
+  | { page: "alertDetail"; alertId: string };
+
+// Mock OIDC context — in production this comes from the BMW Entra ID provider
+const MOCK_USER_ID = "kb-entra-001";
+const MOCK_USER_GROUPS = ["GRP-IFOS-PAINTENGINEER-MUC"];
 
 function LanguageSwitcher() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -150,9 +157,24 @@ function QualityStudioShell() {
       </section>
 
       {route.page === "dashboard" && (
-        <DefectDashboardPage
-          rows={SAMPLE_ROWS}
-          onLaunchReplay={(vin) => navigate({ page: "replay", vin })}
+        <>
+          <ClusterAlertPanel
+            userGroups={MOCK_USER_GROUPS}
+            onOpenAlert={(alertId) => navigate({ page: "alertDetail", alertId })}
+          />
+          <DefectDashboardPage
+            rows={SAMPLE_ROWS}
+            onLaunchReplay={(vin) => navigate({ page: "replay", vin })}
+          />
+        </>
+      )}
+
+      {route.page === "alertDetail" && (
+        <AlertDetailView
+          alertId={route.alertId}
+          userId={MOCK_USER_ID}
+          userGroups={MOCK_USER_GROUPS}
+          onBack={() => navigate({ page: "dashboard" })}
         />
       )}
 

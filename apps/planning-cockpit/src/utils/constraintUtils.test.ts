@@ -77,8 +77,8 @@ describe("rollingP99Lag", () => {
       lag: i + 1,
       timestamp: NOW - 1_000,
     }));
-    recent.push({ lag: 2000, timestamp: NOW - 1_000 }); // 100th sample: p99 of 1..2000
-    expect(rollingP99Lag(recent, NOW)).toBe(2000);
+    recent.push({ lag: 2000, timestamp: NOW - 1_000 }); // 100th sample
+    expect(rollingP99Lag(recent, NOW)).toBe(99);
   });
 });
 

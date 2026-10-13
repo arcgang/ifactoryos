@@ -10,6 +10,11 @@ variable "environment" {
   type = string
 }
 
+variable "azure_subscription_id" {
+  type        = string
+  description = "Azure subscription ID — read from ARM_SUBSCRIPTION_ID at apply time."
+}
+
 # ---------------------------------------------------------------------------
 # Locals
 # ---------------------------------------------------------------------------
@@ -25,6 +30,11 @@ locals {
 
   # Alertmanager webhook for Data Governance Lead paging (shared with uns-backbone SchemaViolation)
   alertmanager_webhook_url = "https://alertmanager.ifos.munich.internal/api/v2/alerts"
+
+  # Adoption event pipeline (US-019 · BR-12)
+  otel_namespace                = "otel-system"
+  law_workspace_name            = "law-ifos-euwe-pr"
+  adoption_table_retention_days = 395  # 13 months (NFR-18)
 }
 
 # ---------------------------------------------------------------------------
@@ -646,7 +656,396 @@ resource "kubectl_manifest" "dr_rpo_rule" {
 }
 
 # ---------------------------------------------------------------------------
-# 11. Outputs
+# 11. Adoption Event Pipeline — US-019 · BR-12
+#
+# OTel Collector receives OTLP gRPC from planning-cockpit on port 4317 (TLS 1.3)
+# and routes adoption session events to Azure Monitor Log Analytics workspace
+# law-ifos-euwe-pr (AdoptionEvent_CL table).
+#
+# NFR-18: 13-month retention on the AdoptionEvent_CL table.
+# ---------------------------------------------------------------------------
+
+resource "helm_release" "otel_collector" {
+  name             = "otel-collector-adoption"
+  repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
+  chart            = "opentelemetry-collector"
+  version          = "0.82.0"
+  namespace        = local.otel_namespace
+  create_namespace = true
+
+  depends_on = [helm_release.kube_prometheus_stack]
+
+  values = [<<-YAML
+    mode: deployment
+    replicaCount: 2
+
+    image:
+      repository: otel/opentelemetry-collector-contrib
+      tag: "0.102.0"
+
+    ports:
+      otlp:
+        enabled: true
+        containerPort: 4317
+        servicePort: 4317
+        protocol: TCP
+
+    configMap:
+      create: false
+    existingConfigMap: otel-collector-adoption-config
+
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        prometheus: kube-prometheus
+
+    # TLS certificate for port 4317 provisioned via cert-manager / SPIFFE SVID
+    extraVolumes:
+      - name: otel-tls
+        secret:
+          secretName: otel-collector-adoption-tls
+    extraVolumeMounts:
+      - name: otel-tls
+        mountPath: /etc/otel/tls
+        readOnly: true
+
+    # Azure Monitor credentials injected via Kubernetes secret
+    extraEnvsFrom:
+      - secretRef:
+          name: otel-collector-azmon-credentials
+  YAML
+  ]
+}
+
+# ConfigMap holding the OTel Collector pipeline configuration.
+resource "kubectl_manifest" "otel_collector_config" {
+  depends_on = [helm_release.kube_prometheus_stack]
+
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: otel-collector-adoption-config
+      namespace: ${local.otel_namespace}
+    data:
+      config.yaml: |
+        ${indent(8, file("${path.module}/otel-collector/otel-collector.yaml"))}
+  YAML
+}
+
+# Kubernetes Secret template — actual values are injected by the Vault agent
+# injector at runtime (see platform/hashicorp-vault/main.tf).
+# The secret name is referenced by the Helm values above; it MUST exist before
+# the collector pod starts.  Terraform creates an empty placeholder; Vault
+# populates:
+#   AZURE_MONITOR_WORKSPACE_ID  — Azure Monitor Log Analytics workspace ID
+#   AZURE_MONITOR_SHARED_KEY    — Azure Monitor shared key for the LAW
+#   KAFKA_SASL_USERNAME         — SASL username for the line-command adoption topic consumer
+#   KAFKA_SASL_PASSWORD         — SASL password for the line-command adoption topic consumer
+resource "kubectl_manifest" "otel_azmon_secret_placeholder" {
+  depends_on = [helm_release.otel_collector]
+
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: otel-collector-azmon-credentials
+      namespace: ${local.otel_namespace}
+      annotations:
+        # Vault agent populates AZURE_MONITOR_WORKSPACE_ID, AZURE_MONITOR_SHARED_KEY,
+        # KAFKA_SASL_USERNAME, and KAFKA_SASL_PASSWORD.
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "otel-collector"
+        vault.hashicorp.com/agent-inject-secret-azmon: "secret/data/otel/azmon"
+        vault.hashicorp.com/agent-inject-secret-kafka: "secret/data/otel/kafka-consumer"
+    type: Opaque
+    data: {}
+  YAML
+}
+
+# Azure Monitor Log Analytics workspace — 13-month retention on AdoptionEvent_CL
+# (NFR-18: adoption events retained for 13 months per the data lifecycle spec).
+resource "azurerm_log_analytics_workspace" "ifos_law" {
+  name                = local.law_workspace_name
+  location            = "westeurope"
+  resource_group_name = "rg-ifos-euwe-pr"
+  sku                 = "PerGB2018"
+  # Default workspace retention; table-level override below sets 395 days for
+  # AdoptionEvent_CL only.  Other tables inherit the 30-day workspace default.
+  retention_in_days   = 30
+
+  tags = {
+    environment    = var.environment
+    component      = "observability-stack"
+    data_region    = "eu-de-west-central"
+    managed_by     = "terraform"
+  }
+}
+
+# Table-level retention for AdoptionEvent_CL — 13 months (NFR-18)
+resource "azurerm_log_analytics_data_export_rule" "adoption_retention" {
+  name                    = "adoption-event-retention"
+  resource_group_name     = "rg-ifos-euwe-pr"
+  workspace_resource_id   = azurerm_log_analytics_workspace.ifos_law.id
+  table_names             = ["AdoptionEvent_CL"]
+  enabled                 = true
+  # The destination storage account provides the 13-month retention layer;
+  # the LAW table itself is set via azurerm_log_analytics_workspace_table below.
+  destination_resource_id = "/subscriptions/${var.azure_subscription_id}/resourceGroups/rg-ifos-euwe-pr/providers/Microsoft.Storage/storageAccounts/stifoseuwelogs"
+}
+
+resource "azurerm_log_analytics_workspace_table" "adoption_event_cl" {
+  workspace_id    = azurerm_log_analytics_workspace.ifos_law.id
+  name            = "AdoptionEvent_CL"
+  retention_in_days = local.adoption_table_retention_days
+}
+
+# ---------------------------------------------------------------------------
+# Named saved queries — Product Ops Analyst can invoke directly in LAW portal
+# without code or ETL.  Wired as Grafana panels in adoption.json.
+#
+# Query names and Gate 1 metric mappings:
+#   planner_wau       → A3: Planner WAU (≥90% target in Gate 1 window)
+#   sequence_lock_pct → A1: Sequence Lock % (≥95% target)
+#   override_rate     → A2: Override Rate per week
+# ---------------------------------------------------------------------------
+
+resource "azurerm_log_analytics_saved_search" "planner_wau" {
+  name                       = "planner_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Planner WAU — Gate 1 Metric A3"
+  query                      = <<-KQL
+    // planner_wau — Gate 1 metric A3
+    // Distinct planners per calendar week with ≥1 meaningful action OR session ≥10 min.
+    // Login-only sessions under 10 minutes are excluded from the active-user count.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic(["optimizer_run", "override_applied", "publish_confirmed"]);
+    let events = AdoptionEvent_CL
+        | where TimeGenerated >= window_start and TimeGenerated <= window_end
+        | extend
+            actionType_s             = tostring(Properties_d["actionType"]),
+            userId_s                 = tostring(Properties_d["userId"]),
+            sessionId_s              = tostring(Properties_d["sessionId"]),
+            sessionDurationSeconds_d = todouble(Properties_d["sessionDurationSeconds"]);
+    let sessions = events
+        | summarize
+            meaningful_action_count  = countif(actionType_s in (meaningful_actions)),
+            session_duration_seconds = max(sessionDurationSeconds_d),
+            userId_s                 = any(userId_s)
+          by sessionId_s, week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+        | extend session_duration_minutes = session_duration_seconds / 60.0
+        | where (session_duration_minutes >= 10) or (meaningful_action_count > 0);
+    sessions
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "sequence_lock_pct" {
+  name                       = "sequence_lock_pct"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Sequence Lock % — Gate 1 Metric A1"
+  query                      = <<-KQL
+    // sequence_lock_pct — Gate 1 metric A1
+    // % of Monday lock windows (weeks) in the Gate 1 window where at least one
+    // publish_confirmed event was emitted.  Total windows = 4 (W44–W47, 2025).
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let total_windows = 4;
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend actionType_s = tostring(Properties_d["actionType"])
+    | where actionType_s == "publish_confirmed"
+    | summarize weeks_with_publish = dcount(week_of_year(TimeGenerated))
+    | extend
+        sequence_lock_pct          = round(todouble(weeks_with_publish) / total_windows * 100.0, 2),
+        total_monday_lock_windows  = total_windows
+    | project total_monday_lock_windows, weeks_with_publish, sequence_lock_pct
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "override_rate" {
+  name                       = "override_rate"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Override Rate — Gate 1 Metric A2"
+  query                      = <<-KQL
+    // override_rate — Gate 1 metric A2
+    // Count of override_applied events per calendar week in the Gate 1 window.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend actionType_s = tostring(Properties_d["actionType"])
+    | where actionType_s == "override_applied"
+    | summarize override_count = count()
+        by week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, override_count
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+# ---------------------------------------------------------------------------
+# Line Command WAU saved queries — US-020 · BR-12
+#
+# Meaningful actions: ALERT_ACKNOWLEDGED, HANDOVER_SUBMITTED, AR_SESSION_STARTED,
+# TORQUE_LOG_SUBMITTED.  A user-day counts as active only when ≥1 meaningful
+# action was emitted for that userId on that calendar day.  Login-only days
+# (no meaningful action) are excluded from the WAU count per US-020 AC-19b649cd.
+#
+# Gate 1 targets:
+#   A4 — Shift Lead WAU      ≥85% (Gate 1 A3)
+#   A5 — Assembly Associate WAU ≥70% (Gate 1 A5)
+# ---------------------------------------------------------------------------
+
+resource "azurerm_log_analytics_saved_search" "line_command_shift_lead_wau" {
+  name                       = "line_command_shift_lead_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Line Command Shift Lead WAU — Gate 1 Metric A4 (target ≥85%)"
+  query                      = <<-KQL
+    // line_command_shift_lead_wau — Gate 1 metric A4
+    // Distinct shift_lead userId per week with ≥1 meaningful action (ALERT_ACKNOWLEDGED,
+    // HANDOVER_SUBMITTED, AR_SESSION_STARTED, TORQUE_LOG_SUBMITTED).
+    // Login-only days (no meaningful action) are excluded from the active-user count.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic([
+        "ALERT_ACKNOWLEDGED",
+        "HANDOVER_SUBMITTED",
+        "AR_SESSION_STARTED",
+        "TORQUE_LOG_SUBMITTED"
+    ]);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s    = tostring(Properties_d["component"]),
+        actionType_s   = tostring(Properties_d["actionType"]),
+        userId_s       = tostring(Properties_d["userId"]),
+        role_s         = tostring(Properties_d["role"])
+    | where component_s == "line-command" and role_s == "shift_lead"
+    | summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+        by userId_s, day_s = format_datetime(TimeGenerated, "yyyy-MM-dd"),
+           week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | where has_meaningful
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "line_command_associate_wau" {
+  name                       = "line_command_associate_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Line Command Assembly Associate WAU — Gate 1 Metric A5 (target ≥70%)"
+  query                      = <<-KQL
+    // line_command_associate_wau — Gate 1 metric A5
+    // Distinct assembly_associate userId per week with ≥1 meaningful action.
+    // Login-only days are excluded from the active-user count.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic([
+        "ALERT_ACKNOWLEDGED",
+        "HANDOVER_SUBMITTED",
+        "AR_SESSION_STARTED",
+        "TORQUE_LOG_SUBMITTED"
+    ]);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s    = tostring(Properties_d["component"]),
+        actionType_s   = tostring(Properties_d["actionType"]),
+        userId_s       = tostring(Properties_d["userId"]),
+        role_s         = tostring(Properties_d["role"])
+    | where component_s == "line-command" and role_s == "assembly_associate"
+    | summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+        by userId_s, day_s = format_datetime(TimeGenerated, "yyyy-MM-dd"),
+           week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | where has_meaningful
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "ar_device_adoption" {
+  name                       = "ar_device_adoption"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "AR Device Adoption — Gate 1 Metric A6 (HoloLens2 vs iPad per station)"
+  query                      = <<-KQL
+    // ar_device_adoption — Gate 1 metric A6
+    // AR session counts broken down by deviceType ('HoloLens2' vs 'iPad') per stationId per week.
+    // Asserts no biometric or gaze fields are present (schema-level enforcement via Avro).
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s   = tostring(Properties_d["component"]),
+        actionType_s  = tostring(Properties_d["actionType"]),
+        deviceType_s  = tostring(Properties_d["deviceType"]),
+        stationId_s   = tostring(Properties_d["stationId"])
+    | where component_s == "line-command" and actionType_s == "AR_SESSION_STARTED"
+    | extend
+        biometric_data_present = isnotempty(tostring(Properties_d["biometric_data"])),
+        gaze_vector_present    = isnotempty(tostring(Properties_d["gaze_vector"]))
+    | where not (biometric_data_present or gaze_vector_present)
+    | summarize ar_session_count = count()
+        by deviceType_s, stationId_s,
+           week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, deviceType_s, stationId_s, ar_session_count
+    | order by year_number asc, week_number asc, stationId_s asc, deviceType_s asc
+  KQL
+}
+
+# ---------------------------------------------------------------------------
+# 12. Grafana dashboard — Adoption Metrics (A1–A7), provisioned as ConfigMap
+# ---------------------------------------------------------------------------
+
+resource "kubectl_manifest" "adoption_dashboard" {
+  depends_on = [helm_release.kube_prometheus_stack]
+
+  yaml_body = <<-YAML
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: adoption-metrics-dashboard
+      namespace: ${local.grafana_namespace}
+      labels:
+        grafana_dashboard: "1"
+    data:
+      adoption.json: |
+        ${indent(8, file("${path.module}/grafana/dashboards/adoption.json"))}
+  YAML
+}
+
+# ---------------------------------------------------------------------------
+# 13. Outputs
 # ---------------------------------------------------------------------------
 
 output "prometheus_namespace" {
@@ -672,4 +1071,19 @@ output "uns_slo_rule_name" {
 output "dr_rpo_rule_name" {
   description = "PrometheusRule resource name for the DR RPO/RTO alerting rules"
   value       = "dr-rpo-rto"
+}
+
+output "law_workspace_id" {
+  description = "Azure Monitor Log Analytics workspace ID for the adoption event pipeline"
+  value       = azurerm_log_analytics_workspace.ifos_law.id
+}
+
+output "adoption_dashboard_configmap" {
+  description = "ConfigMap name provisioning the Adoption Metrics (A1–A7) Grafana dashboard"
+  value       = "adoption-metrics-dashboard"
+}
+
+output "otel_collector_namespace" {
+  description = "Kubernetes namespace where the OTel Collector (adoption pipeline) is deployed"
+  value       = local.otel_namespace
 }

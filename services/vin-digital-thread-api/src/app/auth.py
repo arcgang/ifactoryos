@@ -7,31 +7,24 @@ The JWT sub is used as the caller identity in audit records.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from jose import JWTError, jwt
 
-from app.config import settings
+_bearer = HTTPBearer(auto_error=False)
+_bearer_scheme = _bearer  # alias used by require_bearer
 
-_bearer_scheme = HTTPBearer(auto_error=False)
+REQUIRED_ROLE = "thread-ingestor"
 
 
 def _make_error(code: str, message: str) -> dict[str, Any]:
     return {"code": code, "message": message, "correlation_id": str(uuid.uuid4())}
 
 
-async def require_bearer(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-) -> dict[str, Any]:
-    """Dependency: returns the decoded JWT payload or raises 401."""
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_make_error("MISSING_TOKEN", "Authorization header required"),
-        )
-    token = credentials.credentials
+def _decode_token(token: str, issuer: str, audience: str) -> dict[str, Any]:
     try:
         payload: dict[str, Any] = jwt.decode(
             token,
@@ -45,10 +38,10 @@ async def require_bearer(
         )
     except JWTError as err:
         raise ValueError("Token decode failed") from err
-    return claims
+    return payload
 
 
-def _extract_user_id(claims: dict) -> str:
+def _extract_user_id(claims: dict[str, Any]) -> str:
     """Return the subject claim, which carries the caller's identity."""
     sub = claims.get("sub") or claims.get("oid") or claims.get("appid")
     if not sub:
@@ -56,13 +49,18 @@ def _extract_user_id(claims: dict) -> str:
     return str(sub)
 
 
-def _has_role(claims: dict, role: str) -> bool:
+def _has_role(claims: dict[str, Any], role: str) -> bool:
     roles = claims.get("roles") or claims.get("scp", "").split()
     return role in roles
 
 
+def _has_any_role(claims: dict[str, Any], roles: set[str]) -> bool:
+    token_roles: list[str] = claims.get("roles") or claims.get("scp", "").split()
+    return bool(roles.intersection(token_roles))
+
+
 class CallerIdentity:
-    def __init__(self, user_id: str, claims: dict) -> None:
+    def __init__(self, user_id: str, claims: dict[str, Any]) -> None:
         self.user_id = user_id
         self.claims = claims
 
@@ -73,8 +71,8 @@ async def require_thread_ingestor(
 ) -> CallerIdentity:
     if credentials is None:
         raise HTTPException(
-            status_code=401,
-            detail={"code": "MISSING_TOKEN", "message": "Bearer token required"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_make_error("MISSING_TOKEN", "Bearer token required"),
         )
 
     from app.config import get_settings
@@ -88,21 +86,42 @@ async def require_thread_ingestor(
         )
     except ValueError as err:
         raise HTTPException(
-            status_code=401,
-            detail={"code": "INVALID_TOKEN", "message": "Token is not valid"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_make_error("INVALID_TOKEN", "Token is not valid"),
         ) from err
 
     if not _has_role(claims, REQUIRED_ROLE):
         raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "INSUFFICIENT_ROLE",
-                "message": f"Caller lacks required role: {REQUIRED_ROLE}",
-            },
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "INSUFFICIENT_ROLE",
+                f"Caller lacks required role: {REQUIRED_ROLE}",
+            ),
         )
 
     user_id = _extract_user_id(claims)
     return CallerIdentity(user_id=user_id, claims=claims)
+
+
+async def require_bearer(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> dict[str, Any]:
+    """Dependency: returns the decoded JWT payload or raises 401."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_make_error("MISSING_TOKEN", "Authorization header required"),
+        )
+    from app.config import get_settings
+
+    cfg = get_settings()
+    try:
+        payload = _decode_token(
+            credentials.credentials,
+            issuer=cfg.oidc_issuer_url,
+            audience=cfg.oidc_client_id,
+        )
+    except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_make_error("INVALID_TOKEN", "Bearer token is invalid or expired"),
@@ -114,13 +133,35 @@ def require_ingestor_role(
     payload: dict[str, Any] = Depends(require_bearer),
 ) -> dict[str, Any]:
     """Dependency: raises 403 unless the JWT carries the thread-ingestor role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
     roles: list[str] = payload.get("roles", []) or []
-    if settings.ingestor_role not in roles:
+    if cfg.ingestor_role not in roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_make_error(
                 "FORBIDDEN",
-                f"Caller lacks required role: {settings.ingestor_role}",
+                f"Caller lacks required role: {cfg.ingestor_role}",
+            ),
+        )
+    return payload
+
+
+def require_quality_reader(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless JWT carries quality-engineer or quality-lead role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
+    allowed = cfg.reader_role_set()
+    if not _has_any_role(payload, allowed):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "INSUFFICIENT_ROLE",
+                "Caller lacks required role: quality-engineer or quality-lead",
             ),
         )
     return payload
@@ -129,3 +170,23 @@ def require_ingestor_role(
 def caller_subject(payload: dict[str, Any]) -> str:
     """Extract the JWT subject (caller identity) for audit records."""
     return payload.get("sub") or "unknown"
+
+
+def require_quality_role(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless the JWT carries quality-engineer or quality-lead role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
+    allowed_roles: set[str] = {r.strip() for r in cfg.quality_reader_roles.split(",") if r.strip()}
+    caller_roles: list[str] = payload.get("roles", []) or []
+    if not any(r in allowed_roles for r in caller_roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "INSUFFICIENT_ROLE",
+                f"Caller lacks required role: {cfg.quality_reader_roles}",
+            ),
+        )
+    return payload

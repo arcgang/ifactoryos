@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -70,6 +70,101 @@ class _CaptureStore:
 
 
 # ---------------------------------------------------------------------------
+# Fake infrastructure (minimal — audit tests only need the happy path)
+# ---------------------------------------------------------------------------
+
+class _FakeRecord:
+    def __init__(self, data: dict) -> None:
+        self._data = data
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+
+class _FakeConnection:
+    def __init__(self) -> None:
+        self._store: dict[str, Any] = {}
+
+    def transaction(self):
+        conn = self
+
+        class _Tx:
+            async def __aenter__(_self):
+                return _self
+
+            async def __aexit__(_self, *_):
+                pass
+
+        return _Tx()
+
+    async def fetchrow(self, query: str, *args: Any) -> _FakeRecord | None:
+        return None  # no existing idempotency key
+
+    async def execute(self, query: str, *args: Any) -> None:
+        pass  # absorb all writes silently
+
+
+class _FakePool:
+    def acquire(self):
+        class _CM:
+            async def __aenter__(_self) -> _FakeConnection:
+                return _FakeConnection()
+
+            async def __aexit__(_self, *_) -> None:
+                pass
+
+        return _CM()
+
+
+class _FakeNeo4jResult:
+    """Minimal result stub — returns schema names for validation queries, empty otherwise."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    async def data(self) -> list[dict]:
+        return list(self._rows)
+
+
+_SCHEMA_NAMES: list[dict] = [
+    {"name": "vin_unique"},
+    {"name": "event_unique"},
+    {"name": "event_by_type_time"},
+    {"name": "event_by_stage_number"},
+    {"name": "event_by_shop"},
+]
+
+
+class _FakeNeo4jSession:
+    async def run(self, query: str, *args: Any, **kwargs: Any) -> _FakeNeo4jResult:
+        if "db.constraints" in query or "db.indexes" in query:
+            return _FakeNeo4jResult(_SCHEMA_NAMES)
+        return _FakeNeo4jResult([])
+
+    async def __aenter__(self) -> "_FakeNeo4jSession":
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        pass
+
+
+class _FakeNeo4jDriver:
+    def session(self) -> _FakeNeo4jSession:
+        return _FakeNeo4jSession()
+
+    async def __aenter__(self) -> "_FakeNeo4jDriver":
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        pass
+
+
+class _FakeKafkaProducer:
+    async def send_and_wait(self, topic: str, payload: dict) -> None:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -107,12 +202,33 @@ def capture() -> _CaptureStore:
 
 @pytest.fixture()
 def client(capture: _CaptureStore):
+    import app.db as db_mod
+    import app.kafka_producer as kafka_mod
+
     app = create_app()
 
     fresh_store = _IdempotencyStore()
     app.dependency_overrides[get_idempotency_store] = lambda: fresh_store
 
-    with patch("app.audit._write_sync", side_effect=capture.record):
+    fake_pool = _FakePool()
+    fake_kafka = _FakeKafkaProducer()
+
+    async def _fake_get_pool():
+        return fake_pool
+
+    async def _fake_get_producer():
+        return fake_kafka
+
+    with (
+        patch.object(db_mod, "get_pool", _fake_get_pool),
+        patch.object(kafka_mod, "get_producer", _fake_get_producer),
+        patch("neo4j.AsyncGraphDatabase.driver", return_value=_FakeNeo4jDriver()),
+        patch("app.pii_scrubber.httpx.AsyncClient") as mock_client_cls,
+        patch("app.audit._write_sync", side_effect=capture.record),
+    ):
+        # PII scrubber default: no employee IDs in test parameters, so this mock is unused.
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
         with TestClient(app, raise_server_exceptions=False) as c:
             yield c
 

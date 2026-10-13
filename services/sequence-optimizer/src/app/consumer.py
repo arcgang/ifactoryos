@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 
 import asyncpg
@@ -47,6 +48,80 @@ def build_alert_event(
         warningLevel=warning_level,
         detectedAt=detected_at,
     )
+
+
+async def _resolve_affected_vins(
+    pool: asyncpg.Pool,
+    constraint_type: str,
+) -> list[str]:
+    """Return VINs from the current week's optimizer_run that are impacted by this constraint."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT (item->>'vin') AS vin_value
+            FROM optimizer_run,
+                 jsonb_array_elements(ranked_sequence) AS item
+            WHERE created_at >= (date_trunc('week', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+              AND (item->>'vin') IS NOT NULL
+            ORDER BY vin_value
+            LIMIT 500
+            """,
+        )
+    return [r["vin_value"] for r in rows if r["vin_value"]]
+
+
+async def _persist_alert(
+    pool: asyncpg.Pool,
+    alert_id: uuid.UUID,
+    constraint_type: str,
+    current_value: float,
+    warning_level: float,
+    affected_vins: list[str],
+    detected_at: str,
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO constraint_alert (
+                alert_id, constraint_type, current_value, threshold_value,
+                affected_vins, status, detected_at
+            ) VALUES ($1::uuid, $2, $3, $4, $5::jsonb, 'active', $6::timestamptz)
+            ON CONFLICT DO NOTHING
+            """,
+            str(alert_id),
+            constraint_type,
+            current_value,
+            warning_level,
+            json.dumps(affected_vins),
+            detected_at,
+        )
+
+
+async def _write_alert_audit(
+    alert_id: str,
+    constraint_type: str,
+    current_value: float,
+    affected_vins: list[str],
+) -> None:
+    """POST breach audit event to immutable audit log — best-effort, 1 s timeout."""
+    try:
+        import httpx
+
+        from app.config import get_settings
+
+        cfg = get_settings()
+        payload = {
+            "action": "constraint_alert_created",
+            "alertId": alert_id,
+            "constraintType": constraint_type,
+            "currentValue": current_value,
+            "affectedVins": affected_vins,
+            "source": "sequence-optimizer",
+        }
+        async with httpx.AsyncClient(timeout=cfg.audit_log_timeout_s) as client:
+            await client.post(cfg.audit_log_url, json=payload)
+    except Exception as exc:  # noqa: BLE001 — fire-and-forget audit write
+        logger.exception("Failed to write audit event for alert: %s", exc)
 
 
 async def _send_to_dlq(
@@ -162,6 +237,33 @@ async def _handle_message(
         return
 
     detected_at = _now_utc_iso()
+
+    try:
+        affected_vins = await _resolve_affected_vins(pool, constraint_type.value)
+    except asyncpg.PostgresError as err:
+        logger.exception(
+            "DB error resolving affected VINs for constraintType=%s", constraint_type.value
+        )
+        affected_vins = []
+
+    alert_id = uuid.uuid4()
+    try:
+        await _persist_alert(
+            pool=pool,
+            alert_id=alert_id,
+            constraint_type=constraint_type.value,
+            current_value=float(current_value),
+            warning_level=warning_level,
+            affected_vins=affected_vins,
+            detected_at=detected_at,
+        )
+    except asyncpg.PostgresError as err:
+        logger.exception(
+            "DB error persisting constraint_alert for constraintType=%s", constraint_type.value
+        )
+        await _send_to_dlq(producer, dlq_topic, raw_value, f"db_persist_error: {err}")
+        return
+
     event = build_alert_event(
         constraint_type=constraint_type,
         current_value=float(current_value),
@@ -169,19 +271,26 @@ async def _handle_message(
         detected_at=detected_at,
     )
 
-    event_bytes = json.dumps(event.model_dump(mode="json")).encode()
+    event_payload = {
+        **event.model_dump(mode="json"),
+        "alertId": str(alert_id),
+        "affectedVins": affected_vins,
+    }
+    event_bytes = json.dumps(event_payload).encode()
     try:
         await asyncio.wait_for(
             producer.send(alert_topic, value=event_bytes),
             timeout=_PRODUCE_TIMEOUT_S,
         )
         logger.info(
-            "Published constraint breach alert constraintType=%s currentValue=%s warningLevel=%s",
+            "Published constraint breach alert alertId=%s constraintType=%s currentValue=%s warningLevel=%s affectedVins=%d",
+            alert_id,
             constraint_type.value,
             current_value,
             warning_level,
+            len(affected_vins),
         )
-    except asyncio.TimeoutError as err:
+    except asyncio.TimeoutError:
         logger.error(
             "Timed out publishing alert for constraintType=%s", constraint_type.value
         )
@@ -191,3 +300,13 @@ async def _handle_message(
             "Failed to publish alert for constraintType=%s", constraint_type.value
         )
         await _send_to_dlq(producer, dlq_topic, raw_value, f"alert_publish_error: {err}")
+        return
+
+    asyncio.create_task(
+        _write_alert_audit(
+            alert_id=str(alert_id),
+            constraint_type=constraint_type.value,
+            current_value=float(current_value),
+            affected_vins=affected_vins,
+        )
+    )

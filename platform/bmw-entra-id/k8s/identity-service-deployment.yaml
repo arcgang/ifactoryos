@@ -1,0 +1,98 @@
+# identity-service — ARO Deployment (internal-only, no API Connect exposure)
+#
+# Runs on Azure Red Hat OpenShift in Azure West Europe (EU Central) as mandated
+# by design:azure-openshift-it-layer.  All secrets are injected by HashiCorp
+# Vault agent injector — no hardcoded credentials.
+#
+# mTLS is enforced by the SPIFFE/SPIRE sidecar; the service trusts only SVIDs
+# from the spiffe://munich.bmw trust domain.  No Ingress/Route is created —
+# access is service-mesh-internal via ClusterIP only.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: ifos-identity
+  labels:
+    app: identity-service
+    component: cmp:bmw-entra-id
+    data-residency: eu-germany-west-central
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: identity-service
+  template:
+    metadata:
+      labels:
+        app: identity-service
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "identity-service"
+        vault.hashicorp.com/agent-inject-secret-db: "secret/data/identity-service/db"
+        vault.hashicorp.com/agent-inject-template-db: |
+          {{- with secret "secret/data/identity-service/db" -}}
+          IDENTITY_DB_URL={{ .Data.data.url }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-audit: "secret/data/identity-service/audit"
+        vault.hashicorp.com/agent-inject-template-audit: |
+          {{- with secret "secret/data/identity-service/audit" -}}
+          AUDIT_STORAGE_ACCOUNT={{ .Data.data.storage_account }}
+          AUDIT_CONTAINER_NAME={{ .Data.data.container_name }}
+          {{- end }}
+    spec:
+      serviceAccountName: identity-service
+      containers:
+        - name: identity-service
+          image: ifos-registry.azurecr.io/identity-service:latest
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - secretRef:
+                name: identity-service-env
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  namespace: ifos-identity
+  labels:
+    app: identity-service
+spec:
+  selector:
+    app: identity-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: identity-service
+  namespace: ifos-identity
+  annotations:
+    # Azure Workload Identity — maps to identity-service managed identity
+    azure.workload.identity/client-id: "${IDENTITY_SERVICE_MI_CLIENT_ID}"

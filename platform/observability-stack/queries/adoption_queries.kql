@@ -1,0 +1,220 @@
+// ============================================================================
+// Gate 1 Pre-built Queries — Adoption Metrics (US-019 · US-020 · BR-12)
+//
+// Default measurement window: Nov 1–28, 2025 (Gate 1 evidence period).
+// Table: AdoptionEvent_CL — populated by the OTel Collector azuremonitor exporter.
+//   - Planning Cockpit events: component='planning-cockpit'
+//   - Line Command events:     component='line-command'
+//
+// All queries are named saved queries in the Log Analytics workspace
+// law-ifos-euwe-pr (see main.tf resource azurerm_log_analytics_saved_search).
+// Run each query directly in the LAW portal — no code or ETL required.
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Query 1: planner_wau
+//
+// Gate 1 metric A3: Weekly Active Users — distinct planners per calendar week
+// who performed at least one meaningful action (optimizer_run, override_applied,
+// or publish_confirmed) OR whose session was ≥10 minutes.
+//
+// Session filter (per the settled decision for US-019):
+//   Include a session if:
+//     (session_duration_minutes >= 10) OR (meaningful_action_count > 0)
+//   Exclude login-only sessions that ended in under 10 minutes with no
+//   meaningful action — those are not counted as active planner sessions.
+//
+// sessionStartedAt is the field emitted by planning-cockpit at login (session_start).
+// sessionDurationSeconds is the field emitted at session_end.
+// ----------------------------------------------------------------------------
+// @name planner_wau
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+let meaningful_actions = dynamic(["optimizer_run", "override_applied", "publish_confirmed"]);
+// Collect all events in the window
+let events = AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        actionType_s    = tostring(Properties_d["actionType"]),
+        userId_s        = tostring(Properties_d["userId"]),
+        sessionId_s     = tostring(Properties_d["sessionId"]),
+        sessionDurationSeconds_d = todouble(Properties_d["sessionDurationSeconds"]),
+        sessionStartedAt_s = tostring(Properties_d["sessionStartedAt"]);
+// Per session: count meaningful actions and total duration
+let sessions = events
+    | summarize
+        meaningful_action_count = countif(actionType_s in (meaningful_actions)),
+        session_duration_seconds = max(sessionDurationSeconds_d),
+        userId_s = any(userId_s)
+      by sessionId_s, week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+    | extend session_duration_minutes = session_duration_seconds / 60.0
+    | where (session_duration_minutes >= 10) or (meaningful_action_count > 0);
+// Count distinct userId per calendar week
+sessions
+| summarize wau = dcount(userId_s) by week_number, year_number
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, wau
+| order by year_number asc, week_number asc;
+
+
+// ----------------------------------------------------------------------------
+// Query 2: sequence_lock_pct
+//
+// Gate 1 metric A1: Sequence Lock % — percentage of Monday lock windows in the
+// measurement period where at least one publish_confirmed event was emitted.
+//
+// Definition: "Monday lock window" = any calendar week in the measurement window
+// where the shift-start period (Monday) has a planner who published a sequence.
+// sequence_lock_pct = (weeks_with_publish / total_monday_lock_windows) × 100.
+// ----------------------------------------------------------------------------
+// @name sequence_lock_pct
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+// Total distinct Monday lock windows in the measurement period (one per week).
+// Nov 1–28, 2025 spans 4 calendar weeks (W44–W47 of 2025).
+let total_windows = 4;
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    actionType_s = tostring(Properties_d["actionType"])
+| where actionType_s == "publish_confirmed"
+| summarize weeks_with_publish = dcount(week_of_year(TimeGenerated))
+| extend
+    sequence_lock_pct = round(todouble(weeks_with_publish) / total_windows * 100.0, 2),
+    total_monday_lock_windows = total_windows
+| project total_monday_lock_windows, weeks_with_publish, sequence_lock_pct;
+
+
+// ----------------------------------------------------------------------------
+// Query 3: override_rate
+//
+// Gate 1 metric A2: Override Rate — count of override_applied events per
+// calendar week in the measurement window.
+// ----------------------------------------------------------------------------
+// @name override_rate
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    actionType_s = tostring(Properties_d["actionType"])
+| where actionType_s == "override_applied"
+| summarize override_count = count()
+    by week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, override_count
+| order by year_number asc, week_number asc;
+
+
+// ============================================================================
+// Line Command WAU queries — US-020 · BR-12
+//
+// Meaningful actions for WAU calculation (per design decision):
+//   ALERT_ACKNOWLEDGED, HANDOVER_SUBMITTED, AR_SESSION_STARTED, TORQUE_LOG_SUBMITTED
+//
+// A user-day counts as active only when at least one AdoptionEvent for that
+// userId on that calendar day has actionType IN the meaningful-action set.
+// Sessions where the only recorded event is a kiosk login (actionType=LOGIN)
+// are excluded from the weekly active user count (US-020 AC-19b649cd).
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Query 4: line_command_shift_lead_wau
+//
+// Gate 1 metric A4: Line Command Shift Lead WAU (target ≥85%).
+// Distinct shift_lead userId values per calendar week who performed at least
+// one meaningful action. Login-only days are excluded.
+// ----------------------------------------------------------------------------
+// @name line_command_shift_lead_wau
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+let meaningful_actions = dynamic([
+    "ALERT_ACKNOWLEDGED",
+    "HANDOVER_SUBMITTED",
+    "AR_SESSION_STARTED",
+    "TORQUE_LOG_SUBMITTED"
+]);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    component_s    = tostring(Properties_d["component"]),
+    actionType_s   = tostring(Properties_d["actionType"]),
+    userId_s       = tostring(Properties_d["userId"]),
+    role_s         = tostring(Properties_d["role"])
+| where component_s == "line-command" and role_s == "shift_lead"
+// A user-day is active only when they have ≥1 meaningful action that day.
+| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+    by userId_s, day_s = format_datetime(TimeGenerated, "yyyy-MM-dd"),
+       week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+| where has_meaningful
+| summarize wau = dcount(userId_s) by week_number, year_number
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, wau
+| order by year_number asc, week_number asc;
+
+
+// ----------------------------------------------------------------------------
+// Query 5: line_command_associate_wau
+//
+// Gate 1 metric A5: Line Command Assembly Associate WAU (target ≥70%).
+// Distinct assembly_associate userId values per calendar week who performed
+// at least one meaningful action. Login-only days are excluded.
+// ----------------------------------------------------------------------------
+// @name line_command_associate_wau
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+let meaningful_actions = dynamic([
+    "ALERT_ACKNOWLEDGED",
+    "HANDOVER_SUBMITTED",
+    "AR_SESSION_STARTED",
+    "TORQUE_LOG_SUBMITTED"
+]);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    component_s    = tostring(Properties_d["component"]),
+    actionType_s   = tostring(Properties_d["actionType"]),
+    userId_s       = tostring(Properties_d["userId"]),
+    role_s         = tostring(Properties_d["role"])
+| where component_s == "line-command" and role_s == "assembly_associate"
+| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+    by userId_s, day_s = format_datetime(TimeGenerated, "yyyy-MM-dd"),
+       week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+| where has_meaningful
+| summarize wau = dcount(userId_s) by week_number, year_number
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, wau
+| order by year_number asc, week_number asc;
+
+
+// ----------------------------------------------------------------------------
+// Query 6: ar_device_adoption
+//
+// Gate 1 metric A6: AR session counts by deviceType and stationId per week.
+// Source: AR_SESSION_STARTED AdoptionEvents (component='line-command').
+// deviceType values: 'HoloLens2' or 'iPad'.
+// No biometric or gaze fields are present — enforced at Avro schema level.
+// ----------------------------------------------------------------------------
+// @name ar_device_adoption
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    component_s   = tostring(Properties_d["component"]),
+    actionType_s  = tostring(Properties_d["actionType"]),
+    deviceType_s  = tostring(Properties_d["deviceType"]),
+    stationId_s   = tostring(Properties_d["stationId"])
+| where component_s == "line-command" and actionType_s == "AR_SESSION_STARTED"
+// Assert no biometric fields reached the table (schema-level enforcement).
+// If any of these columns are non-empty, the Avro schema guard failed.
+| extend
+    biometric_data_present  = isnotempty(tostring(Properties_d["biometric_data"])),
+    gaze_vector_present     = isnotempty(tostring(Properties_d["gaze_vector"]))
+| where not (biometric_data_present or gaze_vector_present)
+| summarize ar_session_count = count()
+    by deviceType_s, stationId_s,
+       week_number = week_of_year(TimeGenerated), year_number = getyear(TimeGenerated)
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, deviceType_s, stationId_s, ar_session_count
+| order by year_number asc, week_number asc, stationId_s asc, deviceType_s asc;

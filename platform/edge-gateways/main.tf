@@ -71,6 +71,10 @@ locals {
     shop => "bmw.munich.uns.ddata.${shop}.v1"
   }
 
+  # Kafka topic for PlcTorqueTraceEvent — written by the MQTT Sparkplug B publisher
+  # via the HiveMQ bridge (US-011, seq:line-command-api:torque-auto-log).
+  torque_plc_trace_topic = "bmw.ifos.munich.uns.torque.plc-trace.v1"
+
   # OT VLAN CIDRs — one /24 per shop, matching the Ansible inventory host addresses.
   # Trust domain and CIDRs are consumed from spiffe-spire decisions; not introduced here.
   ot_vlan_cidrs = {
@@ -349,6 +353,99 @@ resource "kubectl_manifest" "spire_workload_client_config" {
 }
 
 # ---------------------------------------------------------------------------
+# 4d. SPIRE registration entry — MQTT Sparkplug B publisher workload
+#
+#     Security engineer sign-off required before merge (see SECURITY_REVIEW.md):
+#       (a) spiffeIDTemplate stays within the existing trust domain munich.bmw
+#       (b) TTL matches the existing gateway workload pattern (1h, same as local.svid_ttl
+#           in platform/spiffe-spire/main.tf which this module must not modify)
+#       (c) No new network ingress is opened — the publisher connects outbound
+#           to TCP/8883 (CM-013) and TCP/8081 (FW-IN-005), both already permitted
+# ---------------------------------------------------------------------------
+
+resource "kubectl_manifest" "spire_entry_mqtt_publisher" {
+  for_each = local.gateways_map
+
+  yaml_body = <<-YAML
+    apiVersion: spire.spiffe.io/v1alpha1
+    kind: ClusterSPIFFEID
+    metadata:
+      name: mqtt-publisher-${each.key}
+      namespace: spire
+      labels:
+        zone: ot
+        shop: ${each.value.shop}
+        role: ${each.value.role}
+        workload: mqtt-sparkplug-publisher
+        app.kubernetes.io/managed-by: terraform
+      annotations:
+        description: "SPIRE registration entry for the MQTT Sparkplug B publisher workload on ${each.key}"
+        security-review: "Required before merge — see platform/edge-gateways/SECURITY_REVIEW.md"
+    spec:
+      spiffeIDTemplate: "spiffe://munich.bmw/edge-gateways/${each.value.shop}/${each.value.node_index}"
+      podSelector:
+        matchLabels:
+          app: simatic-edge-runtime
+          workload: mqtt-sparkplug-publisher
+          shop: ${each.value.shop}
+          node-id: ${each.value.node_id}
+      ttl: 1h
+      dnsNameTemplates:
+        - "${each.value.node_id}.edge-gateways.ifos.munich.internal"
+      federatesWith: []
+      admin: false
+  YAML
+}
+
+# ---------------------------------------------------------------------------
+# 4e. Kafka write ACL — each gateway principal writes to the torque PLC trace topic.
+#     Principal CN matches SPIFFE SVID subject CN: edge-{shop}-{index}
+#     (same principal as the DDATA ACL above — write access is additive per shop).
+# ---------------------------------------------------------------------------
+
+resource "kubectl_manifest" "kafka_acl_torque_trace_write" {
+  for_each = local.gateways_map
+
+  yaml_body = <<-YAML
+    apiVersion: platform.confluent.io/v1beta1
+    kind: KafkaACL
+    metadata:
+      name: ${each.key}-write-torque-trace
+      namespace: confluent
+    spec:
+      kafkaClusterRef:
+        name: uns-kafka
+      resourceType: Topic
+      resourceName: ${local.torque_plc_trace_topic}
+      patternType: Literal
+      principal: "User:${each.value.node_id}"
+      operation: Write
+      permission: Allow
+  YAML
+}
+
+resource "kubectl_manifest" "kafka_acl_torque_trace_describe" {
+  for_each = local.gateways_map
+
+  yaml_body = <<-YAML
+    apiVersion: platform.confluent.io/v1beta1
+    kind: KafkaACL
+    metadata:
+      name: ${each.key}-describe-torque-trace
+      namespace: confluent
+    spec:
+      kafkaClusterRef:
+        name: uns-kafka
+      resourceType: Topic
+      resourceName: ${local.torque_plc_trace_topic}
+      patternType: Literal
+      principal: "User:${each.value.node_id}"
+      operation: Describe
+      permission: Allow
+  YAML
+}
+
+# ---------------------------------------------------------------------------
 # 5. Gateway runtime namespace
 # ---------------------------------------------------------------------------
 
@@ -382,4 +479,9 @@ output "gateway_node_ids" {
 output "ddata_topics" {
   description = "Map of shop → Kafka DDATA topic"
   value       = local.ddata_topics
+}
+
+output "torque_plc_trace_topic" {
+  description = "Kafka topic for PlcTorqueTraceEvent (US-011 MQTT Sparkplug B → Kafka bridge)"
+  value       = local.torque_plc_trace_topic
 }

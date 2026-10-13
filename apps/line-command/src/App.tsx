@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LanguageToggle } from "./components/LanguageToggle";
-import { AndonAlert, type AndonAlertContent } from "./components/AndonAlert";
 import { ForbiddenScreen } from "./components/ForbiddenScreen";
 import { AccessRestrictedToast } from "./components/AccessRestrictedToast";
 import { ARWorkbenchPage } from "./components/ARWorkbenchPage";
 import { StationDetailPage } from "./components/StationDetailPage";
+import { CommandCenterPage } from "./components/CommandCenterPage";
+import { HandoverBuilderPage } from "./components/HandoverBuilderPage";
+import { PlantManagerHandoverTable } from "./components/PlantManagerHandoverTable";
+import { TorqueOutOfToleranceToast, type TorqueOotPayload } from "./components/TorqueOutOfToleranceToast";
 import { useRbac } from "./hooks/useRbac";
 
 // ---------------------------------------------------------------------------
@@ -17,6 +20,7 @@ type Route =
   | "station-detail"
   | "andon-log"
   | "handover-builder"
+  | "plant-manager-review"
   | "ar-workbench"
   | "settings";
 
@@ -25,45 +29,8 @@ const ASSOCIATE_BLOCKED_ROUTES: Route[] = [
   "command-center",
   "station-detail",
   "handover-builder",
+  "plant-manager-review",
 ];
-
-// ---------------------------------------------------------------------------
-// Demo alert content (kept for the shift-lead full view)
-// ---------------------------------------------------------------------------
-
-const ELECTRODE_WEAR_ALERT: AndonAlertContent = {
-  title: {
-    "de-DE": "Prädikativer Andon — Elektrodenverschleiß Schweißzelle 7",
-    "en-GB": "Predictive Andon — Electrode Wear Welding Cell 7",
-  },
-  body: {
-    "de-DE":
-      "Schweißstrom-Kurve zeigt Abweichung von −8 % gegenüber Basis. Prognostizierter Ausfall in 14 Minuten. Sofort Wartung beauftragen.",
-    "en-GB":
-      "Welding current curve shows deviation of −8% from baseline. Predicted failure in 14 minutes. Dispatch maintenance immediately.",
-  },
-  source: {
-    "de-DE": "Heute · 06:02 Uhr · Quelle: Beckhoff PLC — Schweißlinie 3",
-    "en-GB": "Today · 06:02 · Source: Beckhoff PLC — Welding Line 3",
-  },
-};
-
-const OEE_ALERT: AndonAlertContent = {
-  title: {
-    "de-DE": "OEE unter Tagesziel — Schweißlinie 2",
-    "en-GB": "OEE Below Daily Target — Welding Line 2",
-  },
-  body: {
-    "de-DE":
-      "Aktueller OEE 84,1 % · Ziel 87,0 %. Tendenz letzte 30 Min. fallend. Mögliche Ursache: Elektrodenreinigungszyklus überfällig.",
-    "en-GB":
-      "Current OEE 84.1% · Target 87.0%. Trend last 30 min declining. Possible cause: electrode cleaning cycle overdue.",
-  },
-  source: {
-    "de-DE": "Heute · 05:55 Uhr",
-    "en-GB": "Today · 05:55",
-  },
-};
 
 // ---------------------------------------------------------------------------
 // App
@@ -76,6 +43,7 @@ export function App() {
   const [currentRoute, setCurrentRoute] = useState<Route>("command-center");
   const [showRestrictedToast, setShowRestrictedToast] = useState(false);
   const [forbiddenResource, setForbiddenResource] = useState<string | null>(null);
+  const [torqueOotAlerts, setTorqueOotAlerts] = useState<TorqueOotPayload[]>([]);
 
   // When role resolves to assembly_associate, force redirect away from blocked routes.
   // Uses functional updater so currentRoute is read from the setter, not the closure,
@@ -110,6 +78,18 @@ export function App() {
 
   const handleReturnFromForbidden = useCallback(() => {
     setForbiddenResource(null);
+  }, []);
+
+  const handleOutOfTolerance = useCallback((payload: TorqueOotPayload) => {
+    setTorqueOotAlerts((prev) => {
+      // Deduplicate by alertId — edge reconnect may replay the same event
+      if (prev.some((a) => a.alertId === payload.alertId)) return prev;
+      return [payload, ...prev];
+    });
+  }, []);
+
+  const dismissOotAlert = useCallback((alertId: string) => {
+    setTorqueOotAlerts((prev) => prev.filter((a) => a.alertId !== alertId));
   }, []);
 
   // Loading skeleton
@@ -219,6 +199,17 @@ export function App() {
                 <span className="icon" aria-hidden="true">↗</span>
                 {t("nav.handover_builder")}
               </button>
+              {(role === "shift_lead") && (
+                <button
+                  type="button"
+                  className={`nav-item${currentRoute === "plant-manager-review" ? " active" : ""}`}
+                  aria-current={currentRoute === "plant-manager-review" ? "page" : undefined}
+                  onClick={() => navigate("plant-manager-review")}
+                >
+                  <span className="icon" aria-hidden="true">☰</span>
+                  {t("nav.plant_manager_review")}
+                </button>
+              )}
             </>
           )}
 
@@ -239,23 +230,20 @@ export function App() {
               vin="WBADT43453G PLACEHOLDER"
               userId={userId}
               onForbidden={handleForbiddenFromApi}
+              onOutOfTolerance={handleOutOfTolerance}
             />
           )}
 
           {currentRoute === "command-center" && !isAssociate && (
             <>
-              <AndonAlert
-                content={ELECTRODE_WEAR_ALERT}
-                variant="error"
-                countdown={t("andon.minutes_until_failure", { count: "14" })}
-                onDispatchMaintenance={() => undefined}
-                onAcknowledge={() => undefined}
-              />
-              <AndonAlert
-                content={OEE_ALERT}
-                variant="warning"
-                onAcknowledge={() => undefined}
-              />
+              {torqueOotAlerts.map((payload) => (
+                <TorqueOutOfToleranceToast
+                  key={payload.alertId}
+                  payload={payload}
+                  onAcknowledge={() => dismissOotAlert(payload.alertId)}
+                />
+              ))}
+              <CommandCenterPage />
             </>
           )}
 
@@ -274,9 +262,11 @@ export function App() {
           )}
 
           {currentRoute === "handover-builder" && !isAssociate && (
-            <div className="placeholder-view">
-              <h2>{t("nav.handover_builder")}</h2>
-            </div>
+            <HandoverBuilderPage userId={userId} />
+          )}
+
+          {currentRoute === "plant-manager-review" && !isAssociate && (
+            <PlantManagerHandoverTable />
           )}
 
           {currentRoute === "settings" && (

@@ -105,6 +105,48 @@ class AuditStore:
 # Fire-and-forget dispatch
 # ---------------------------------------------------------------------------
 
+_audit_writer: AuditWriterProtocol | None = None
+
+
+def get_audit_writer() -> AuditWriterProtocol:
+    """Return the process-singleton audit writer; falls back to AuditStore in tests."""
+    global _audit_writer
+    if _audit_writer is None:
+        _audit_writer = AuditStore()
+    return _audit_writer
+
+
+def set_audit_writer(writer: AuditWriterProtocol) -> None:
+    """Replace the singleton — call from lifespan to inject the real Azure writer."""
+    global _audit_writer
+    _audit_writer = writer
+
+
+def write_audit_sync(
+    writer: AuditWriterProtocol,
+    user_id: str,
+    action_type: str,
+    entity_id: str,
+    before_hash: str,
+    after_hash: str,
+) -> str:
+    """Write an audit record synchronously and return the entry path.
+
+    Raises the underlying exception on failure so the caller can roll back.
+    Used for compliance-critical paths (e.g. handover submission) where the
+    settled decision mandates synchronous write with rollback on failure.
+    """
+    utc_ts = datetime.now(tz=timezone.utc).isoformat()
+    return writer.write_event(
+        user_id=user_id,
+        action_type=action_type,
+        entity_id=entity_id,
+        before_hash=before_hash,
+        after_hash=after_hash,
+        utc_ts=utc_ts,
+    )
+
+
 def fire_audit_write(
     writer: AuditWriterProtocol,
     user_id: str,

@@ -1,0 +1,84 @@
+{
+  "type": "record",
+  "name": "GateResultEvent",
+  "namespace": "bmw.munich.opcenter.gate_result",
+  "doc": "Published when a quality gate result is received from OpCenter. Channel: bmw.munich.opcenter.gate_result.received. Consumed by quality-studio (Gate Command health score aggregation) and vin-digital-thread. Target: within 5s p95.",
+  "fields": [
+    {
+      "name": "gateResultId",
+      "type": "string",
+      "doc": "UUID of the gate_result row."
+    },
+    {
+      "name": "vin",
+      "type": "string",
+      "doc": "17-character Vehicle Identification Number (ISO 3779)."
+    },
+    {
+      "name": "gateId",
+      "type": "string",
+      "doc": "OpCenter gate identifier, e.g. GATE-DIM, GATE-LEAK, GATE-ELEC, GATE-NVH, GATE-ADAS."
+    },
+    {
+      "name": "gateType",
+      "type": {
+        "type": "enum",
+        "name": "GateType",
+        "symbols": ["dimensional", "leak", "electrical", "nvh", "adas"]
+      },
+      "doc": "Normalised gate type."
+    },
+    {
+      "name": "result",
+      "type": {
+        "type": "enum",
+        "name": "GateResultStatus",
+        "symbols": ["pass", "conditional_pass", "fail"]
+      },
+      "doc": "Gate result outcome."
+    },
+    {
+      "name": "measurements",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "GateMeasurement",
+          "fields": [
+            { "name": "measurementId", "type": "string" },
+            { "name": "name", "type": "string" },
+            { "name": "value", "type": "double" },
+            { "name": "unit", "type": "string" },
+            { "name": "toleranceLow", "type": "double" },
+            { "name": "toleranceHigh", "type": "double" },
+            { "name": "withinTolerance", "type": "boolean" },
+            { "name": "reworkThresholdLow", "type": ["null", "double"], "default": null },
+            { "name": "reworkThresholdHigh", "type": ["null", "double"], "default": null }
+          ]
+        }
+      },
+      "doc": "Array of individual measurement values for this gate."
+    },
+    {
+      "name": "measuredAt",
+      "type": "string",
+      "doc": "ISO-8601 UTC timestamp of measurement in OpCenter."
+    },
+    {
+      "name": "receivedFromOpcenterAt",
+      "type": "string",
+      "doc": "ISO-8601 UTC timestamp when this service received the event from OpCenter."
+    },
+    {
+      "name": "opcenterEventId",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "OpCenter event ID used for deduplication; null if not supplied."
+    },
+    {
+      "name": "correlationId",
+      "type": "string",
+      "doc": "UUID for distributed tracing across services."
+    }
+  ]
+}

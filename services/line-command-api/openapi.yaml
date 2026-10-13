@@ -6,6 +6,110 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /oee/snapshots:
+    get:
+      tags:
+        - OEE
+      summary: List latest OEE snapshots for all weld lines
+      operationId: listOeeSnapshots
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+            minimum: 1
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: maxAgeSeconds
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated OEE snapshots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OeeSnapshotListResponse"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /andon/alerts:
+    get:
+      tags:
+        - Andon Alerts
+      summary: List Andon alerts received from OpCenter
+      operationId: listAndonAlerts
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+            minimum: 1
+        - in: query
+          name: status
+          schema:
+            enum:
+              - open
+              - acknowledged
+              - resolved
+              - false_positive
+            type: string
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: stationId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated Andon alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlertListResponse"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /andon/alerts/{alertId}:
     get:
       tags:
@@ -84,6 +188,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AlertAcknowledgeResponse"
+        "400":
+          description: Invalid disposition value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token
           content:
@@ -110,6 +220,217 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /line-command/andon/alerts:
+    get:
+      tags:
+        - Andon Alerts
+      summary: List open predictive Andon alerts for the current shift (paginated)
+      operationId: listLineCommandAndonAlerts
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: shiftId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: status
+          schema:
+            enum:
+              - open
+              - resolved
+              - escalated
+              - monitoring
+            type: string
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated list of Andon alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlertListResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/handovers:
+    get:
+      tags:
+        - Handovers
+      summary: List recent shift handovers for Command Center
+      operationId: listHandovers
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 200
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated shift handovers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftHandoverListResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /torque/log:
+    post:
+      tags:
+        - Torque Log
+      summary: Submit a torque tightening record from the Beckhoff PLC via edge gateway
+      operationId: submitTorqueLog
+      description: >
+        Accepts a torque/angle trace record for a VIN fastener point.
+        Validates against VIN option-code tolerance, writes to torque_log table,
+        forwards to UNS, and emits adoption event. Satisfies AC-13685a24,
+        AC-69c77dfd, AC-b734032a, AC-fd1f00c6.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TorqueLogRequest"
+      responses:
+        "201":
+          description: Torque log accepted and forwarded to UNS
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorqueLogResponse"
+        "202":
+          description: Torque log accepted but UNS publish pending (edge-buffered scenario)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorqueLogResponse"
+        "400":
+          description: Invalid torque log payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Duplicate torque log (idempotency key already processed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Torque value out of tolerance — alert raised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorqueOutOfToleranceResponse"
+  /torque/logs:
+    get:
+      tags:
+        - Torque Log
+      summary: List torque log records for a VIN or station (paginated)
+      operationId: listTorqueLogs
+      description: >
+        Returns cursor-paginated torque log records. Used by Shift Lead and
+        Quality Studio for traceability review.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: vin
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-HJ-NPR-Z0-9]{17}$
+        - in: query
+          name: stationId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Paginated list of torque log records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorqueLogListResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
           content:
             application/json:
               schema:
@@ -196,95 +517,240 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
-    ArInstructionStep:
+    TorqueLogRequest:
       type: object
       required:
-        - stepNumber
-        - description
-        - torqueSpecNm
-        - torqueToleranceNm
+        - vin
+        - stationId
         - fastenerPointId
+        - torqueNm
+        - anglesDeg
+        - plcTimestamp
+        - idempotencyKey
       properties:
-        stepNumber:
-          type: integer
-        description:
+        vin:
           type: string
-        torqueSpecNm:
-          type: number
-          format: double
-        torqueToleranceNm:
-          type: number
-          format: double
+          pattern: ^[A-HJ-NPR-Z0-9]{17}$
+        stationId:
+          type: string
         fastenerPointId:
           type: string
-        isVariantDelta:
-          type: boolean
-          description: True if this step differs from standard i4 configuration
-        variantDeltaNote:
-          type: string
-          description: Human-readable description of what differs for this variant
-        holographicAssetUrl:
-          type: string
-          format: uri
-    ArInstructionResponse:
-      type: object
-      required:
-        - vin
-        - stationId
-        - optionCodes
-        - variantCode
-        - isRareVariant
-        - steps
-        - instructionVersion
-        - fetchedAt
-      properties:
-        vin:
-          type: string
-        stationId:
-          type: string
-        optionCodes:
-          type: array
-          items:
-            type: string
-        variantCode:
-          type: string
-        isRareVariant:
-          type: boolean
-        steps:
-          type: array
-          items:
-            $ref: "#/components/schemas/ArInstructionStep"
-        instructionVersion:
-          type: string
-        fetchedAt:
+        torqueNm:
+          type: number
+          format: double
+        anglesDeg:
+          type: number
+          format: double
+        plcTimestamp:
           type: string
           format: date-time
-        fallbackPdfQrUrl:
-          type: string
-          format: uri
-          description: QR code URL for fallback PDF; always populated
-    ArInstructionFallbackResponse:
-      type: object
-      required:
-        - vin
-        - stationId
-        - fallbackPdfQrUrl
-        - failureLoggedAt
-        - correlationId
-      properties:
-        vin:
-          type: string
-        stationId:
-          type: string
-        fallbackPdfQrUrl:
-          type: string
-          format: uri
-        failureLoggedAt:
-          type: string
-          format: date-time
-        correlationId:
+        idempotencyKey:
           type: string
           format: uuid
+          description: PLC-generated idempotency key; prevents duplicate log on retry
+        traceData:
+          type: array
+          description: Raw PLC torque/angle trace samples (1kHz or 100Hz)
+          items:
+            type: object
+            required:
+              - offsetMs
+              - torqueNm
+              - angleDeg
+            properties:
+              offsetMs:
+                type: integer
+              torqueNm:
+                type: number
+                format: double
+              angleDeg:
+                type: number
+                format: double
+        edgeBuffered:
+          type: boolean
+          default: false
+          description: True when submitted from edge buffer after UNS reconnection
+    TorqueLogResponse:
+      type: object
+      required:
+        - torqueLogId
+        - vin
+        - status
+        - unsPublishStatus
+        - recordedAt
+      properties:
+        torqueLogId:
+          type: string
+          format: uuid
+        vin:
+          type: string
+        status:
+          type: string
+          enum:
+            - accepted
+            - pending_sync
+        unsPublishStatus:
+          type: string
+          enum:
+            - published
+            - queued
+            - failed
+        recordedAt:
+          type: string
+          format: date-time
+    TorqueOutOfToleranceResponse:
+      type: object
+      required:
+        - torqueLogId
+        - vin
+        - fastenerPointId
+        - torqueNm
+        - specNm
+        - toleranceNm
+        - alertId
+        - recordedAt
+      properties:
+        torqueLogId:
+          type: string
+          format: uuid
+        vin:
+          type: string
+        fastenerPointId:
+          type: string
+        torqueNm:
+          type: number
+          format: double
+        specNm:
+          type: number
+          format: double
+        toleranceNm:
+          type: number
+          format: double
+        alertId:
+          type: string
+          format: uuid
+        recordedAt:
+          type: string
+          format: date-time
+    TorqueLogListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TorqueLogRecord"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+    TorqueLogRecord:
+      type: object
+      required:
+        - torqueLogId
+        - vin
+        - stationId
+        - fastenerPointId
+        - torqueNm
+        - anglesDeg
+        - status
+        - plcTimestamp
+        - createdAt
+      properties:
+        torqueLogId:
+          type: string
+          format: uuid
+        vin:
+          type: string
+        stationId:
+          type: string
+        fastenerPointId:
+          type: string
+        torqueNm:
+          type: number
+          format: double
+        anglesDeg:
+          type: number
+          format: double
+        status:
+          type: string
+          enum:
+            - in_tolerance
+            - out_of_tolerance
+            - pending_sync
+        unsPublishStatus:
+          type: string
+          enum:
+            - published
+            - queued
+            - failed
+        plcTimestamp:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+          description: Opaque cursor; null on the last page
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+    OeeSnapshot:
+      type: object
+      required:
+        - lineId
+        - oeePercent
+        - availability
+        - performance
+        - quality
+        - measuredAt
+        - dataAgeSeconds
+        - stale
+      properties:
+        lineId:
+          type: string
+        oeePercent:
+          type: number
+          format: double
+        availability:
+          type: number
+          format: double
+        performance:
+          type: number
+          format: double
+        quality:
+          type: number
+          format: double
+        measuredAt:
+          type: string
+          format: date-time
+        dataAgeSeconds:
+          type: integer
+        stale:
+          type: boolean
+          description: True when dataAgeSeconds > 30
+    OeeSnapshotListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/OeeSnapshot"
+        page:
+          $ref: "#/components/schemas/CursorPage"
     WeldTracePoint:
       type: object
       required:
@@ -385,6 +851,18 @@ components:
           type: number
           format: double
           nullable: true
+    AndonAlertListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AndonAlert"
+        page:
+          $ref: "#/components/schemas/CursorPage"
     AlertAcknowledgeRequest:
       type: object
       required:
@@ -422,6 +900,107 @@ components:
           type: string
           format: date-time
         eventId:
+          type: string
+          format: uuid
+    ShiftHandoverListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        page:
+          $ref: "#/components/schemas/CursorPage"
+    ArInstructionStep:
+      type: object
+      required:
+        - stepNumber
+        - description
+        - torqueSpecNm
+        - torqueToleranceNm
+        - fastenerPointId
+      properties:
+        stepNumber:
+          type: integer
+        description:
+          type: string
+        torqueSpecNm:
+          type: number
+          format: double
+        torqueToleranceNm:
+          type: number
+          format: double
+        fastenerPointId:
+          type: string
+        isVariantDelta:
+          type: boolean
+          description: True if this step differs from standard i4 configuration
+        variantDeltaNote:
+          type: string
+          description: Human-readable description of what differs for this variant
+        holographicAssetUrl:
+          type: string
+          format: uri
+    ArInstructionResponse:
+      type: object
+      required:
+        - vin
+        - stationId
+        - optionCodes
+        - variantCode
+        - isRareVariant
+        - steps
+        - instructionVersion
+        - fetchedAt
+      properties:
+        vin:
+          type: string
+        stationId:
+          type: string
+        optionCodes:
+          type: array
+          items:
+            type: string
+        variantCode:
+          type: string
+        isRareVariant:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArInstructionStep"
+        instructionVersion:
+          type: string
+        fetchedAt:
+          type: string
+          format: date-time
+        fallbackPdfQrUrl:
+          type: string
+          format: uri
+          description: QR code URL for fallback PDF; always populated
+    ArInstructionFallbackResponse:
+      type: object
+      required:
+        - vin
+        - stationId
+        - fallbackPdfQrUrl
+        - failureLoggedAt
+        - correlationId
+      properties:
+        vin:
+          type: string
+        stationId:
+          type: string
+        fallbackPdfQrUrl:
+          type: string
+          format: uri
+        failureLoggedAt:
+          type: string
+          format: date-time
+        correlationId:
           type: string
           format: uuid
     Error:

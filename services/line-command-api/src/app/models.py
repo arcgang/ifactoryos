@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DeviceType(str, Enum):
@@ -54,6 +55,31 @@ class ErrorResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# OEE Snapshots
+# ---------------------------------------------------------------------------
+
+class OeeSnapshot(BaseModel):
+    lineId: str
+    oeePercent: float
+    availability: float
+    performance: float
+    quality: float
+    measuredAt: str
+    dataAgeSeconds: int
+    stale: bool
+
+
+class CursorPage(BaseModel):
+    next_cursor: str | None
+    limit: int
+
+
+class OeeSnapshotListResponse(BaseModel):
+    data: list[OeeSnapshot]
+    page: CursorPage
+
+
+# ---------------------------------------------------------------------------
 # Andon alert models
 # ---------------------------------------------------------------------------
 
@@ -69,6 +95,18 @@ class WeldTrace(BaseModel):
 
 AlertStatusEnum = Literal["open", "acknowledged", "resolved", "false_positive"]
 AlertTypeEnum = Literal["predictive", "reactive"]
+
+
+class AndonAlertStatus(str, Enum):
+    open = "open"
+    acknowledged = "acknowledged"
+    resolved = "resolved"
+    false_positive = "false_positive"
+
+
+class AndonAlertType(str, Enum):
+    predictive = "predictive"
+    reactive = "reactive"
 
 
 class AndonAlert(BaseModel):
@@ -91,7 +129,15 @@ class AndonAlert(BaseModel):
     thresholdValue: float | None = None
 
 
-DispositionEnum = Literal["resolved", "escalated", "monitoring"]
+class AndonAlertListResponse(BaseModel):
+    data: list[AndonAlert]
+    page: CursorPage
+
+
+class DispositionEnum(str, Enum):
+    resolved = "resolved"
+    escalated = "escalated"
+    monitoring = "monitoring"
 
 
 class AlertAcknowledgeRequest(BaseModel):
@@ -104,3 +150,124 @@ class AlertAcknowledgeResponse(BaseModel):
     status: AlertStatusEnum
     acknowledgedAt: datetime
     eventId: UUID
+
+
+# ---------------------------------------------------------------------------
+# Shared validators
+# ---------------------------------------------------------------------------
+
+_VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+
+
+# ---------------------------------------------------------------------------
+# Shift Handover (LLD contract)
+# ---------------------------------------------------------------------------
+
+class AlertDispositionItem(BaseModel):
+    alertId: UUID
+    disposition: DispositionEnum
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class HandoverRequest(BaseModel):
+    shiftId: UUID
+    lineId: str
+    shiftStartTs: str
+    shiftEndTs: str
+    alertDispositions: list[AlertDispositionItem]
+    oeeDeltaPct: float
+    heldVins: list[str] = Field(default_factory=list)
+    notes: str | None = Field(default=None, max_length=4000)
+    idempotencyKey: UUID | None = None
+
+    @field_validator("heldVins")
+    @classmethod
+    def vins_must_match_pattern(cls, v: list[str]) -> list[str]:
+        for vin in v:
+            if not _VIN_RE.match(vin):
+                raise ValueError(f"VIN must match ^[A-HJ-NPR-Z0-9]{{17}}$: {vin!r}")
+        return v
+
+
+class HandoverResponse(BaseModel):
+    handoverId: UUID
+    submittedAt: str
+    submittedByUserId: str
+
+
+class HandoverRecord(BaseModel):
+    handoverId: UUID
+    shiftId: UUID
+    lineId: str
+    shiftStartTs: str
+    shiftEndTs: str
+    submittedByUserId: str
+    alertDispositions: list[AlertDispositionItem]
+    oeeDeltaPct: float
+    heldVins: list[str]
+    notes: str | None = None
+    createdAt: str
+    updatedAt: str | None = None
+
+
+class HandoverListResponse(BaseModel):
+    data: list[HandoverRecord]
+    page: CursorPage
+
+
+# Legacy internal shape used by the Command Center list endpoint.
+class ShiftHandover(BaseModel):
+    id: UUID
+    shift_id: UUID
+    line_id: str
+    shift_start_ts: str
+    shift_end_ts: str
+    submitted_by_user_id: str
+    alert_dispositions: list[Any]
+    oee_delta_pct: float
+    held_vins: list[str]
+    notes: str | None = None
+    idempotency_key: UUID
+    created_at: str
+    updated_at: str
+
+
+class ShiftHandoverListResponse(BaseModel):
+    data: list[ShiftHandover]
+    page: CursorPage
+
+
+# ---------------------------------------------------------------------------
+# Expert Calls
+# ---------------------------------------------------------------------------
+
+
+class ExpertCallRequest(BaseModel):
+    vin: str
+    stationId: str
+    sessionId: UUID
+    idempotencyKey: UUID | None = None
+
+    @field_validator("vin")
+    @classmethod
+    def vin_must_match_pattern(cls, v: str) -> str:
+        if not _VIN_RE.match(v):
+            raise ValueError("VIN must match ^[A-HJ-NPR-Z0-9]{17}$")
+        return v
+
+
+class ExpertCallResponse(BaseModel):
+    callId: UUID
+    callMode: str
+    createdAt: datetime
+
+
+class ExpertCallEndRequest(BaseModel):
+    expertUserId: str
+    durationSeconds: int = Field(..., ge=0)
+
+
+class ExpertCallEndResponse(BaseModel):
+    callId: UUID
+    auditEntryId: UUID
+    endedAt: datetime

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -31,12 +30,12 @@ def _error(code: str, message: str, correlation_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# In-process idempotency store (replaced by PostgreSQL in production).
+# In-process idempotency store — acts as a fast-path before the DB check.
 # Tests may inject their own implementation via the dependency override.
 # ---------------------------------------------------------------------------
 
 class _IdempotencyStore:
-    """Minimal in-memory store; a real deployment persists to PostgreSQL."""
+    """Minimal in-memory store; production also enforces via PostgreSQL UNIQUE constraint."""
 
     def __init__(self) -> None:
         self._seen: set[str] = set()
@@ -88,7 +87,7 @@ async def ingest_vin_thread_event(
             detail=_error("VIN_FORMAT_INVALID", "VIN must match ^[A-HJ-NPR-Z0-9]{17}$", corr),
         )
 
-    # --- Idempotency ---
+    # --- In-memory idempotency fast-path ---
     idempotency_key = str(body.idempotencyKey)
     if not store.check_and_register(idempotency_key):
         raise HTTPException(
@@ -100,10 +99,48 @@ async def ingest_vin_thread_event(
             ),
         )
 
-    # --- Assign identifiers ---
-    event_id = uuid.uuid4()
-    linked_at = datetime.now(timezone.utc).isoformat()
     user_id = caller_subject(jwt_payload)
+
+    # --- Full ingest: PostgreSQL idempotency + Neo4j write + Kafka publish ---
+    from app.db import get_pool
+    from app.ingest_service import (
+        DuplicateEventError,
+        Neo4jUnavailableError,
+        Neo4jWriteError,
+        VinFormatError,
+        ingest_event,
+    )
+
+    try:
+        pool = await get_pool()
+        result = await ingest_event(vin=vin, request=body, user_id=user_id, pool=pool)
+    except DuplicateEventError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_error("DUPLICATE_IDEMPOTENCY_KEY", "Already processed", corr),
+        ) from exc
+    except VinFormatError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_error("VIN_FORMAT_INVALID", "VIN does not match ISO 3779", corr),
+        ) from exc
+    except Neo4jUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_error("NEO4J_UNAVAILABLE", "Neo4j cluster is temporarily unavailable", corr),
+        ) from exc
+    except Neo4jWriteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_error("NEO4J_WRITE_FAILURE", "Failed to write event to the graph", corr),
+        ) from exc
+    except HTTPException:
+        raise
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_error("INTERNAL_ERROR", "An unexpected error occurred", corr),
+        ) from exc
 
     # --- Audit write (fire-and-forget, must not block HTTP response) ---
     after_hash = sha256_hex(
@@ -125,11 +162,7 @@ async def ingest_vin_thread_event(
         action_type="VIN_THREAD_EVENT_LINKED",
         entity_id=vin,
         after_hash=after_hash,
-        utc_ts=linked_at,
+        utc_ts=result.linkedAt,
     )
 
-    return ThreadEventIngestResponse(
-        vin=vin,
-        eventId=event_id,
-        linkedAt=linked_at,
-    )
+    return result

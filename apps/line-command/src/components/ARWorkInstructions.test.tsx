@@ -101,12 +101,10 @@ function renderInstructions(
 
 beforeEach(async () => {
   await i18n.changeLanguage("en-GB");
-  vi.useFakeTimers();
 });
 
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
@@ -174,12 +172,9 @@ describe("State: populated — standard i4", () => {
     const fetchFn = vi.fn().mockResolvedValue(STANDARD_RESPONSE);
     renderInstructions(fetchFn);
 
+    // Wait for populated state — instruction version is always shown in the header
     await waitFor(() =>
-      expect(screen.getByText(/i4 eDrive40/i)).toBeFalsy() === undefined || true,
-    );
-    // variantCode is in the header area — just ensure overlay rendered
-    await waitFor(() =>
-      expect(screen.queryByRole("status")).toBeNull(),
+      expect(screen.getByText("v4.2.1")).toBeTruthy(),
     );
   });
 
@@ -383,6 +378,9 @@ describe("State: fallback — 504 response", () => {
 // ---------------------------------------------------------------------------
 
 describe("State: fallback — client-side 10 s timeout", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("shows fallback panel when 10 s elapses with no response", async () => {
     const neverResolves = () => new Promise<ArInstructionResponse>(() => {/* never */});
     renderInstructions(neverResolves);
@@ -391,9 +389,7 @@ describe("State: fallback — client-side 10 s timeout", () => {
       vi.advanceTimersByTime(10_001);
     });
 
-    await waitFor(() =>
-      expect(screen.getByRole("alert")).toBeTruthy(),
-    );
+    expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByText(/Overlay Unavailable/i)).toBeTruthy();
   });
 });

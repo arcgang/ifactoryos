@@ -1,5 +1,6 @@
--- Migration: andon_alert — Andon alerts received from OpCenter GraphQL subscription.
--- Station-level only — no operator_id stored (BetrVG §87 / GDPR).
+-- Migration: create andon_alert
+-- Andon alerts received from OpCenter GraphQL subscription.
+-- station_id is station-level only — no operator_id stored (BetrVG §87 / GDPR).
 -- Residency: Azure Germany West Central. Classification: internal.
 -- Retention: 13 months.
 

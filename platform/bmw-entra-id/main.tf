@@ -317,6 +317,30 @@ resource "azuread_application_optional_claims" "quality_studio_groups" {
 }
 
 # ---------------------------------------------------------------------------
+# Pseudonymous token claim mapping — GDPR US-028 / BR-13
+#
+# Analytics-path audit log user_id must carry the pseudonymous_token UUID,
+# not the raw employee_id (oid claim).  The flow is:
+#
+#   Entra ID JWT (oid=<employee_id>) → identity-service
+#     GET /internal/identity/pseudonymise?employee_id=<oid>
+#     → { pseudonymous_token: "<uuid>" }
+#   Caller uses pseudonymous_token as user_id in audit writes and Neo4j nodes.
+#
+# The oid claim is emitted automatically by Entra ID v2 tokens for all three
+# console applications; no additional optional claim is required.
+# Mapping is documented as a module output so the api-gateway module can
+# reference it in DataPower policy configuration.
+#
+# Variable reference: see .env.example for TF_VAR_entra_tenant_id.
+# ---------------------------------------------------------------------------
+
+variable "entra_tenant_id" {
+  type        = string
+  description = "Azure Entra ID tenant ID — used to document the oid claim source"
+}
+
+# ---------------------------------------------------------------------------
 # Outputs
 # ---------------------------------------------------------------------------
 
@@ -344,4 +368,23 @@ output "app_client_ids" {
 output "role_scope_map" {
   description = "Authoritative mapping of security group display name to OAuth scopes — used by api-gateway and tests"
   value       = local.role_scopes
+}
+
+output "pseudonymous_token_claim_mapping" {
+  description = <<-EOT
+    Documents the GDPR claim mapping for analytics/audit user_id fields (US-028/BR-13).
+    Raw employee IDs (oid claim, 8-digit numeric) must be resolved to pseudonymous_token
+    via identity-service GET /internal/identity/pseudonymise before any audit or VIN write.
+    Only the pseudonymous_token UUID may appear in exported datasets or audit blobs.
+  EOT
+  value = {
+    source_claim         = "oid"
+    source_description   = "Entra ID v2 object ID — maps to 8-digit numeric employee ID"
+    resolved_field       = "pseudonymous_token"
+    resolved_description = "UUID from identity_pseudonymisation_map; stable after Article 17 scrub"
+    resolution_endpoint  = "GET http://identity-service.ifos-identity.svc.cluster.local:8080/internal/identity/pseudonymise"
+    audit_field          = "user_id"
+    rejection_pattern    = "^\\d{8}$"
+    rejection_error      = "EmployeeIdRejected — raw numeric IDs rejected by audit_client SDK"
+  }
 }

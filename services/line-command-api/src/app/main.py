@@ -12,8 +12,13 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.health import Health, health
-from app.routers.ar_instructions import router as ar_router
 from app.routers.andon_alerts import router as andon_router
+from app.routers.ar_instructions import router as ar_router
+from app.routers.ar_sessions import router as ar_sessions_router
+from app.routers.expert_calls import router as expert_calls_router
+from app.routers.handover import router as handover_router
+from app.routers.oee import router as oee_router
+from app.routers.torque import router as torque_router
 
 
 def _error_body(code: str, message: str, details: list[Any] | None = None) -> dict[str, Any]:
@@ -27,11 +32,58 @@ def _error_body(code: str, message: str, details: list[Any] | None = None) -> di
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    import asyncio
+
     from app.config import settings  # validates at startup
 
-    _ = settings  # noqa: F841 — import triggers validation
+    consumer_task: asyncio.Task | None = None
+
+    andon_consumer_task: asyncio.Task | None = None
+
+    from app.db import get_pool
+    pool = await get_pool()
+
+    if settings.torque_consumer_enabled:
+        from app.torque_consumer import run_torque_consumer
+
+        consumer_task = asyncio.create_task(
+            run_torque_consumer(
+                bootstrap_servers=settings.kafka_bootstrap_servers,
+                sasl_username=settings.kafka_sasl_username,
+                sasl_password=settings.kafka_sasl_password,
+                vdt_base_url=settings.vdt_base_url,
+                vdt_timeout_seconds=settings.vdt_timeout_seconds,
+                pool=pool,
+            )
+        )
+
+    if settings.andon_consumer_enabled:
+        from app.andon_consumer import run_andon_consumer
+
+        andon_consumer_task = asyncio.create_task(
+            run_andon_consumer(
+                bootstrap_servers=settings.kafka_bootstrap_servers,
+                sasl_username=settings.kafka_sasl_username,
+                sasl_password=settings.kafka_sasl_password,
+                pool=pool,
+            )
+        )
 
     yield
+
+    if consumer_task is not None:
+        consumer_task.cancel()
+        try:
+            await consumer_task
+        except asyncio.CancelledError:
+            pass
+
+    if andon_consumer_task is not None:
+        andon_consumer_task.cancel()
+        try:
+            await andon_consumer_task
+        except asyncio.CancelledError:
+            pass
 
     from app.db import close_pool, close_ts_pool
     from app.kafka_producer import stop_producer
@@ -51,7 +103,12 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(ar_router)
+    app.include_router(ar_sessions_router)
+    app.include_router(oee_router)
     app.include_router(andon_router)
+    app.include_router(handover_router)
+    app.include_router(expert_calls_router)
+    app.include_router(torque_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])
     def health_check() -> Health:

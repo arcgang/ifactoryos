@@ -69,7 +69,6 @@ export function useGateResults(vin: string): GateResultsState {
       const resp = await listGateResults({ vin, limit: 200 });
       if (!mountedRef.current) return;
 
-      // Collect all pages for this VIN (single page sufficient given limit=200)
       const allResults = resp.data;
       const byType = buildGateTypeMap(allResults);
       const receivedTypes = new Set(byType.keys());

@@ -6,6 +6,314 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /oee/snapshots:
+    get:
+      tags:
+        - OEE
+      summary: List latest OEE snapshots for all weld lines
+      operationId: listOeeSnapshots
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+            minimum: 1
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: maxAgeSeconds
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated OEE snapshots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OeeSnapshotListResponse"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /andon/alerts:
+    get:
+      tags:
+        - Andon Alerts
+      summary: List Andon alerts received from OpCenter
+      operationId: listAndonAlerts
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+            minimum: 1
+        - in: query
+          name: status
+          schema:
+            enum:
+              - open
+              - acknowledged
+              - resolved
+              - false_positive
+            type: string
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: stationId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated Andon alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlertListResponse"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /andon/alerts/{alertId}:
+    get:
+      tags:
+        - Andon Alerts
+      summary: Get a specific Andon alert by ID
+      operationId: getAndonAlert
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Andon alert detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlert"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /andon/alerts/{alertId}/acknowledge:
+    post:
+      tags:
+        - Andon Alerts
+      summary: Acknowledge a predictive Andon alert and record disposition
+      operationId: acknowledgeAndonAlert
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertAcknowledgeRequest"
+      responses:
+        "200":
+          description: Alert acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertAcknowledgeResponse"
+        "400":
+          description: Invalid disposition value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller does not have shift-lead role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Alert already acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /line-command/andon/alerts:
+    get:
+      tags:
+        - Andon Alerts
+      summary: List open predictive Andon alerts for the current shift (paginated)
+      operationId: listLineCommandAndonAlerts
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: shiftId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: status
+          schema:
+            enum:
+              - open
+              - resolved
+              - escalated
+              - monitoring
+            type: string
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated list of Andon alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AndonAlertListResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/handovers:
+    get:
+      tags:
+        - Handovers
+      summary: List recent shift handovers for Command Center
+      operationId: listHandovers
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: lineId
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 200
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated shift handovers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftHandoverListResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /ar/instructions/{vin}:
     get:
       tags:
@@ -88,6 +396,181 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    CursorPage:
+      type: object
+      required:
+        - next_cursor
+        - limit
+      properties:
+        next_cursor:
+          type:
+            - string
+            - "null"
+          description: Opaque; null on the last page
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+    OeeSnapshot:
+      type: object
+      required:
+        - lineId
+        - oeePercent
+        - availability
+        - performance
+        - quality
+        - measuredAt
+        - dataAgeSeconds
+        - stale
+      properties:
+        lineId:
+          type: string
+        oeePercent:
+          type: number
+          format: double
+        availability:
+          type: number
+          format: double
+        performance:
+          type: number
+          format: double
+        quality:
+          type: number
+          format: double
+        measuredAt:
+          type: string
+          format: date-time
+        dataAgeSeconds:
+          type: integer
+        stale:
+          type: boolean
+          description: True when dataAgeSeconds > 30
+    OeeSnapshotListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/OeeSnapshot"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+    AndonAlert:
+      type: object
+      required:
+        - alertId
+        - stationId
+        - lineId
+        - alertType
+        - predictedFailureType
+        - minutesToPredictedFailure
+        - recommendedAction
+        - status
+        - detectedAt
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        stationId:
+          type: string
+        lineId:
+          type: string
+        alertType:
+          type: string
+          enum:
+            - predictive
+            - reactive
+        predictedFailureType:
+          type: string
+        minutesToPredictedFailure:
+          type:
+            - integer
+            - "null"
+        recommendedAction:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+            - false_positive
+        detectedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        acknowledgedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        opcenterEventId:
+          type:
+            - string
+            - "null"
+    AndonAlertListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AndonAlert"
+        page:
+          $ref: "#/components/schemas/CursorPage"
+    AlertAcknowledgeRequest:
+      type: object
+      required:
+        - disposition
+      properties:
+        disposition:
+          type: string
+          enum:
+            - resolved
+            - escalated
+            - monitoring
+        note:
+          type: string
+          maxLength: 1000
+    AlertAcknowledgeResponse:
+      type: object
+      required:
+        - alertId
+        - status
+        - acknowledgedAt
+        - eventId
+      properties:
+        alertId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        acknowledgedAt:
+          type: string
+          format: date-time
+        eventId:
+          type: string
+          format: uuid
+    ShiftHandoverListResponse:
+      type: object
+      required:
+        - data
+        - page
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        page:
+          $ref: "#/components/schemas/CursorPage"
     ArInstructionStep:
       type: object
       required:

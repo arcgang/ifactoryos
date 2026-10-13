@@ -181,8 +181,7 @@ export function ARWorkbenchPage({ vin, userId, onForbidden, onOutOfTolerance }: 
         renderMs: renderMs ?? -1,
       });
 
-      const idempotencyKey = generateIdempotencyKey();
-      void postArSession(vin, STATION_ID, userId, idempotencyKey);
+      void postArSession(vin, STATION_ID, userId, sessionIdRef.current);
     },
     [vin, userId],
   );

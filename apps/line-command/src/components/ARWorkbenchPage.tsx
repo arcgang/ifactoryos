@@ -6,9 +6,11 @@ import {
   type ArInstructionFallbackResponse,
 } from "./ARWorkInstructions";
 import { TorqueStepIndicator } from "./TorqueStepIndicator";
+import { ExpertCallPanel } from "./ExpertCallPanel";
 import type { TorqueOotPayload } from "./TorqueOutOfToleranceToast";
 import { apiRequest, ForbiddenError } from "../services/api";
 import { useTorqueStream } from "../hooks/useTorqueStream";
+import { useExpertCall } from "../hooks/useExpertCall";
 
 // ---------------------------------------------------------------------------
 // Station config — resolved from the device's station configuration store.
@@ -131,7 +133,17 @@ export function ARWorkbenchPage({ vin, userId, onForbidden, onOutOfTolerance }: 
   // Record the RFID-read moment so the 5 s render SLA warning can measure latency.
   const rfidReadAtRef = useRef<number | null>(null);
 
+  // Stable AR session ID — one per workbench page mount.
+  const sessionIdRef = useRef<string>(generateIdempotencyKey());
+
   const torqueState = useTorqueStream(STATION_ID);
+
+  const { state: expertCallState, initiateCall, endCall } = useExpertCall({
+    vin,
+    stationId: STATION_ID,
+    sessionId: sessionIdRef.current,
+    userId,
+  });
 
   // Forward OOT events to parent (Command Center / Shift Lead view)
   const onOutOfToleranceRef = useRef(onOutOfTolerance);
@@ -200,6 +212,11 @@ export function ARWorkbenchPage({ vin, userId, onForbidden, onOutOfTolerance }: 
         stationId={STATION_ID}
         fetchInstructions={fetchFn}
         onOverlayRendered={handleOverlayRendered}
+      />
+      <ExpertCallPanel
+        state={expertCallState}
+        onCallExpert={initiateCall}
+        onEndCall={endCall}
       />
     </div>
   );

@@ -138,6 +138,29 @@
       "alert_id_label": "Alert ID"
     }
   },
+  "expert_call": {
+    "call_button_label": "Call a remote expert for this rare variant",
+    "call_button_text": "Call Expert",
+    "connecting_label": "Connecting to remote expert",
+    "connecting_text": "Connecting to Expert…",
+    "sla_hint": "Must connect within 10 seconds",
+    "cancel_label": "Cancel the expert call",
+    "cancel_text": "Cancel",
+    "active_video_label": "Video expert call active",
+    "active_voice_label": "Voice expert call active",
+    "mode_video": "Video Call · Active",
+    "mode_voice": "Voice-Only Call · Active",
+    "no_biometrics_note": "Field of view only · No biometric or gaze data transmitted",
+    "voice_only_note": "Audio channel only · No video or gaze data transmitted",
+    "duration_label": "Call duration",
+    "end_call_label": "End expert call and log to audit trail",
+    "end_call_text": "End Call",
+    "ended_label": "Expert call ended and audit logged",
+    "ended_text": "Call ended — session logged to VIN digital thread",
+    "audit_entry_label": "Audit entry ID",
+    "retry_text": "Retry",
+    "annotations_label": "Expert holographic annotations"
+  },
   "errors": {
     "generic": "An error occurred. Please reload the page.",
     "not_found": "Page not found.",

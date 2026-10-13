@@ -10,6 +10,7 @@ Public API
 run_resequence(request, pool, kserve_client, user_id)  → OptimizeResponse
 get_alert_for_resequence(alert_id, pool)               → dict | None
 list_active_alerts(pool, cursor, limit)                → AlertListResponse
+acknowledge_alert_db(alert_id, acknowledged_by, pool)  → ConstraintAlertRecord
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from datetime import datetime, timezone
 
 import asyncpg
 
+from app.alerts import AlertNotFoundError
 from app.models import (
     AlertListResponse,
     AlertStatus,
@@ -107,10 +109,15 @@ async def list_active_alerts(
     limit: int | None,
     status_filter: str | None = "active",
 ) -> AlertListResponse:
-    """List constraint_alert rows, optionally filtered by status, cursor-paginated."""
+    """List constraint_alert rows, optionally filtered by status, cursor-paginated.
+
+    Pass status_filter="all" or None to return all statuses.
+    """
     import base64
 
     page_limit = min(limit or _PAGE_DEFAULT, _PAGE_MAX)
+    # "all" means no status filter — treat as None
+    effective_status: str | None = None if (status_filter is None or status_filter == "all") else status_filter
 
     def _encode_cursor(alert_id: str) -> str:
         return base64.urlsafe_b64encode(alert_id.encode()).decode()
@@ -119,7 +126,7 @@ async def list_active_alerts(
         return base64.urlsafe_b64decode(cur.encode()).decode()
 
     async with pool.acquire() as conn:
-        if status_filter is not None and cursor is not None:
+        if effective_status is not None and cursor is not None:
             after_id = _decode_cursor(cursor)
             rows = await conn.fetch(
                 """
@@ -132,11 +139,11 @@ async def list_active_alerts(
                 ORDER BY alert_id
                 LIMIT $3
                 """,
-                status_filter,
+                effective_status,
                 after_id,
                 page_limit + 1,
             )
-        elif status_filter is not None:
+        elif effective_status is not None:
             rows = await conn.fetch(
                 """
                 SELECT alert_id, constraint_type, current_value, threshold_value,
@@ -147,7 +154,7 @@ async def list_active_alerts(
                 ORDER BY alert_id
                 LIMIT $2
                 """,
-                status_filter,
+                effective_status,
                 page_limit + 1,
             )
         elif cursor is not None:
@@ -188,6 +195,40 @@ async def list_active_alerts(
         data=[_row_to_alert_record(r) for r in page_rows],
         page=CursorPage(next_cursor=next_cursor, limit=page_limit),
     )
+
+
+async def acknowledge_alert_db(
+    alert_id: uuid.UUID,
+    acknowledged_by: str,
+    pool: asyncpg.Pool,
+    now: datetime | None = None,
+) -> ConstraintAlertRecord:
+    """Set status='acknowledged' on a constraint_alert row and return the updated record.
+
+    Raises AlertNotFoundError when no row matches alert_id.
+    """
+    if now is None:
+        now = datetime.now(tz=timezone.utc)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE constraint_alert
+               SET status          = 'acknowledged',
+                   acknowledged_at = $1,
+                   acknowledged_by = $2
+             WHERE alert_id = $3::uuid
+            RETURNING alert_id, constraint_type, current_value, threshold_value,
+                      affected_vins, status, detected_at, acknowledged_at,
+                      acknowledged_by, resolved_at
+            """,
+            now,
+            acknowledged_by,
+            str(alert_id),
+        )
+    if row is None:
+        raise AlertNotFoundError(f"Alert {alert_id!r} not found")
+    return _row_to_alert_record(row)
 
 
 # ---------------------------------------------------------------------------

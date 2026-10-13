@@ -5,6 +5,11 @@ import type {
   VinThreadResponse,
 } from "../types/processReplay";
 import type {
+  AcknowledgeAlertRequest,
+  AlertListResponse,
+  ClusterAlert,
+  CorrectiveActionRequest,
+  CorrectiveActionResult,
   ClusterListResponse,
   ClusterQueryRequest,
   ClusterQueryResult,
@@ -95,6 +100,12 @@ export async function getVinThreadCompleteness(
   );
 }
 
+export async function getDefectGenomeAlerts(params: {
+  status?: string;
+  cursor?: string;
+  limit?: number;
+} = {}): Promise<AlertListResponse> {
+  const q = new URLSearchParams();
 export async function runClusterQuery(
   body: ClusterQueryRequest,
 ): Promise<ClusterQueryResult> {
@@ -116,6 +127,21 @@ export async function listClusters(params: {
   if (params.cursor) q.set("cursor", params.cursor);
   if (params.limit != null) q.set("limit", String(params.limit));
   const qs = q.toString() ? `?${q}` : "";
+  return request<AlertListResponse>(`/defect-genome/alerts${qs}`);
+}
+
+export async function getClusterAlert(alertId: string): Promise<ClusterAlert> {
+  return request<ClusterAlert>(`/defect-genome/alerts/${encodeURIComponent(alertId)}`);
+}
+
+export async function acknowledgeClusterAlert(
+  alertId: string,
+  body: AcknowledgeAlertRequest,
+): Promise<ClusterAlert> {
+  return request<ClusterAlert>(
+    `/defect-genome/alerts/${encodeURIComponent(alertId)}/acknowledge`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
   return request<ClusterListResponse>(`/defect/clusters${qs}`);
 }
 

@@ -5,6 +5,11 @@ export interface ProcessReplayLaunchEvent {
   timestamp: string;
 }
 
+export interface ClusterAlertViewedEvent {
+  action: "CLUSTER_ALERT_VIEWED";
+  alertId: string;
+  clusterId: string;
+}
 export interface DefectGenomeQueryEvent {
   action: "DEFECT_GENOME_QUERY";
   userId: string;
@@ -14,6 +19,12 @@ export interface DefectGenomeQueryEvent {
   timestamp: string;
 }
 
+export interface ClusterAlertAcknowledgedEvent {
+  action: "CLUSTER_ALERT_ACKNOWLEDGED";
+  alertId: string;
+  clusterId: string;
+  sessionId: string;
+}
 export interface RootCauseAssignedEvent {
   action: "ROOT_CAUSE_ASSIGNED";
   userId: string;
@@ -49,7 +60,7 @@ const COLLECTOR_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_OTLP_ENDPOINT ??
   "/api/v1/ingest/events";
 
-function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCauseAssignedEvent): void {
+function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCauseAssignedEvent | ClusterAlertViewedEvent | ClusterAlertAcknowledgedEvent): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
   }
@@ -74,6 +85,11 @@ export function emitProcessReplayLaunch(vin: string): void {
   });
 }
 
+export function emitClusterAlertViewed(alertId: string, clusterId: string): void {
+  emit({
+    action: "CLUSTER_ALERT_VIEWED",
+    alertId,
+    clusterId,
 export function emitDefectGenomeQuery(params: {
   userId: string;
   role: string;
@@ -89,6 +105,12 @@ export function emitDefectGenomeQuery(params: {
   });
 }
 
+export function emitClusterAlertAcknowledged(alertId: string, clusterId: string): void {
+  emit({
+    action: "CLUSTER_ALERT_ACKNOWLEDGED",
+    alertId,
+    clusterId,
+    sessionId: _sessionId,
 export function emitRootCauseAssigned(params: {
   userId: string;
   role: string;

@@ -74,4 +74,13 @@ module "postgresql_citus" {
 module "jira_integration" {
   source      = "./jira-integration"
   environment = var.environment
+
+  # Vault — address and admin token for secret provisioning.
+  vault_addr       = var.vault_addr
+  jira_admin_token = var.jira_admin_token
+
+  # Jira — base URL and OAuth2 app credentials (manual pre-step; see platform/jira-integration/README.md).
+  jira_base_url             = var.jira_base_url
+  jira_oauth2_client_id     = var.jira_oauth2_client_id
+  jira_oauth2_client_secret = var.jira_oauth2_client_secret
 }

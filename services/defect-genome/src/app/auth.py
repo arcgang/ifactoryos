@@ -1,3 +1,4 @@
+"""JWT bearer authentication for defect-genome."""
 """JWT Bearer authentication and role enforcement for defect-genome.
 
 Supports both service-to-service (Client Credentials) and user-context (OBO)
@@ -23,6 +24,7 @@ def _make_error(code: str, message: str) -> dict[str, Any]:
 async def require_bearer(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> dict[str, Any]:
+    """Dependency: returns decoded JWT payload or raises 401."""
     """Dependency: returns the decoded JWT payload or raises 401."""
     if credentials is None:
         raise HTTPException(

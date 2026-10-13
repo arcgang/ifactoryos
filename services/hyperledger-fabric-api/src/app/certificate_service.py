@@ -302,8 +302,38 @@ async def get_certificate(
     *,
     certificate_id: str,
     pool: asyncpg.Pool,
+    fabric: FabricClient,
 ) -> CertificateRecord:
-    """Return the local DB record. Raises CertificateNotFoundError if absent."""
+    """Return the local DB record after confirming the Fabric ledger entry is reachable.
+
+    Raises CertificateNotFoundError if absent locally.
+    Raises FabricUnavailableError if the Fabric peer query fails.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT certificate_id, vin, shift_id, gate_result_snapshot,"
+            " health_score, validator_id, issued_at, certificate_hash,"
+            " fabric_transaction_id, fabric_block_number, anchored_at, source_system"
+            " FROM fabric_certificate"
+            " WHERE certificate_id = $1",
+            certificate_id,
+        )
+
+    if row is None:
+        raise CertificateNotFoundError(f"Certificate {certificate_id} not found")
+
+    # Confirm the Fabric ledger entry is reachable — raises FabricUnavailableError on failure
+    await fabric.get_certificate(certificate_id)
+
+    return _row_to_record(row)
+
+
+async def _fetch_certificate_row(
+    *,
+    certificate_id: str,
+    pool: asyncpg.Pool,
+) -> CertificateRecord:
+    """Fetch from local DB only — does not call Fabric."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT certificate_id, vin, shift_id, gate_result_snapshot,"
@@ -332,7 +362,7 @@ async def verify_certificate(
     Raises FabricUnavailableError on peer failure.
     Emits CertificateVerifyFailedEvent on mismatch.
     """
-    record = await get_certificate(certificate_id=certificate_id, pool=pool)
+    record = await _fetch_certificate_row(certificate_id=certificate_id, pool=pool)
 
     fabric_data: FabricCertificateData = await fabric.get_certificate(certificate_id)
     verified_at = _utcnow_iso()

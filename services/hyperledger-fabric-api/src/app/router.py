@@ -157,11 +157,13 @@ async def get_certificate_endpoint(
     jwt_payload: dict[str, Any] = Depends(require_reader_role),
 ) -> CertificateRecord:
     from app.db import get_pool
+    from app.fabric_client import get_fabric_client
 
     pool = await get_pool()
+    fabric = get_fabric_client()
 
     try:
-        return await get_certificate(certificate_id=certificateId, pool=pool)
+        return await get_certificate(certificate_id=certificateId, pool=pool, fabric=fabric)
     except CertificateNotFoundError as err:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

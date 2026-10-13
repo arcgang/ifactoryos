@@ -21,6 +21,8 @@ variables {
   jira_admin_token          = "test-admin-token"
   jira_oauth2_client_id     = "test-client-id"
   jira_oauth2_client_secret = "test-client-secret"
+  vault_k8s_auth_path       = "kubernetes"
+  defect_genome_namespace   = "defect-genome"
 }
 
 # ---------------------------------------------------------------------------
@@ -309,5 +311,76 @@ run "output_custom_field_prep_stage_adjustment_is_present" {
   assert {
     condition     = output.custom_field_prep_stage_adjustment == jira_custom_field.recommended_prep_stage_adjustment.id
     error_message = "output.custom_field_prep_stage_adjustment must equal the Recommended Prep Stage Adjustment field ID"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# AC-8: Vault policy grants read/list on the canonical KV v2 secret path
+# ---------------------------------------------------------------------------
+
+run "vault_policy_name_is_defect_genome_jira_read" {
+  command = plan
+
+  assert {
+    condition     = vault_policy.defect_genome_jira_read.name == "defect-genome-jira-read"
+    error_message = "Vault policy name must be 'defect-genome-jira-read' — referenced by the Kubernetes auth role"
+  }
+}
+
+run "vault_policy_grants_read_on_data_path" {
+  command = plan
+
+  assert {
+    condition     = strcontains(vault_policy.defect_genome_jira_read.policy, "secret/data/jira/quality-studio-client-secret")
+    error_message = "Vault policy must grant access to secret/data/jira/quality-studio-client-secret"
+  }
+}
+
+run "vault_policy_grants_read_on_metadata_path" {
+  command = plan
+
+  assert {
+    condition     = strcontains(vault_policy.defect_genome_jira_read.policy, "secret/metadata/jira/quality-studio-client-secret")
+    error_message = "Vault policy must grant access to secret/metadata/jira/quality-studio-client-secret (required for KV v2 list)"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# AC-9: Kubernetes auth role binds defect-genome-jira-read to defect-genome SA
+# ---------------------------------------------------------------------------
+
+run "k8s_auth_role_name_is_defect_genome" {
+  command = plan
+
+  assert {
+    condition     = vault_kubernetes_auth_backend_role.defect_genome.role_name == "defect-genome"
+    error_message = "Vault Kubernetes auth role name must be 'defect-genome'"
+  }
+}
+
+run "k8s_auth_role_binds_correct_service_account" {
+  command = plan
+
+  assert {
+    condition     = contains(vault_kubernetes_auth_backend_role.defect_genome.bound_service_account_names, "defect-genome")
+    error_message = "Kubernetes auth role must bind the 'defect-genome' service account"
+  }
+}
+
+run "k8s_auth_role_binds_correct_namespace" {
+  command = plan
+
+  assert {
+    condition     = contains(vault_kubernetes_auth_backend_role.defect_genome.bound_service_account_namespaces, "defect-genome")
+    error_message = "Kubernetes auth role must be scoped to the 'defect-genome' namespace"
+  }
+}
+
+run "k8s_auth_role_attaches_jira_read_policy" {
+  command = plan
+
+  assert {
+    condition     = contains(vault_kubernetes_auth_backend_role.defect_genome.token_policies, vault_policy.defect_genome_jira_read.name)
+    error_message = "Kubernetes auth role must attach the 'defect-genome-jira-read' Vault policy"
   }
 }

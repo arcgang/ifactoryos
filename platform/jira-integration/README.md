@@ -17,6 +17,8 @@ Provisions the IFOS-QUALITY Jira project, the `Corrective Action` issue type, an
 | `jira_custom_field.affected_vin_count` | `Affected VIN Count` — float (integer at runtime) |
 | `jira_custom_field.recommended_prep_stage_adjustment` | `Recommended Prep Stage Adjustment` — textfield |
 | `vault_kv_secret_v2.jira_quality_studio_client_secret` | Vault KV v2 secret at `secret/jira/quality-studio-client-secret` |
+| `vault_policy.defect_genome_jira_read` | Vault policy granting `read`/`list` on `secret/data/jira/quality-studio-client-secret` |
+| `vault_kubernetes_auth_backend_role.defect_genome` | Vault Kubernetes auth role binding the policy to the `defect-genome` service account |
 
 ## Manual pre-step: OAuth 2.0 app registration
 
@@ -55,6 +57,21 @@ registered **before** running `terraform apply`. This is a manual one-time opera
    ```
    Never hardcode these values in any Terraform file or commit them to source control.
 
+## Manual post-apply step: write the secret into Vault
+
+`terraform apply` creates the KV v2 **metadata** path and the Vault policy, but it does **not**
+write the `client_id` / `client_secret` values — doing so would embed them in Terraform state.
+After every apply, a Vault admin must write the secret values manually:
+
+```sh
+vault kv put secret/jira/quality-studio-client-secret \
+  client_id="<atlassian-developer-console-client-id>" \
+  client_secret="<atlassian-developer-console-client-secret>"
+```
+
+The `defect-genome` Vault Agent Injector sidecar reads this path on pod startup.
+Until this step is completed, pods will start but the Jira client will fail to authenticate.
+
 ## Variables
 
 | Variable | Required | Sensitive | Description |
@@ -65,6 +82,8 @@ registered **before** running `terraform apply`. This is a manual one-time opera
 | `jira_admin_token` | yes | **yes** | Jira Admin API token (Vault-injected) |
 | `jira_oauth2_client_id` | yes | no | OAuth 2.0 client ID (manual pre-step above) |
 | `jira_oauth2_client_secret` | yes | **yes** | OAuth 2.0 client secret (manual pre-step above) |
+| `vault_k8s_auth_path` | no | no | Mount path of the Vault Kubernetes auth method (default: `kubernetes`) |
+| `defect_genome_namespace` | no | no | Kubernetes namespace for the `defect-genome` service account (default: `defect-genome`) |
 
 All sensitive variables must be supplied via `TF_VAR_*` environment variables injected by
 the Vault Agent at apply time. See `.env.example` at the repo root for the full list.

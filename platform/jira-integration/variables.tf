@@ -29,3 +29,15 @@ variable "jira_oauth2_client_secret" {
   sensitive   = true
   description = "OAuth 2.0 client_secret for the defect-genome Jira OAuth app. Created in the Atlassian Developer Console (manual pre-step). Read from Vault at apply time via TF_VAR_jira_oauth2_client_secret; never hardcoded."
 }
+
+variable "vault_k8s_auth_path" {
+  type        = string
+  default     = "kubernetes"
+  description = "Mount path of the Vault Kubernetes auth method (e.g. 'kubernetes'). Read from TF_VAR_vault_k8s_auth_path at apply time."
+}
+
+variable "defect_genome_namespace" {
+  type        = string
+  default     = "defect-genome"
+  description = "Kubernetes namespace where the defect-genome service account lives. Used to scope the Vault Kubernetes auth role. Read from TF_VAR_defect_genome_namespace at apply time."
+}

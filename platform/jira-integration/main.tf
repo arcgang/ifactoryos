@@ -129,6 +129,44 @@ resource "jira_custom_field" "recommended_prep_stage_adjustment" {
   type        = "com.atlassian.jira.plugin.system.customfieldtypes:textfield"
 }
 
+# ---------------------------------------------------------------------------
+# Vault — policy granting defect-genome read access to the Jira OAuth2 secret
+# ---------------------------------------------------------------------------
+
+resource "vault_policy" "defect_genome_jira_read" {
+  name = "defect-genome-jira-read"
+
+  policy = <<-HCL
+    # Allow defect-genome to read the Jira OAuth2 client secret injected by the Vault Agent.
+    path "secret/data/jira/quality-studio-client-secret" {
+      capabilities = ["read", "list"]
+    }
+    path "secret/metadata/jira/quality-studio-client-secret" {
+      capabilities = ["read", "list"]
+    }
+  HCL
+}
+
+# ---------------------------------------------------------------------------
+# Vault — Kubernetes auth role binding for the defect-genome service account
+#
+# The Vault Agent Injector sidecar authenticates using the pod's projected
+# service account token via the Kubernetes auth method mounted at
+# var.vault_k8s_auth_path. On success, Vault issues a token scoped to
+# the defect-genome-jira-read policy above, which allows the injector to
+# read secret/data/jira/quality-studio-client-secret into the pod's
+# /vault/secrets/jira-client-secret file.
+# ---------------------------------------------------------------------------
+
+resource "vault_kubernetes_auth_backend_role" "defect_genome" {
+  backend                          = var.vault_k8s_auth_path
+  role_name                        = "defect-genome"
+  bound_service_account_names      = ["defect-genome"]
+  bound_service_account_namespaces = [var.defect_genome_namespace]
+  token_policies                   = [vault_policy.defect_genome_jira_read.name]
+  token_ttl                        = 3600
+}
+
 # Associate all four custom fields with the IFOS-QUALITY project screen
 resource "jira_custom_field_option" "cluster_id_screen" {
   custom_field = jira_custom_field.defect_genome_cluster_id.id

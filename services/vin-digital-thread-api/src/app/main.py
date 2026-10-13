@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.routers.events import router as events_router
+from app.routers.thread import router as thread_router
 
 
 def _error_body(
@@ -47,19 +48,23 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ) as _schema_driver:
         await validate_neo4j_schema(_schema_driver)
 
+    from app.kafka_consumer import start_consumer as start_uns_consumer
     from app.torque_consumer import start_torque_consumer
 
     await start_torque_consumer()
+    await start_uns_consumer()
 
     yield
 
     from app.db import close_pool
+    from app.kafka_consumer import stop_consumer as stop_uns_consumer
     from app.kafka_producer import stop_producer
     from app.torque_consumer import stop_torque_consumer
 
     await close_pool()
     await stop_producer()
     await stop_torque_consumer()
+    await stop_uns_consumer()
 
 
 def create_app() -> FastAPI:
@@ -72,6 +77,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(events_router)
+    app.include_router(thread_router)
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(

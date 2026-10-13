@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     # Required role for event ingestion (service-to-service Client Credentials)
     ingestor_role: str = "thread-ingestor"
 
+    # Required roles for read endpoints (quality engineers and leads)
+    quality_reader_roles: str = "quality-engineer,quality-lead"
+
+    # Path to paint prep stage configuration YAML (14 stages with expected parameters)
+    paint_prep_stage_config_path: str = "paint_prep_stage_config.yaml"
+
+    # Completeness cache TTL — if updated_at is within this many seconds, skip Neo4j re-query
+    completeness_cache_ttl_s: int = 30
+
     # Neo4j
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"

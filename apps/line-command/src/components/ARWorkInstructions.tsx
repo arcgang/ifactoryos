@@ -187,8 +187,23 @@ export function ARWorkInstructions({ vin, stationId, fetchInstructions, onOverla
     setLoadState({ kind: "loading" });
 
     // Client-side 10 s timeout — spec AC-775df01c
+    // Abort the in-flight request AND directly transition to fallback in case
+    // fetchInstructions ignores the AbortSignal (e.g. in tests with neverResolves).
     const timeoutId = setTimeout(() => {
       controller.abort();
+      setLoadState((current) => {
+        if (current.kind !== "loading") return current;
+        return {
+          kind: "fallback",
+          data: {
+            vin,
+            stationId,
+            fallbackPdfQrUrl: "",
+            failureLoggedAt: new Date().toISOString(),
+            correlationId: "",
+          },
+        };
+      });
     }, 10_000);
 
     fetchInstructions(vin, stationId, controller.signal)

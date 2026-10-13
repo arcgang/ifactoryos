@@ -1,4 +1,11 @@
 import type { ConstraintThreshold, ThresholdListResponse } from "../types/constraints";
+import type {
+  SequencePublishRequest,
+  SequencePublishResponse,
+  SyncJob,
+  SyncJobListResponse,
+  SyncJobStatus,
+} from "../types/sequence";
 
 const TOKEN_KEY = "ifos_planning_cockpit_token";
 
@@ -60,4 +67,49 @@ export async function upsertConstraintThreshold(
 export function getConstraintStreamUrl(): string {
   if (typeof window === "undefined") return "";
   return `${baseUrl}/constraints/stream`;
+}
+
+export async function publishSequence(
+  req: SequencePublishRequest,
+): Promise<SequencePublishResponse> {
+  const res = await fetch(`${baseUrl}/sequence/publish`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify(req),
+  });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    redirectToLogin();
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(body || `Request failed with status ${res.status}`);
+  }
+  return res.json() as Promise<SequencePublishResponse>;
+}
+
+export async function getSyncJob(syncJobId: string): Promise<SyncJob> {
+  return request<SyncJob>(`/sequence/jobs/${encodeURIComponent(syncJobId)}`);
+}
+
+export async function listSyncJobs(params?: {
+  status?: SyncJobStatus;
+  cursor?: string;
+  limit?: number;
+}): Promise<SyncJobListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  const q = qs.toString();
+  return request<SyncJobListResponse>(`/sequence/jobs${q ? `?${q}` : ""}`);
+}
+
+function buildAuthHeaders(): Headers {
+  const headers = new Headers();
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/json");
+  return headers;
 }

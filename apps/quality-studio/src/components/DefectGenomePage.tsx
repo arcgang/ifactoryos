@@ -1404,7 +1404,6 @@ export function DefectGenomePage({ userId = "anonymous" }: Props) {
                   })}
                 </span>
               </div>
-              <ConfidenceBadge lowConfidence={isLow} />
             </div>
 
             {/* Root-cause factors */}

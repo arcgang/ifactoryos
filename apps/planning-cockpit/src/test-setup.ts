@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom";
 import { vi } from "vitest";
 
 // Provide a no-op fetch so components that call APIs in effects

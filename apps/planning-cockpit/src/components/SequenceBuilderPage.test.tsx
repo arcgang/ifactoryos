@@ -60,12 +60,7 @@ async function tick(ms: number) {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  vi.useFakeTimers();
   vi.clearAllMocks();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -220,6 +215,9 @@ describe("SequenceBuilderPage — heuristic_fallback result", () => {
 });
 
 describe("SequenceBuilderPage — polling", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("polls GET /optimize/{runId} every 2 s and stops on 200 with a result", async () => {
     let callCount = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation((url: RequestInfo | URL) => {
@@ -252,12 +250,12 @@ describe("SequenceBuilderPage — polling", () => {
     });
 
     render(<SequenceBuilderPage />);
-    await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
-
-    // Wait for running indicator
-    await waitFor(() => {
-      expect(screen.getByTestId("running-indicator")).toBeTruthy();
+    await act(async () => {
+      await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
     });
+
+    // running indicator is visible after POST resolves (no timer advance needed)
+    expect(screen.getByTestId("running-indicator")).toBeTruthy();
 
     // Advance 2 s — first poll (returns empty)
     await tick(2000);
@@ -265,10 +263,7 @@ describe("SequenceBuilderPage — polling", () => {
     // Advance another 2 s — second poll (returns result)
     await tick(2000);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("results-section")).toBeTruthy();
-    });
-
+    expect(screen.getByTestId("results-section")).toBeTruthy();
     expect(callCount).toBeGreaterThanOrEqual(2);
   });
 });
@@ -304,6 +299,9 @@ describe("SequenceBuilderPage — OTel adoption event", () => {
 });
 
 describe("SequenceBuilderPage — timeout branch", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("shows error state after 45 s of polling with no result", async () => {
     // POST returns empty sequence (triggers polling)
     // All polls return empty sequence too
@@ -315,17 +313,15 @@ describe("SequenceBuilderPage — timeout branch", () => {
     } as Response);
 
     render(<SequenceBuilderPage />);
-    await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("running-indicator")).toBeTruthy();
+    await act(async () => {
+      await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
     });
+
+    expect(screen.getByTestId("running-indicator")).toBeTruthy();
 
     // Advance past the 45-second timeout
     await tick(46000);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("error-state")).toBeTruthy();
-    });
+    expect(screen.getByTestId("error-state")).toBeTruthy();
   });
 });

@@ -33,7 +33,8 @@ function makeListResponse(
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("OverrideLogPage — empty state", () => {

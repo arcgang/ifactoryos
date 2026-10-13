@@ -1,15 +1,14 @@
 """POST /defect/clusters/{clusterId}/corrective-action
 
-Creates a Jira Corrective Action issue for a DefectGenome cluster alert.
-The Jira issue is created via POST /rest/api/3/issue using the OAuth 2.0
-client credentials stored in Vault at secret/data/jira/quality-studio-client-secret.
-
-No PII is written to Jira — only aggregate cluster-level fields per GDPR / §87 BetrVG.
+Pre-populates and submits a Jira corrective action ticket for a defect cluster.
+Credentials are read from Vault at secret/data/jira/quality-studio-client-secret.
+Only aggregate cluster-level fields are sent to Jira — no PII per GDPR / §87 BetrVG.
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,6 +18,7 @@ from pydantic import BaseModel, Field
 from app.auth import require_bearer
 from app.config import settings
 from app.jira_client import JiraClient, JiraClientError
+from app.routers.clusters import get_cluster_store
 
 router = APIRouter(tags=["Corrective Actions"])
 
@@ -44,40 +44,24 @@ def get_jira_client() -> JiraClient:
 
 
 class CorrectiveActionRequest(BaseModel):
-    cluster_id: str = Field(
-        ...,
-        description="UUID of the DefectGenome cluster. No PII.",
-    )
-    root_cause_signature: str = Field(
-        ...,
-        description="Root-cause signature string from DefectGenome.",
-    )
-    confidence_score: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="XGBoost confidence score 0.0–1.0. No PII.",
-    )
-    affected_vin_count: int = Field(
+    assigned_root_cause_factor_rank: int = Field(
         ...,
         ge=1,
-        description="Aggregate VIN count. No individual VINs stored.",
+        le=5,
+        description="Rank (1–5) of the root-cause factor the engineer has confirmed",
     )
-    recommended_prep_stage_adjustment: str | None = Field(
-        default=None,
-        description="Optional free-text prep-stage recommendation. No PII.",
-    )
-    idempotency_key: str = Field(
+    confirmed_by_user_id: str = Field(
         ...,
+        description="BMW Entra ID subject claim of the confirming engineer",
+    )
+    idempotency_key: str | None = Field(
+        default=None,
         description="Client-supplied idempotency key (UUID). Duplicate requests with the same key return the cached response.",
     )
-
-
-class CorrectiveActionResponse(BaseModel):
-    jira_issue_id: str
-    jira_issue_key: str
-    jira_issue_url: str
-    cluster_id: str
+    additional_notes: str | None = Field(
+        default=None,
+        description="Optional free-text notes for the corrective action ticket.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -97,14 +81,15 @@ def _error(code: str, message: str) -> dict[str, Any]:
 @router.post(
     "/defect/clusters/{clusterId}/corrective-action",
     operation_id="createCorrectiveAction",
-    summary="Create a Jira Corrective Action ticket for a DefectGenome cluster",
+    summary="Pre-populate and submit a Jira corrective action ticket for a cluster",
     status_code=201,
     responses={
         201: {},
         400: {},
         401: {},
+        404: {},
         409: {},
-        502: {},
+        500: {},
     },
 )
 async def create_corrective_action(
@@ -112,6 +97,7 @@ async def create_corrective_action(
     body: CorrectiveActionRequest,
     jwt_payload: dict[str, Any] = Depends(require_bearer),
     jira: JiraClient = Depends(get_jira_client),
+    cluster_store: list[dict[str, Any]] = Depends(get_cluster_store),
 ) -> JSONResponse:
     try:
         cluster_uuid = str(uuid.UUID(clusterId))
@@ -121,13 +107,41 @@ async def create_corrective_action(
             detail=_error("INVALID_CLUSTER_ID", "clusterId must be a valid UUID"),
         )
 
+    cluster = _find_cluster(cluster_store, cluster_uuid)
+    if cluster is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_error("CLUSTER_NOT_FOUND", f"No cluster found with id {clusterId}"),
+        )
+
+    if cluster.get("corrective_action_jira_id") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_error(
+                "CORRECTIVE_ACTION_EXISTS",
+                "A corrective action already exists for this cluster",
+            ),
+        )
+
+    top_factors: list[dict[str, Any]] = cluster.get("top_factors") or []
+    assigned_factor: dict[str, Any] | None = next(
+        (f for f in top_factors if f.get("rank") == body.assigned_root_cause_factor_rank),
+        None,
+    )
+    factor_name = assigned_factor["factor_name"] if assigned_factor else f"rank-{body.assigned_root_cause_factor_rank}"
+
+    prepopulated_summary = (
+        f"DefectGenome cluster {cluster_uuid}: {cluster['root_cause_signature']} "
+        f"[factor: {factor_name}]"
+    )
+
     fields = _build_jira_fields(
         settings=settings,
-        cluster_id=cluster_uuid,
-        root_cause_signature=body.root_cause_signature,
-        confidence_score=body.confidence_score,
-        affected_vin_count=body.affected_vin_count,
-        recommended_prep_stage_adjustment=body.recommended_prep_stage_adjustment,
+        cluster=cluster,
+        assigned_factor=assigned_factor,
+        prepopulated_summary=prepopulated_summary,
+        additional_notes=body.additional_notes,
+        confirmed_by_user_id=body.confirmed_by_user_id,
     )
 
     try:
@@ -139,7 +153,7 @@ async def create_corrective_action(
                 detail=_error("JIRA_CONFLICT", "A duplicate Jira issue was detected"),
             ) from exc
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=_error(
                 "JIRA_UNAVAILABLE",
                 f"Jira API returned {exc.status_code}",
@@ -147,16 +161,20 @@ async def create_corrective_action(
         ) from exc
 
     issue_id: str = issue["id"]
-    issue_key: str = issue["key"]
-    issue_url: str = issue.get("self", f"{settings.jira_base_url}/rest/api/3/issue/{issue_id}")
+    issue_url: str = issue.get("self", f"{settings.jira_base_url}/browse/{issue['key']}")
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    cluster["corrective_action_jira_id"] = issue["key"]
+    cluster["updated_at"] = created_at
 
     return JSONResponse(
         status_code=201,
         content={
-            "jira_issue_id": issue_id,
-            "jira_issue_key": issue_key,
-            "jira_issue_url": issue_url,
+            "jira_ticket_id": issue_id,
+            "jira_ticket_url": issue_url,
             "cluster_id": cluster_uuid,
+            "created_at": created_at,
+            "prepopulated_summary": prepopulated_summary,
         },
     )
 
@@ -164,48 +182,56 @@ async def create_corrective_action(
 def _build_jira_fields(
     *,
     settings: Any,
-    cluster_id: str,
-    root_cause_signature: str,
-    confidence_score: float,
-    affected_vin_count: int,
-    recommended_prep_stage_adjustment: str | None,
+    cluster: dict[str, Any],
+    assigned_factor: dict[str, Any] | None,
+    prepopulated_summary: str,
+    additional_notes: str | None,
+    confirmed_by_user_id: str,
 ) -> dict[str, Any]:
-    """Build the Jira issue fields dict for POST /rest/api/3/issue.
+    """Build Jira issue fields for POST /rest/api/3/issue.
 
-    Field IDs (customfield_*) are determined at deploy time from Terraform outputs.
-    Here we use the stable logical names defined in main.tf and look them up from
-    settings so integration tests can inject expected values.
+    Only aggregate cluster-level data — no PII per GDPR / Works Council §87 BetrVG.
+    Field IDs (customfield_*) come from settings, populated by Vault + Terraform outputs.
     """
+    description_text = (
+        f"Cluster ID: {cluster['cluster_id']}\n"
+        f"Root cause: {cluster['root_cause_signature']}\n"
+        f"Confidence: {cluster['confidence_score']:.2%}\n"
+        f"Affected VIN count: {cluster['affected_vin_count']}\n"
+        f"Confirmed by: {confirmed_by_user_id}"
+    )
+    if additional_notes:
+        description_text += f"\n\nNotes: {additional_notes}"
+
     fields: dict[str, Any] = {
         "project": {"key": settings.jira_project_key},
         "issuetype": {"name": "Corrective Action"},
-        "summary": f"DefectGenome cluster {cluster_id}: {root_cause_signature}",
+        "summary": prepopulated_summary,
         "description": {
             "type": "doc",
             "version": 1,
             "content": [
                 {
                     "type": "paragraph",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                f"Cluster ID: {cluster_id}\n"
-                                f"Root cause: {root_cause_signature}\n"
-                                f"Confidence: {confidence_score:.2%}\n"
-                                f"Affected VIN count: {affected_vin_count}"
-                            ),
-                        }
-                    ],
+                    "content": [{"type": "text", "text": description_text}],
                 }
             ],
         },
-        # Custom fields — IDs are the logical Terraform resource names resolved
-        # at runtime from the JIRA_FIELD_* env vars (populated by Vault + Terraform outputs).
-        settings.jira_field_cluster_id: cluster_id,
-        settings.jira_field_root_cause_probability: confidence_score,
-        settings.jira_field_affected_vin_count: float(affected_vin_count),
+        settings.jira_field_cluster_id: str(cluster["cluster_id"]),
+        settings.jira_field_root_cause_probability: float(cluster["confidence_score"]),
+        settings.jira_field_affected_vin_count: float(cluster["affected_vin_count"]),
     }
-    if recommended_prep_stage_adjustment is not None:
-        fields[settings.jira_field_prep_stage_adjustment] = recommended_prep_stage_adjustment
+
+    if assigned_factor and assigned_factor.get("factor_name"):
+        fields[settings.jira_field_prep_stage_adjustment] = assigned_factor["factor_name"]
+
     return fields
+
+
+def _find_cluster(
+    store: list[dict[str, Any]], cluster_id: str
+) -> dict[str, Any] | None:
+    for row in store:
+        if str(row["cluster_id"]) == cluster_id:
+            return row
+    return None

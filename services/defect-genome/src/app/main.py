@@ -13,6 +13,9 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.health import Health, health
 from app.routers.alerts import router as alerts_router
+from app.routers.cluster_query import router as cluster_query_router
+from app.routers.clusters import router as clusters_router
+from app.routers.constraint_alerts import router as constraint_alerts_router
 from app.routers.corrective_action import router as corrective_action_router
 
 
@@ -41,6 +44,9 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(alerts_router)
+    app.include_router(constraint_alerts_router)
+    app.include_router(cluster_query_router)
+    app.include_router(clusters_router)
     app.include_router(corrective_action_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])

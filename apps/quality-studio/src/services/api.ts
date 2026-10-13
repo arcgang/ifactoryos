@@ -4,6 +4,19 @@ import type {
   ThreadSnapshotResponse,
   VinThreadResponse,
 } from "../types/processReplay";
+import type {
+  ClusterListResponse,
+  ClusterQueryRequest,
+  ClusterQueryResult,
+  ConfidenceThresholdConfig,
+  CorrectiveActionRequest,
+  CorrectiveActionResult,
+  DefectClass,
+  DefectCluster,
+  ClusterStatus,
+  ModelFeedbackRequest,
+  ModelFeedbackAck,
+} from "../types/defectGenome";
 
 const BASE_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ?? "";
@@ -80,4 +93,55 @@ export async function getVinThreadCompleteness(
   return request<ThreadCompletenessResponse>(
     `/vin/${encodeURIComponent(vin)}/thread/completeness`,
   );
+}
+
+export async function runClusterQuery(
+  body: ClusterQueryRequest,
+): Promise<ClusterQueryResult> {
+  return request<ClusterQueryResult>("/defect/cluster-query", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listClusters(params: {
+  defectClass?: DefectClass;
+  status?: ClusterStatus;
+  cursor?: string;
+  limit?: number;
+} = {}): Promise<ClusterListResponse> {
+  const q = new URLSearchParams();
+  if (params.defectClass) q.set("defectClass", params.defectClass);
+  if (params.status) q.set("status", params.status);
+  if (params.cursor) q.set("cursor", params.cursor);
+  if (params.limit != null) q.set("limit", String(params.limit));
+  const qs = q.toString() ? `?${q}` : "";
+  return request<ClusterListResponse>(`/defect/clusters${qs}`);
+}
+
+export async function getCluster(clusterId: string): Promise<DefectCluster> {
+  return request<DefectCluster>(`/defect/clusters/${encodeURIComponent(clusterId)}`);
+}
+
+export async function getConfidenceThreshold(): Promise<ConfidenceThresholdConfig> {
+  return request<ConfidenceThresholdConfig>("/models/confidence-threshold");
+}
+
+export async function createCorrectiveAction(
+  clusterId: string,
+  body: CorrectiveActionRequest,
+): Promise<CorrectiveActionResult> {
+  return request<CorrectiveActionResult>(
+    `/defect/clusters/${encodeURIComponent(clusterId)}/corrective-action`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function submitModelFeedback(
+  body: ModelFeedbackRequest,
+): Promise<ModelFeedbackAck> {
+  return request<ModelFeedbackAck>("/models/feedback", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }

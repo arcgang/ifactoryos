@@ -5,6 +5,23 @@ export interface ProcessReplayLaunchEvent {
   timestamp: string;
 }
 
+export interface DefectGenomeQueryEvent {
+  action: "DEFECT_GENOME_QUERY";
+  userId: string;
+  role: string;
+  defectClass: string;
+  sessionId: string;
+  timestamp: string;
+}
+
+export interface RootCauseAssignedEvent {
+  action: "ROOT_CAUSE_ASSIGNED";
+  userId: string;
+  role: string;
+  clusterId: string;
+  timestamp: string;
+}
+
 function generateSessionId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -32,18 +49,10 @@ const COLLECTOR_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_OTLP_ENDPOINT ??
   "/api/v1/ingest/events";
 
-export function emitProcessReplayLaunch(vin: string): void {
-  const event: ProcessReplayLaunchEvent = {
-    action: "PROCESS_REPLAY_LAUNCH",
-    vin,
-    sessionId: _sessionId,
-    timestamp: new Date().toISOString(),
-  };
-
+function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCauseAssignedEvent): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
   }
-
   if (typeof fetch !== "undefined") {
     void fetch(COLLECTOR_URL, {
       method: "POST",
@@ -54,4 +63,42 @@ export function emitProcessReplayLaunch(vin: string): void {
       // Fire-and-forget — instrumentation errors must never surface to engineers.
     });
   }
+}
+
+export function emitProcessReplayLaunch(vin: string): void {
+  emit({
+    action: "PROCESS_REPLAY_LAUNCH",
+    vin,
+    sessionId: _sessionId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function emitDefectGenomeQuery(params: {
+  userId: string;
+  role: string;
+  defectClass: string;
+}): void {
+  emit({
+    action: "DEFECT_GENOME_QUERY",
+    userId: params.userId,
+    role: params.role,
+    defectClass: params.defectClass,
+    sessionId: _sessionId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function emitRootCauseAssigned(params: {
+  userId: string;
+  role: string;
+  clusterId: string;
+}): void {
+  emit({
+    action: "ROOT_CAUSE_ASSIGNED",
+    userId: params.userId,
+    role: params.role,
+    clusterId: params.clusterId,
+    timestamp: new Date().toISOString(),
+  });
 }

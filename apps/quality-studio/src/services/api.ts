@@ -14,8 +14,6 @@ import type {
   ClusterQueryRequest,
   ClusterQueryResult,
   ConfidenceThresholdConfig,
-  CorrectiveActionRequest,
-  CorrectiveActionResult,
   DefectClass,
   DefectCluster,
   ClusterStatus,
@@ -27,7 +25,7 @@ const BASE_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ?? "";
 const TOKEN_KEY = "qs-auth-token";
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
@@ -51,11 +49,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     throw new ApiError(res.status, (await res.text()) || `HTTP ${res.status}`);
   }
+
   if (res.status === 204) return null as T;
   return res.json() as Promise<T>;
 }
 
-export { ApiError };
+// ---------------------------------------------------------------------------
+// VIN Digital Thread endpoints
+// ---------------------------------------------------------------------------
 
 export async function getVinThread(
   vin: string,
@@ -69,6 +70,58 @@ export async function getVinThread(
   if (params.toTs) q.set("toTs", params.toTs);
   const qs = q.toString() ? `?${q}` : "";
   return request<VinThreadResponse>(`/vin/${encodeURIComponent(vin)}/thread${qs}`);
+}
+
+export async function getVinThreadPage(
+  vin: string,
+  options: {
+    cursor?: string | null;
+    limit?: number;
+    shopFilter?: string;
+    fromTs?: string;
+    toTs?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<VinThreadResponse> {
+  const params = new URLSearchParams();
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.limit != null) params.set("limit", String(options.limit));
+  if (options.shopFilter) params.set("shopFilter", options.shopFilter);
+  if (options.fromTs) params.set("fromTs", options.fromTs);
+  if (options.toTs) params.set("toTs", options.toTs);
+
+  const qs = params.toString();
+  const path = `/vin/${encodeURIComponent(vin)}/thread${qs ? `?${qs}` : ""}`;
+  return request<VinThreadResponse>(path, { signal: options.signal });
+}
+
+export async function getAllVinThreadEvents(
+  vin: string,
+  shopFilter?: string,
+  signal?: AbortSignal,
+): Promise<VinThreadResponse> {
+  let cursor: string | null = null;
+  let allData: VinThreadResponse["data"] = [];
+  let lastPage: VinThreadResponse | null = null;
+
+  do {
+    const page = await getVinThreadPage(vin, {
+      cursor,
+      limit: 200,
+      shopFilter,
+      signal,
+    });
+    allData = allData.concat(page.data);
+    cursor = page.page.next_cursor;
+    lastPage = page;
+  } while (cursor !== null);
+
+  return {
+    vin: lastPage!.vin,
+    data: allData,
+    page: { next_cursor: null, limit: 200 },
+    vinStatus: lastPage!.vinStatus,
+  };
 }
 
 export async function getVinProcessReplay(
@@ -94,11 +147,17 @@ export async function getVinThreadSnapshot(
 
 export async function getVinThreadCompleteness(
   vin: string,
+  signal?: AbortSignal,
 ): Promise<ThreadCompletenessResponse> {
   return request<ThreadCompletenessResponse>(
     `/vin/${encodeURIComponent(vin)}/thread/completeness`,
+    { signal },
   );
 }
+
+// ---------------------------------------------------------------------------
+// DefectGenome / Cluster endpoints
+// ---------------------------------------------------------------------------
 
 export async function getDefectGenomeAlerts(params: {
   status?: string;
@@ -106,6 +165,13 @@ export async function getDefectGenomeAlerts(params: {
   limit?: number;
 } = {}): Promise<AlertListResponse> {
   const q = new URLSearchParams();
+  if (params.status) q.set("status", params.status);
+  if (params.cursor) q.set("cursor", params.cursor);
+  if (params.limit != null) q.set("limit", String(params.limit));
+  const qs = q.toString() ? `?${q}` : "";
+  return request<AlertListResponse>(`/defect-genome/alerts${qs}`);
+}
+
 export async function runClusterQuery(
   body: ClusterQueryRequest,
 ): Promise<ClusterQueryResult> {
@@ -127,7 +193,7 @@ export async function listClusters(params: {
   if (params.cursor) q.set("cursor", params.cursor);
   if (params.limit != null) q.set("limit", String(params.limit));
   const qs = q.toString() ? `?${q}` : "";
-  return request<AlertListResponse>(`/defect-genome/alerts${qs}`);
+  return request<ClusterListResponse>(`/defect/clusters${qs}`);
 }
 
 export async function getClusterAlert(alertId: string): Promise<ClusterAlert> {
@@ -142,7 +208,6 @@ export async function acknowledgeClusterAlert(
     `/defect-genome/alerts/${encodeURIComponent(alertId)}/acknowledge`,
     { method: "POST", body: JSON.stringify(body) },
   );
-  return request<ClusterListResponse>(`/defect/clusters${qs}`);
 }
 
 export async function getCluster(clusterId: string): Promise<DefectCluster> {

@@ -1,4 +1,4 @@
-"""GET /vin/{vin}/thread — digital thread read endpoints."""
+"""GET /vin/{vin}/thread and GET /vin/{vin}/thread/completeness."""
 
 from __future__ import annotations
 
@@ -76,7 +76,6 @@ async def get_vin_thread(
     if shopFilter:
         shop_list = [s.strip() for s in shopFilter.split(",") if s.strip()]
 
-    # Validate cursor shape early
     if cursor is not None:
         from app.thread_query_service import _decode_cursor
         try:
@@ -218,7 +217,6 @@ async def get_vin_thread_snapshot(
 
     _validate_vin(vin)
 
-    # Validate atTs is a recognisable ISO 8601 timestamp
     from datetime import datetime
     try:
         datetime.fromisoformat(atTs.replace("Z", "+00:00"))

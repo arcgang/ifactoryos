@@ -170,9 +170,15 @@
     "loading": "Loading replay…",
     "loadingSubtext": "Fetching aligned timeline for {{vin}}",
     "error": "Error loading replay. Please retry.",
+    "errorUnavailable": "Replay temporarily unavailable. Retry in 30 s.",
     "errorTitle": "Replay failed to load",
-    "empty": "No replay available.",
+    "empty": "VIN not found.",
     "retry": "Retry",
+    "noEvents": "No events recorded",
+    "belowThreshold": "Below 95% threshold",
+    "meetsThreshold": "≥ 95% complete",
+    "timelaneLabel": "Paint prep stage timeline",
+    "stageLaneLabel": "Paint prep stage {{n}} — {{name}}",
     "notFound": "VIN not found",
     "notFoundMessage": "No digital thread data found for VIN {{vin}}.",
     "backToDashboard": "Back to Dashboard",
@@ -205,6 +211,18 @@
       "13": "Primer",
       "14": "Final Rinse"
     }
+  },
+  "digitalThread": {
+    "title": "Digital Thread",
+    "gapDetected": "Gap Detected — data inferred",
+    "gapDetectedLabel": "Gap detected at shop boundary",
+    "shopTransitionLabel": "Shop boundary transition to {{shop}}",
+    "chainComplete": "Chain Complete",
+    "loading": "Loading digital thread…",
+    "error": "Error loading digital thread. Please retry.",
+    "errorUnavailable": "Digital thread temporarily unavailable. Retry in 30 s.",
+    "empty": "VIN not found.",
+    "retry": "Retry"
   },
   "gateCommand": {
     "title": "Gate Command",

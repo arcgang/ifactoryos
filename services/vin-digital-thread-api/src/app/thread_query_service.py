@@ -1,7 +1,8 @@
-"""Business logic for read-path thread endpoints.
+"""Business logic for GET /vin/{vin}/thread and GET /vin/{vin}/thread/completeness.
 
-All Neo4j reads use read replicas via bolt+routing.
-Completeness cache is backed by PostgreSQL/Citus vin_thread_completeness_cache.
+Read queries route to Neo4j read replicas via bolt+routing. Completeness data is
+cached in vin_thread_completeness_cache (PG) with a 30-second TTL; on cache miss
+the per-stage counts are re-queried from Neo4j and the cache is refreshed.
 """
 
 from __future__ import annotations
@@ -34,9 +35,11 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
-_VIN_RE_STR = r"^[A-HJ-NPR-Z0-9]{17}$"
 _COMPLETENESS_THRESHOLD = 95.0
 _NEO4J_READ_TIMEOUT_S = 9.0
+
+# Shops that represent distinct manufacturing stages
+_KNOWN_SHOPS: frozenset[str] = frozenset({"BODY", "PAINT", "ASSEMBLY", "FINAL"})
 
 # ---------------------------------------------------------------------------
 # Cursor helpers — (occurredAt, eventId) tuple, base64-encoded
@@ -125,7 +128,6 @@ async def get_vin_thread(
         cursor_ts, cursor_id = _decode_cursor(cursor)
 
     # Build Cypher — keyset pagination on (occurredAt, eventId)
-    # Shops and time window filtered in query.
     where_clauses: list[str] = []
     if cursor_ts and cursor_id:
         where_clauses.append(
@@ -186,7 +188,6 @@ async def get_vin_thread(
                     rows = await result.data()
                     for row in rows:
                         e = row["e"]
-                        # parameters stored as JSON string in Neo4j
                         raw_params = e.get("parameters", "{}")
                         parsed_params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
                         events.append({
@@ -441,7 +442,6 @@ async def get_thread_snapshot(
     cfg = get_settings()
     timeout = cfg.neo4j_read_timeout_s
 
-    # Fetch last-known-value for all parameters at or before at_ts
     cypher = """
         MATCH (v:VIN {vin: $vin})-[:HAS_EVENT]->(e)
         WHERE e.occurredAt <= $at_ts
@@ -492,7 +492,6 @@ async def get_thread_snapshot(
         raise VinNotFoundError(vin)
 
     if snapshot_event is None:
-        # No events at or before at_ts — data gap
         return ThreadSnapshotResponse(
             vin=vin,
             atTs=at_ts,
@@ -512,9 +511,6 @@ async def get_thread_snapshot(
                 stage_name = s["name"]
                 break
 
-    # data_available=False when atTs is ahead of latest event (data gap)
-    data_available = snapshot_event is not None
-
     return ThreadSnapshotResponse(
         vin=vin,
         atTs=at_ts,
@@ -522,7 +518,7 @@ async def get_thread_snapshot(
         stageNumber=stage_number,
         tunnelPositionMm=snapshot_event.get("tunnelPositionMm"),
         parameters=snapshot_event.get("parameters", {}),
-        dataAvailable=data_available,
+        dataAvailable=True,
     )
 
 
@@ -648,8 +644,6 @@ async def _compute_completeness_from_neo4j(vin: str, timeout: float) -> dict[str
         total_expected += expected
         total_actual += actual
         pct = min(100.0, (actual / expected * 100.0)) if expected > 0 else 0.0
-        # Determine missing parameters by checking which param keys were never seen
-        # (simplified: we flag all expected params as missing when actual==0)
         missing: list[str] = s["expected_parameters"] if actual == 0 else []
         stage_details.append({
             "stageNumber": num,
@@ -726,7 +720,7 @@ def _build_completeness_response(vin: str, data: dict[str, Any]) -> ThreadComple
 
 class VinNotFoundError(Exception):
     def __init__(self, vin: str) -> None:
-        super().__init__(f"VIN not found: {vin!r}")
+        super().__init__(f"VIN not found in digital thread graph: {vin!r}")
         self.vin = vin
 
 

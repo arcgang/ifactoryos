@@ -170,9 +170,15 @@
     "loading": "Replay wird geladen…",
     "loadingSubtext": "Zeitreihe für {{vin}} wird abgerufen",
     "error": "Fehler beim Laden des Replays. Erneut versuchen.",
+    "errorUnavailable": "Replay vorübergehend nicht verfügbar. In 30 s erneut versuchen.",
     "errorTitle": "Replay konnte nicht geladen werden",
-    "empty": "Kein Replay verfügbar.",
+    "empty": "VIN nicht gefunden.",
     "retry": "Erneut versuchen",
+    "noEvents": "Keine Ereignisse erfasst",
+    "belowThreshold": "Unter 95 % Schwellenwert",
+    "meetsThreshold": "≥ 95 % vollständig",
+    "timelaneLabel": "Lackvorbereitungsstufen-Zeitachse",
+    "stageLaneLabel": "Lackvorbereitungsstufe {{n}} — {{name}}",
     "notFound": "VIN nicht gefunden",
     "notFoundMessage": "Keine Digital-Thread-Daten für VIN {{vin}} gefunden.",
     "backToDashboard": "Zurück zum Dashboard",
@@ -205,6 +211,18 @@
       "13": "Grundierung",
       "14": "Abschlusssspülung"
     }
+  },
+  "digitalThread": {
+    "title": "Digitaler Thread",
+    "gapDetected": "Lücke erkannt — Daten abgeleitet",
+    "gapDetectedLabel": "Lücke am Shopübergang erkannt",
+    "shopTransitionLabel": "Shopübergang zu {{shop}}",
+    "chainComplete": "Kette vollständig",
+    "loading": "Digitaler Thread wird geladen…",
+    "error": "Fehler beim Laden des digitalen Threads. Erneut versuchen.",
+    "errorUnavailable": "Digitaler Thread vorübergehend nicht verfügbar. In 30 s erneut versuchen.",
+    "empty": "VIN nicht gefunden.",
+    "retry": "Erneut versuchen"
   },
   "gateCommand": {
     "title": "Gate Command",

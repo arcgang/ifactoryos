@@ -1,15 +1,95 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { I18nextProvider } from "react-i18next";
+import type { ReactNode } from "react";
 import i18n from "../i18n";
 import { ProcessReplayPage } from "./ProcessReplayPage";
+import { DigitalThreadPanel } from "./DigitalThreadPanel";
 import { DefectDashboardPage } from "./DefectDashboardPage";
 import * as api from "../services/api";
 import * as adoptionEvents from "../instrumentation/adoptionEvents";
+
+vi.mock("../services/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof api>();
+  return {
+    ...actual,
+    getVinThreadCompleteness: vi.fn(),
+    getAllVinThreadEvents: vi.fn(),
+    getVinProcessReplay: vi.fn(),
+    getVinThreadSnapshot: vi.fn(),
+  };
+});
+import type {
+  ThreadCompletenessResponse,
+  VinThreadResponse,
+  ThreadEvent,
+} from "../types/digitalThread";
 import type { ProcessReplayResponse, ThreadSnapshotResponse } from "../types/processReplay";
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Fixtures — DigitalThreadPanel / old thread types
+// ---------------------------------------------------------------------------
+
+const MOCK_VIN = "WBA3A5G59DNP26082";
+
+function makeStages(
+  overrides?: Partial<ThreadCompletenessResponse["stages"][number]>[],
+): ThreadCompletenessResponse["stages"] {
+  return Array.from({ length: 14 }, (_, i) => {
+    const stageNumber = i + 1;
+    const override = overrides?.[i] ?? {};
+    return {
+      stageNumber,
+      stageName: `Stage ${stageNumber} Name`,
+      available: true,
+      completenessPercent: 100,
+      expectedSampleCount: 10,
+      actualSampleCount: 10,
+      ...override,
+    };
+  });
+}
+
+function makeCompleteness(
+  overrides?: Partial<ThreadCompletenessResponse>,
+): ThreadCompletenessResponse {
+  return {
+    vin: MOCK_VIN,
+    overallCompletenessPercent: 100,
+    meetsThreshold: true,
+    stages: makeStages(),
+    ...overrides,
+  };
+}
+
+function makePaintEvents(stageNumber: number, count = 2): ThreadEvent[] {
+  return Array.from({ length: count }, (_, i) => ({
+    eventId: `evt-s${stageNumber}-${i}`,
+    vin: MOCK_VIN,
+    eventType: "PAINT_PREP_STAGE" as const,
+    shop: "PAINT",
+    station: `PAINT_PREP_STAGE_${stageNumber}`,
+    occurredAt: `2026-01-${String(stageNumber).padStart(2, "0")}T${String(i).padStart(2, "0")}:00:00Z`,
+    dataSource: "UNS",
+    parameters: { temperature_c: 22.5, humidity_pct: 60 },
+    stageNumber,
+  }));
+}
+
+function makeFullPaintThread(): VinThreadResponse {
+  const data: ThreadEvent[] = [];
+  for (let s = 1; s <= 14; s++) {
+    data.push(...makePaintEvents(s));
+  }
+  return {
+    vin: MOCK_VIN,
+    data,
+    page: { next_cursor: null, limit: 200 },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Fixtures — ProcessReplayPage (new scrubber model)
 // ---------------------------------------------------------------------------
 
 function makeReplayResponse(overrides: Partial<ProcessReplayResponse> = {}): ProcessReplayResponse {
@@ -63,12 +143,21 @@ function makeSnapshotResponse(overrides: Partial<ThreadSnapshotResponse> = {}): 
 // Wrapper
 // ---------------------------------------------------------------------------
 
-function Wrapper({ children }: { children: React.ReactNode }) {
+function Wrapper({ children }: { children: ReactNode }) {
   return <I18nextProvider i18n={i18n}>{children}</I18nextProvider>;
 }
 
+beforeEach(async () => {
+  await i18n.changeLanguage("en-GB");
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
 // ---------------------------------------------------------------------------
-// Tests
+// ProcessReplayPage — loading state (new scrubber model)
 // ---------------------------------------------------------------------------
 
 describe("ProcessReplayPage — loading state", () => {
@@ -87,6 +176,10 @@ describe("ProcessReplayPage — loading state", () => {
     expect(screen.getByTestId("replay-loading")).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ProcessReplayPage — error states
+// ---------------------------------------------------------------------------
 
 describe("ProcessReplayPage — error states", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -120,6 +213,10 @@ describe("ProcessReplayPage — error states", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// ProcessReplayPage — grey gap rendering (OQ-6 partial traceability)
+// ---------------------------------------------------------------------------
+
 describe("ProcessReplayPage — grey gap rendering (OQ-6 partial traceability)", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -145,7 +242,6 @@ describe("ProcessReplayPage — grey gap rendering (OQ-6 partial traceability)",
       </Wrapper>,
     );
     await waitFor(() => expect(screen.getByTestId("replay-shell")).toBeTruthy());
-    // At least one gap should be visible
     const gaps = screen.getAllByTestId("data-gap");
     expect(gaps.length).toBeGreaterThanOrEqual(1);
   });
@@ -168,10 +264,13 @@ describe("ProcessReplayPage — grey gap rendering (OQ-6 partial traceability)",
     );
     await waitFor(() => expect(screen.getByTestId("replay-shell")).toBeTruthy());
     const gaps = screen.getAllByTestId("data-gap");
-    // All 14 prep stages unavailable — expect 14 gaps (plus possibly booth/climate)
     expect(gaps.length).toBeGreaterThanOrEqual(14);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ProcessReplayPage — completeness percentage display
+// ---------------------------------------------------------------------------
 
 describe("ProcessReplayPage — completeness percentage display", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -205,12 +304,15 @@ describe("ProcessReplayPage — completeness percentage display", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// ProcessReplayPage — data panel from snapshot
+// ---------------------------------------------------------------------------
+
 describe("ProcessReplayPage — data panel from snapshot", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("populates the data panel with parameter values from ThreadSnapshotResponse", async () => {
     await i18n.changeLanguage("en-GB");
-    // Use narrow window so keyboard step moves a visible percentage
     const data = makeReplayResponse({
       replayWindowStart: "2026-10-12T00:00:00Z",
       replayWindowEnd: "2026-10-12T00:05:00Z",
@@ -225,7 +327,6 @@ describe("ProcessReplayPage — data panel from snapshot", () => {
     );
     await waitFor(() => expect(screen.getByTestId("replay-shell")).toBeTruthy());
 
-    // Use keyboard to scrub to position (avoids jsdom getBoundingClientRect issues)
     const timeline = screen.getByRole("slider");
     fireEvent.keyDown(timeline, { key: "ArrowRight" });
 
@@ -266,15 +367,18 @@ describe("ProcessReplayPage — data panel from snapshot", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// ProcessReplayPage — keyboard scrubber navigation
+// ---------------------------------------------------------------------------
+
 describe("ProcessReplayPage — keyboard scrubber navigation", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("advances the scrubber position on ArrowRight key press", async () => {
     await i18n.changeLanguage("en-GB");
-    // Use a narrow window so each step moves a noticeable percentage
     const data = makeReplayResponse({
       replayWindowStart: "2026-10-12T00:00:00Z",
-      replayWindowEnd: "2026-10-12T00:05:00Z", // 5-minute window → 1 step = 100% (clamped)
+      replayWindowEnd: "2026-10-12T00:05:00Z",
     });
     vi.spyOn(api, "getVinProcessReplay").mockResolvedValue(data);
     vi.spyOn(api, "getVinThreadSnapshot").mockResolvedValue(makeSnapshotResponse());
@@ -287,13 +391,11 @@ describe("ProcessReplayPage — keyboard scrubber navigation", () => {
     await waitFor(() => expect(screen.getByTestId("replay-shell")).toBeTruthy());
 
     const slider = screen.getByRole("slider");
-    // Home → 0, ArrowRight by 1 step (5 s / 300 s window = 1.67% → rounds to 2)
     fireEvent.keyDown(slider, { key: "Home" });
     expect(slider.getAttribute("aria-valuenow")).toBe("0");
 
     fireEvent.keyDown(slider, { key: "ArrowRight" });
     const afterRight = Number(slider.getAttribute("aria-valuenow"));
-    // One step = (5000 ms / 300000 ms) * 100 = ~1.67% → Math.round = 2
     expect(afterRight).toBeGreaterThan(0);
   });
 
@@ -322,6 +424,10 @@ describe("ProcessReplayPage — keyboard scrubber navigation", () => {
     expect(afterLeft).toBeLessThan(100);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Adoption event emission on Process Replay launch
+// ---------------------------------------------------------------------------
 
 describe("Adoption event emission on Process Replay launch", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -388,6 +494,10 @@ describe("Adoption event emission on Process Replay launch", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// AdoptionEvents — instance isolation
+// ---------------------------------------------------------------------------
+
 describe("AdoptionEvents — instance isolation", () => {
   it("getSessionId returns a non-empty string", () => {
     const id = adoptionEvents.getSessionId();
@@ -400,5 +510,173 @@ describe("AdoptionEvents — instance isolation", () => {
     adoptionEvents.resetAdoptionSession();
     const second = adoptionEvents.getSessionId();
     expect(second).not.toBe(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DigitalThreadPanel — SHOP_BOUNDARY_TRANSITION dividers
+// ---------------------------------------------------------------------------
+
+describe("DigitalThreadPanel — SHOP_BOUNDARY_TRANSITION dividers", () => {
+  it("renders shop dividers for SHOP_BOUNDARY_TRANSITION events", async () => {
+    const data: ThreadEvent[] = [
+      {
+        eventId: "evt-1",
+        vin: MOCK_VIN,
+        eventType: "SHOP_BOUNDARY_TRANSITION",
+        shop: "BODY",
+        station: "BOUNDARY",
+        occurredAt: "2026-01-01T08:00:00Z",
+        dataSource: "SYSTEM",
+        parameters: {},
+      },
+      {
+        eventId: "evt-2",
+        vin: MOCK_VIN,
+        eventType: "SHOP_BOUNDARY_TRANSITION",
+        shop: "PAINT",
+        station: "BOUNDARY",
+        occurredAt: "2026-01-01T09:00:00Z",
+        dataSource: "SYSTEM",
+        parameters: {},
+      },
+    ];
+    vi.mocked(api.getAllVinThreadEvents).mockResolvedValue({
+      vin: MOCK_VIN,
+      data,
+      page: { next_cursor: null, limit: 200 },
+    });
+
+    render(
+      <Wrapper>
+        <DigitalThreadPanel vin={MOCK_VIN} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dt-shop-divider-BODY")).toBeTruthy();
+    });
+    expect(screen.getByTestId("dt-shop-divider-PAINT")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DigitalThreadPanel — FINAL_GATE_COMPLETE shows Chain Complete badge
+// ---------------------------------------------------------------------------
+
+describe("DigitalThreadPanel — FINAL_GATE_COMPLETE shows Chain Complete badge", () => {
+  it("renders Chain Complete badge on the final QUALITY_CERTIFICATION event", async () => {
+    const data: ThreadEvent[] = [
+      {
+        eventId: "evt-cert",
+        vin: MOCK_VIN,
+        eventType: "QUALITY_CERTIFICATION",
+        shop: "FINAL",
+        station: "FINAL_GATE",
+        occurredAt: "2026-01-01T18:00:00Z",
+        dataSource: "OPCENTER",
+        parameters: { result: "PASS" },
+      },
+    ];
+    vi.mocked(api.getAllVinThreadEvents).mockResolvedValue({
+      vin: MOCK_VIN,
+      data,
+      page: { next_cursor: null, limit: 200 },
+      vinStatus: "FINAL_GATE_COMPLETE",
+    });
+
+    render(
+      <Wrapper>
+        <DigitalThreadPanel vin={MOCK_VIN} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dt-chain-complete-badge")).toBeTruthy();
+    });
+    expect(screen.getByTestId("dt-chain-complete-badge").textContent).toBe(
+      "Chain Complete",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DigitalThreadPanel — inferred gap indicator
+// ---------------------------------------------------------------------------
+
+describe("DigitalThreadPanel — inferred gap indicator", () => {
+  it("renders gap indicator card for SYSTEM_INFERRED shop boundary transition", async () => {
+    const data: ThreadEvent[] = [
+      {
+        eventId: "evt-gap",
+        vin: MOCK_VIN,
+        eventType: "SHOP_BOUNDARY_TRANSITION",
+        shop: "PAINT",
+        station: "BOUNDARY",
+        occurredAt: "2026-01-01T10:00:00Z",
+        dataSource: "SYSTEM_INFERRED",
+        parameters: {},
+      },
+    ];
+    vi.mocked(api.getAllVinThreadEvents).mockResolvedValue({
+      vin: MOCK_VIN,
+      data,
+      page: { next_cursor: null, limit: 200 },
+    });
+
+    render(
+      <Wrapper>
+        <DigitalThreadPanel vin={MOCK_VIN} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`dt-gap-evt-gap`)).toBeTruthy();
+    });
+
+    const gapEl = screen.getByTestId("dt-gap-evt-gap");
+    expect(gapEl.getAttribute("role")).toBe("alert");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DigitalThreadPanel — error state
+// ---------------------------------------------------------------------------
+
+describe("DigitalThreadPanel — error state", () => {
+  it("shows retry button on error", async () => {
+    const err = new Error("unavailable") as Error & { status: number };
+    err.status = 503;
+    vi.mocked(api.getAllVinThreadEvents).mockRejectedValue(err);
+
+    render(
+      <Wrapper>
+        <DigitalThreadPanel vin={MOCK_VIN} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dt-retry-btn")).toBeTruthy();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DigitalThreadPanel — loading state
+// ---------------------------------------------------------------------------
+
+describe("DigitalThreadPanel — loading state", () => {
+  it("renders skeleton cards while loading", () => {
+    vi.mocked(api.getAllVinThreadEvents).mockReturnValue(
+      new Promise(() => undefined),
+    );
+
+    render(
+      <Wrapper>
+        <DigitalThreadPanel vin={MOCK_VIN} />
+      </Wrapper>,
+    );
+
+    expect(screen.getByTestId("dt-skeleton")).toBeTruthy();
   });
 });

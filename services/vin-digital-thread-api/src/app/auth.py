@@ -170,3 +170,23 @@ def require_quality_reader(
 def caller_subject(payload: dict[str, Any]) -> str:
     """Extract the JWT subject (caller identity) for audit records."""
     return payload.get("sub") or "unknown"
+
+
+def require_quality_role(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Dependency: raises 403 unless the JWT carries quality-engineer or quality-lead role."""
+    from app.config import get_settings
+
+    cfg = get_settings()
+    allowed_roles: set[str] = {r.strip() for r in cfg.quality_reader_roles.split(",") if r.strip()}
+    caller_roles: list[str] = payload.get("roles", []) or []
+    if not any(r in allowed_roles for r in caller_roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_make_error(
+                "INSUFFICIENT_ROLE",
+                f"Caller lacks required role: {cfg.quality_reader_roles}",
+            ),
+        )
+    return payload

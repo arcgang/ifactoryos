@@ -109,16 +109,22 @@ function makeTelemetry(
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
+const EMPTY_ALERTS = { data: [], page: { next_cursor: null, limit: 50 } };
+
 beforeEach(() => {
   FakeEventSource.last = null;
   (globalThis as unknown as Record<string, unknown>).EventSource = FakeEventSource;
 
-  vi.spyOn(globalThis, "fetch").mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(MOCK_THRESHOLDS),
-    text: () => Promise.resolve(""),
-  } as Response);
+  vi.spyOn(globalThis, "fetch").mockImplementation((url: RequestInfo | URL) => {
+    const urlStr = typeof url === "string" ? url : url.toString();
+    const body = urlStr.includes("/alerts") ? EMPTY_ALERTS : MOCK_THRESHOLDS;
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(""),
+    } as Response);
+  });
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

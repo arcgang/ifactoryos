@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DeviceType(str, Enum):
@@ -155,3 +156,41 @@ class ShiftHandover(BaseModel):
 class ShiftHandoverListResponse(BaseModel):
     data: list[ShiftHandover]
     page: CursorPage
+
+
+# ---------------------------------------------------------------------------
+# Expert Calls
+# ---------------------------------------------------------------------------
+
+_VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+
+
+class ExpertCallRequest(BaseModel):
+    vin: str
+    stationId: str
+    sessionId: UUID
+    idempotencyKey: UUID | None = None
+
+    @field_validator("vin")
+    @classmethod
+    def vin_must_match_pattern(cls, v: str) -> str:
+        if not _VIN_RE.match(v):
+            raise ValueError("VIN must match ^[A-HJ-NPR-Z0-9]{17}$")
+        return v
+
+
+class ExpertCallResponse(BaseModel):
+    callId: UUID
+    callMode: str
+    createdAt: datetime
+
+
+class ExpertCallEndRequest(BaseModel):
+    expertUserId: str
+    durationSeconds: int = Field(..., ge=0)
+
+
+class ExpertCallEndResponse(BaseModel):
+    callId: UUID
+    auditEntryId: UUID
+    endedAt: datetime

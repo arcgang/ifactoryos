@@ -116,9 +116,30 @@ class _FakePool:
         return _CM()
 
 
+class _FakeNeo4jResult:
+    """Minimal result stub — returns schema names for validation queries, empty otherwise."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    async def data(self) -> list[dict]:
+        return list(self._rows)
+
+
+_SCHEMA_NAMES: list[dict] = [
+    {"name": "vin_unique"},
+    {"name": "event_unique"},
+    {"name": "event_by_type_time"},
+    {"name": "event_by_stage_number"},
+    {"name": "event_by_shop"},
+]
+
+
 class _FakeNeo4jSession:
-    async def run(self, *args: Any, **kwargs: Any) -> None:
-        pass
+    async def run(self, query: str, *args: Any, **kwargs: Any) -> _FakeNeo4jResult:
+        if "db.constraints" in query or "db.indexes" in query:
+            return _FakeNeo4jResult(_SCHEMA_NAMES)
+        return _FakeNeo4jResult([])
 
     async def __aenter__(self) -> "_FakeNeo4jSession":
         return self

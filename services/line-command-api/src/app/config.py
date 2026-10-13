@@ -36,9 +36,15 @@ class Settings(BaseSettings):
     kafka_sasl_username: str = ""
     kafka_sasl_password: str = ""
 
+    # Torque consumer
+    torque_consumer_enabled: bool = True
+
     # Audit log (Azure Blob WORM)
     audit_storage_account: str = "stauditlogdev"
     audit_container_name: str = "audit-events"
+
+    # Expert call — Works Council plant ID for video streaming approval lookup
+    expert_call_plant_id: str = "MUNICH"
 
 
 def get_settings() -> Settings:

@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     audit_storage_account: str = "stauditlogdev"
     audit_container_name: str = "audit-events"
 
+    # Expert call — Works Council plant ID for video streaming approval lookup
+    expert_call_plant_id: str = "MUNICH"
+
 
 def get_settings() -> Settings:
     return Settings()

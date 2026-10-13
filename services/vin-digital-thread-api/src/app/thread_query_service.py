@@ -7,22 +7,28 @@ the per-stage counts are re-queried from Neo4j and the cache is refreshed.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
-import os
-from datetime import datetime, timezone
+from collections import defaultdict
 from typing import Any
 
 import asyncpg
-import yaml
 
 from app.models import (
+    BoothParameterTimeSeries,
+    BoothSample,
+    ClimateTimeSeries,
+    ClimateSample,
     CursorPage,
-    EventType,
+    PrepStageSample,
+    PrepStageTimeSeries,
+    ProcessReplayResponse,
     StageCompletenessDetail,
     ThreadCompletenessResponse,
     ThreadEvent,
+    ThreadSnapshotResponse,
     VinStatus,
     VinThreadResponse,
 )
@@ -30,445 +36,697 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 _COMPLETENESS_THRESHOLD = 95.0
-_SHOP_ORDER = ["BODY", "PAINT", "ASSEMBLY", "FINAL"]
+_NEO4J_READ_TIMEOUT_S = 9.0
 
-# Shops that represent distinct manufacturing stages — crossings between these
-# emit synthetic SHOP_BOUNDARY_TRANSITION events if missing from the thread.
+# Shops that represent distinct manufacturing stages
 _KNOWN_SHOPS: frozenset[str] = frozenset({"BODY", "PAINT", "ASSEMBLY", "FINAL"})
 
+# ---------------------------------------------------------------------------
+# Cursor helpers — (occurredAt, eventId) tuple, base64-encoded
+# ---------------------------------------------------------------------------
+
+
+def _encode_cursor(occurred_at: str, event_id: str) -> str:
+    raw = json.dumps({"ts": occurred_at, "id": event_id})
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[str, str]:
+    """Return (occurred_at_iso, event_id_str). Raises ValueError on bad input."""
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        parsed = json.loads(raw)
+        return parsed["ts"], parsed["id"]
+    except (KeyError, ValueError, json.JSONDecodeError) as err:
+        raise ValueError(f"Invalid cursor: {cursor!r}") from err
+
 
 # ---------------------------------------------------------------------------
-# Paint prep stage config
+# Stage configuration (loaded once at import time)
 # ---------------------------------------------------------------------------
 
-def _load_stage_config(config_path: str) -> list[dict[str, Any]]:
-    """Load and return the list of stage definitions from the YAML config file."""
-    resolved = config_path if os.path.isabs(config_path) else os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", config_path
-    )
-    with open(resolved, encoding="utf-8") as fh:
+
+def _load_stage_config() -> list[dict[str, Any]]:
+    import os
+    import yaml  # type: ignore[import]
+
+    config_path = os.path.join(os.path.dirname(__file__), "paint_prep_stage_config.yaml")
+    with open(config_path) as fh:
         data = yaml.safe_load(fh)
     return data["stages"]
 
 
-_stage_config_cache: list[dict[str, Any]] | None = None
+_STAGE_CONFIG: list[dict[str, Any]] = []
 
 
 def get_stage_config() -> list[dict[str, Any]]:
-    global _stage_config_cache
-    if _stage_config_cache is None:
-        from app.config import get_settings
-        cfg = get_settings()
-        _stage_config_cache = _load_stage_config(cfg.paint_prep_stage_config_path)
-    return _stage_config_cache
+    global _STAGE_CONFIG
+    if not _STAGE_CONFIG:
+        _STAGE_CONFIG = _load_stage_config()
+    return _STAGE_CONFIG
 
 
 # ---------------------------------------------------------------------------
-# Cursor encoding
+# Neo4j driver helper
 # ---------------------------------------------------------------------------
 
-def _encode_cursor(occurred_at: str, event_id: str) -> str:
-    token = json.dumps({"oa": occurred_at, "id": event_id})
-    return base64.urlsafe_b64encode(token.encode()).decode()
 
+async def _neo4j_driver():  # type: ignore[return]
+    from neo4j import AsyncGraphDatabase
+    from app.config import get_settings
 
-def _decode_cursor(cursor: str) -> tuple[str, str]:
-    """Return (occurredAt, eventId) from an opaque cursor string."""
-    try:
-        token = json.loads(base64.urlsafe_b64decode(cursor.encode()))
-        return token["oa"], token["id"]
-    except (KeyError, ValueError, TypeError, UnicodeDecodeError) as err:
-        raise CursorDecodeError(f"Invalid pagination cursor: {cursor!r}") from err
-
-
-class CursorDecodeError(ValueError):
-    pass
+    cfg = get_settings()
+    return AsyncGraphDatabase.driver(
+        cfg.neo4j_uri,
+        auth=(cfg.neo4j_user, cfg.neo4j_password),
+    )
 
 
 # ---------------------------------------------------------------------------
 # GET /vin/{vin}/thread
 # ---------------------------------------------------------------------------
 
-async def query_vin_thread(
+
+async def get_vin_thread(
     vin: str,
-    *,
     cursor: str | None,
     limit: int,
     shop_filter: list[str] | None,
     from_ts: str | None,
     to_ts: str | None,
+    pool: asyncpg.Pool,
 ) -> VinThreadResponse:
-    """Execute Cypher query and return paginated VinThreadResponse."""
-    from neo4j import AsyncGraphDatabase
     from app.config import get_settings
 
     cfg = get_settings()
+    timeout = cfg.neo4j_read_timeout_s
+
+    # Parse cursor
+    cursor_ts: str | None = None
+    cursor_id: str | None = None
+    if cursor:
+        cursor_ts, cursor_id = _decode_cursor(cursor)
+
+    # Build Cypher — keyset pagination on (occurredAt, eventId)
+    where_clauses: list[str] = []
+    if cursor_ts and cursor_id:
+        where_clauses.append(
+            "(e.occurredAt > $cursor_ts OR (e.occurredAt = $cursor_ts AND e.eventId > $cursor_id))"
+        )
+    if from_ts:
+        where_clauses.append("e.occurredAt >= $from_ts")
+    if to_ts:
+        where_clauses.append("e.occurredAt <= $to_ts")
+    if shop_filter:
+        where_clauses.append("e.shop IN $shops")
+
+    where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    cypher = f"""
+        MATCH (v:VIN {{vin: $vin}})-[:HAS_EVENT]->(e)
+        {where_str}
+        RETURN e
+        ORDER BY e.occurredAt ASC, e.eventId ASC
+        LIMIT $limit
+    """
+
+    params: dict[str, Any] = {
+        "vin": vin,
+        "limit": limit + 1,  # fetch one extra to detect next page
+    }
+    if cursor_ts:
+        params["cursor_ts"] = cursor_ts
+    if cursor_id:
+        params["cursor_id"] = cursor_id
+    if from_ts:
+        params["from_ts"] = from_ts
+    if to_ts:
+        params["to_ts"] = to_ts
+    if shop_filter:
+        params["shops"] = shop_filter
+
+    events: list[dict[str, Any]] = []
+    vin_exists = False
+
+    try:
+        driver = await _neo4j_driver()
+        async with driver:
+            async with driver.session() as session:
+                # Check VIN exists
+                vin_check = await asyncio.wait_for(
+                    session.run("MATCH (v:VIN {vin: $vin}) RETURN v LIMIT 1", vin=vin),
+                    timeout=timeout,
+                )
+                vin_records = await vin_check.data()
+                vin_exists = len(vin_records) > 0
+
+                if vin_exists:
+                    result = await asyncio.wait_for(
+                        session.run(cypher, **params),
+                        timeout=timeout,
+                    )
+                    rows = await result.data()
+                    for row in rows:
+                        e = row["e"]
+                        raw_params = e.get("parameters", "{}")
+                        parsed_params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+                        events.append({
+                            "eventId": e.get("eventId", ""),
+                            "vin": vin,
+                            "eventType": e.get("eventType", ""),
+                            "shop": e.get("shop", ""),
+                            "station": e.get("station", ""),
+                            "occurredAt": e.get("occurredAt", ""),
+                            "dataSource": e.get("dataSource", ""),
+                            "parameters": parsed_params,
+                            "createdAt": e.get("linkedAt"),
+                            "stageNumber": e.get("stageNumber"),
+                            "tunnelPositionMm": e.get("tunnelPositionMm"),
+                        })
+    except asyncio.TimeoutError as err:
+        raise Neo4jUnavailableError() from err
+    except Exception as err:
+        logger.exception("Neo4j read failed for vin=%s", vin)
+        raise Neo4jReadError() from err
+
+    if not vin_exists:
+        raise VinNotFoundError(vin)
+
+    # Detect next page
+    has_next = len(events) > limit
+    if has_next:
+        events = events[:limit]
+
+    next_cursor: str | None = None
+    if has_next and events:
+        last = events[-1]
+        next_cursor = _encode_cursor(last["occurredAt"], last["eventId"])
+
+    # Read VIN status from completeness cache
+    vin_status = await _read_vin_status(vin, pool)
+
+    thread_events = [ThreadEvent(**ev) for ev in events]
+
+    return VinThreadResponse(
+        vin=vin,
+        data=thread_events,
+        page=CursorPage(next_cursor=next_cursor, limit=limit),
+        vinStatus=vin_status,
+    )
+
+
+async def _read_vin_status(vin: str, pool: asyncpg.Pool) -> VinStatus:
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT vin_status FROM vin_thread_completeness_cache WHERE vin = $1",
+                vin,
+            )
+        if row is None:
+            return VinStatus.UNKNOWN
+        return VinStatus(row["vin_status"])
+    except Exception:
+        logger.exception("Failed to read vin_status for vin=%s", vin)
+        return VinStatus.UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# GET /vin/{vin}/thread/replay
+# ---------------------------------------------------------------------------
+
+
+async def get_process_replay(
+    vin: str,
+    cursor: str | None,
+    limit: int,
+    pool: asyncpg.Pool,
+) -> ProcessReplayResponse:
+    from app.config import get_settings
+
+    cfg = get_settings()
+    timeout = cfg.neo4j_read_timeout_s
 
     cursor_ts: str | None = None
     cursor_id: str | None = None
     if cursor:
         cursor_ts, cursor_id = _decode_cursor(cursor)
 
-    cypher = _build_thread_cypher(
-        has_cursor=cursor is not None,
-        has_shop_filter=bool(shop_filter),
-        has_from_ts=from_ts is not None,
-        has_to_ts=to_ts is not None,
-    )
+    # Fetch completeness (cache-first, 30s TTL)
+    completeness = await _get_completeness_cached(vin, pool)
+
+    # Cypher scoped to paint event types only (performance: smaller result set)
+    paint_types = ["PAINT_PREP_STAGE", "BOOTH_PARAMETER", "CLIMATE_DATA"]
+
+    where_clauses = ["e.eventType IN $event_types"]
+    if cursor_ts and cursor_id:
+        where_clauses.append(
+            "(e.occurredAt > $cursor_ts OR (e.occurredAt = $cursor_ts AND e.eventId > $cursor_id))"
+        )
+
+    cypher = f"""
+        MATCH (v:VIN {{vin: $vin}})-[:HAS_EVENT]->(e)
+        WHERE {" AND ".join(where_clauses)}
+        RETURN e
+        ORDER BY e.occurredAt ASC, e.eventId ASC
+        LIMIT $limit
+    """
 
     params: dict[str, Any] = {
         "vin": vin,
-        "limit": limit + 1,  # fetch one extra to detect next page
+        "event_types": paint_types,
+        "limit": limit + 1,
     }
-    if cursor_ts is not None:
+    if cursor_ts:
         params["cursor_ts"] = cursor_ts
+    if cursor_id:
         params["cursor_id"] = cursor_id
-    if shop_filter:
-        params["shops"] = shop_filter
-    if from_ts:
-        params["from_ts"] = from_ts
-    if to_ts:
-        params["to_ts"] = to_ts
 
-    async with AsyncGraphDatabase.driver(
-        cfg.neo4j_uri,
-        auth=(cfg.neo4j_user, cfg.neo4j_password),
-    ) as driver:
-        async with driver.session() as session:
-            result = await session.run(cypher, **params)
-            records = await result.data()
+    raw_events: list[dict[str, Any]] = []
+    vin_exists = False
 
-        # Check VIN exists — if no events come back and no VIN node, raise 404.
-        if not records:
+    try:
+        driver = await _neo4j_driver()
+        async with driver:
             async with driver.session() as session:
-                vin_check = await session.run(
-                    "MATCH (v:VIN {vin: $vin}) RETURN v.vin AS vin LIMIT 1",
-                    vin=vin,
+                vin_check = await asyncio.wait_for(
+                    session.run("MATCH (v:VIN {vin: $vin}) RETURN v LIMIT 1", vin=vin),
+                    timeout=timeout,
                 )
-                vin_rows = await vin_check.data()
-            if not vin_rows:
-                raise VinNotFoundError(vin)
+                vin_records = await vin_check.data()
+                vin_exists = len(vin_records) > 0
 
-        # Determine next cursor.
-        has_more = len(records) > limit
-        page_records = records[:limit]
+                if vin_exists:
+                    result = await asyncio.wait_for(
+                        session.run(cypher, **params),
+                        timeout=timeout,
+                    )
+                    rows = await result.data()
+                    for row in rows:
+                        e = row["e"]
+                        raw_params = e.get("parameters", "{}")
+                        parsed_params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+                        raw_events.append({
+                            "eventId": e.get("eventId", ""),
+                            "eventType": e.get("eventType", ""),
+                            "occurredAt": e.get("occurredAt", ""),
+                            "parameters": parsed_params,
+                            "stageNumber": e.get("stageNumber"),
+                            "tunnelPositionMm": e.get("tunnelPositionMm"),
+                            "boothId": e.get("boothId"),
+                        })
+    except asyncio.TimeoutError as err:
+        raise Neo4jUnavailableError() from err
+    except Exception as err:
+        logger.exception("Neo4j replay read failed for vin=%s", vin)
+        raise Neo4jReadError() from err
 
-        next_cursor: str | None = None
-        if has_more and page_records:
-            last = page_records[-1]
-            next_cursor = _encode_cursor(last["occurredAt"], last["eventId"])
+    if not vin_exists:
+        raise VinNotFoundError(vin)
 
-        events = [_record_to_thread_event(vin, r) for r in page_records]
+    # Detect next page
+    has_next = len(raw_events) > limit
+    if has_next:
+        raw_events = raw_events[:limit]
 
-        # Inject synthetic SHOP_BOUNDARY_TRANSITION events at shop crossings.
-        events = _inject_shop_boundary_transitions(events)
+    next_cursor: str | None = None
+    if has_next and raw_events:
+        last = raw_events[-1]
+        next_cursor = _encode_cursor(last["occurredAt"], last["eventId"])
 
-        # Determine VIN status from the event list.
-        vin_status = _derive_vin_status(events)
+    # Assemble response by event type
+    prep_stage_map: dict[int, list[PrepStageSample]] = defaultdict(list)
+    booth_map: dict[str, list[BoothSample]] = defaultdict(list)
+    climate_samples: list[ClimateSample] = []
+    all_ts: list[str] = []
 
-    return VinThreadResponse(
-        vin=vin,
-        data=events,
-        page=CursorPage(next_cursor=next_cursor, limit=limit),
-        vinStatus=vin_status,
-    )
+    for ev in raw_events:
+        ts = ev["occurredAt"]
+        all_ts.append(ts)
+        etype = ev["eventType"]
+        params_ev = ev["parameters"]
 
+        if etype == "PAINT_PREP_STAGE":
+            stage_num = ev.get("stageNumber")
+            if stage_num is not None:
+                prep_stage_map[int(stage_num)].append(
+                    PrepStageSample(
+                        ts=ts,
+                        parameters=params_ev,
+                        tunnelPositionMm=ev.get("tunnelPositionMm"),
+                    )
+                )
+        elif etype == "BOOTH_PARAMETER":
+            booth_id = ev.get("boothId") or params_ev.get("boothId", "BOOTH_UNKNOWN")
+            booth_map[str(booth_id)].append(BoothSample(ts=ts, parameters=params_ev))
+        elif etype == "CLIMATE_DATA":
+            climate_samples.append(ClimateSample(ts=ts, parameters=params_ev))
 
-def _build_thread_cypher(
-    *,
-    has_cursor: bool,
-    has_shop_filter: bool,
-    has_from_ts: bool,
-    has_to_ts: bool,
-) -> str:
-    match_clause = "MATCH (v:VIN {vin: $vin})-[:HAS_EVENT]->(e:ManufacturingEvent)"
-    where_parts: list[str] = []
-
-    if has_cursor:
-        where_parts.append(
-            "(e.occurredAt > $cursor_ts OR (e.occurredAt = $cursor_ts AND e.eventId > $cursor_id))"
+    # Build 14 prep stage time-series (OQ-6: missing stage → available=False, samples=[])
+    stages_cfg = get_stage_config()
+    prep_stages: list[PrepStageTimeSeries] = []
+    for stage_cfg in stages_cfg:
+        num = stage_cfg["number"]
+        samples = prep_stage_map.get(num, [])
+        prep_stages.append(
+            PrepStageTimeSeries(
+                stageNumber=num,
+                stageName=stage_cfg["name"],
+                available=len(samples) > 0,
+                samples=sorted(samples, key=lambda s: s.ts),
+            )
         )
-    if has_shop_filter:
-        where_parts.append("e.shop IN $shops")
-    if has_from_ts:
-        where_parts.append("e.occurredAt >= $from_ts")
-    if has_to_ts:
-        where_parts.append("e.occurredAt <= $to_ts")
 
-    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-    return (
-        f"{match_clause} {where_clause} "
-        "RETURN e.eventId AS eventId, e.eventType AS eventType, e.shop AS shop, "
-        "e.station AS station, e.occurredAt AS occurredAt, e.dataSource AS dataSource, "
-        "e.parameters AS parameters, e.linkedAt AS createdAt, "
-        "e.stageNumber AS stageNumber, e.tunnelPositionMm AS tunnelPositionMm "
-        "ORDER BY e.occurredAt ASC, e.eventId ASC "
-        "LIMIT $limit"
+    booth_params: list[BoothParameterTimeSeries] = [
+        BoothParameterTimeSeries(
+            boothId=bid,
+            available=True,
+            samples=sorted(bsamples, key=lambda s: s.ts),
+        )
+        for bid, bsamples in sorted(booth_map.items())
+    ]
+
+    climate = ClimateTimeSeries(
+        available=len(climate_samples) > 0,
+        samples=sorted(climate_samples, key=lambda s: s.ts),
     )
 
+    replay_start = min(all_ts) if all_ts else None
+    replay_end = max(all_ts) if all_ts else None
 
-def _record_to_thread_event(vin: str, record: dict[str, Any]) -> ThreadEvent:
-    raw_params = record.get("parameters") or "{}"
-    if isinstance(raw_params, str):
-        try:
-            params = json.loads(raw_params)
-        except (ValueError, TypeError):
-            params = {}
-    else:
-        params = raw_params
+    overall_pct = float(completeness["overall_completeness_pct"]) if completeness else 0.0
 
-    return ThreadEvent(
-        eventId=record["eventId"],
+    return ProcessReplayResponse(
         vin=vin,
-        eventType=EventType(record["eventType"]),
-        shop=record.get("shop", ""),
-        station=record.get("station", ""),
-        occurredAt=record.get("occurredAt", ""),
-        dataSource=record.get("dataSource", ""),
-        parameters=params,
-        createdAt=record.get("createdAt"),
-        stageNumber=record.get("stageNumber"),
-        tunnelPositionMm=record.get("tunnelPositionMm"),
+        overallCompletenessPercent=overall_pct,
+        prepStages=prep_stages,
+        boothParameters=booth_params,
+        climateData=climate,
+        page=CursorPage(next_cursor=next_cursor, limit=limit),
+        replayWindowStart=replay_start,
+        replayWindowEnd=replay_end,
     )
 
 
-def _inject_shop_boundary_transitions(events: list[ThreadEvent]) -> list[ThreadEvent]:
-    """Insert synthetic SHOP_BOUNDARY_TRANSITION events where shop crossings lack one."""
-    if not events:
-        return events
+# ---------------------------------------------------------------------------
+# GET /vin/{vin}/thread/snapshot
+# ---------------------------------------------------------------------------
 
-    result: list[ThreadEvent] = []
-    prev_shop: str | None = None
 
-    for event in events:
-        current_shop = event.shop
-        if (
-            prev_shop is not None
-            and current_shop != prev_shop
-            and current_shop in _KNOWN_SHOPS
-            and prev_shop in _KNOWN_SHOPS
-            and event.eventType != EventType.SHOP_BOUNDARY_TRANSITION
-        ):
-            # Check whether the immediately preceding real event was already a transition.
-            if not result or result[-1].eventType != EventType.SHOP_BOUNDARY_TRANSITION:
-                synthetic = ThreadEvent(
-                    eventId=f"synthetic-{prev_shop}-{current_shop}-{event.occurredAt}",
-                    vin=event.vin,
-                    eventType=EventType.SHOP_BOUNDARY_TRANSITION,
-                    shop=current_shop,
-                    station="BOUNDARY",
-                    occurredAt=event.occurredAt,
-                    dataSource="SYSTEM_INFERRED",
-                    parameters={
-                        "from_shop": prev_shop,
-                        "to_shop": current_shop,
-                    },
-                    createdAt=event.occurredAt,
+async def get_thread_snapshot(
+    vin: str,
+    at_ts: str,
+    pool: asyncpg.Pool,
+) -> ThreadSnapshotResponse:
+    from app.config import get_settings
+
+    cfg = get_settings()
+    timeout = cfg.neo4j_read_timeout_s
+
+    cypher = """
+        MATCH (v:VIN {vin: $vin})-[:HAS_EVENT]->(e)
+        WHERE e.occurredAt <= $at_ts
+        RETURN e
+        ORDER BY e.occurredAt DESC
+        LIMIT 1
+    """
+
+    vin_exists = False
+    snapshot_event: dict[str, Any] | None = None
+
+    try:
+        driver = await _neo4j_driver()
+        async with driver:
+            async with driver.session() as session:
+                vin_check = await asyncio.wait_for(
+                    session.run("MATCH (v:VIN {vin: $vin}) RETURN v LIMIT 1", vin=vin),
+                    timeout=timeout,
                 )
-                result.append(synthetic)
-        result.append(event)
-        if event.eventType != EventType.SHOP_BOUNDARY_TRANSITION:
-            prev_shop = current_shop
+                vin_records = await vin_check.data()
+                vin_exists = len(vin_records) > 0
 
-    return result
+                if vin_exists:
+                    result = await asyncio.wait_for(
+                        session.run(cypher, vin=vin, at_ts=at_ts),
+                        timeout=timeout,
+                    )
+                    rows = await result.data()
+                    if rows:
+                        e = rows[0]["e"]
+                        raw_params = e.get("parameters", "{}")
+                        parsed_params = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
+                        snapshot_event = {
+                            "eventType": e.get("eventType", ""),
+                            "occurredAt": e.get("occurredAt", ""),
+                            "stageNumber": e.get("stageNumber"),
+                            "stageName": None,
+                            "tunnelPositionMm": e.get("tunnelPositionMm"),
+                            "parameters": parsed_params,
+                        }
+    except asyncio.TimeoutError as err:
+        raise Neo4jUnavailableError() from err
+    except Exception as err:
+        logger.exception("Neo4j snapshot read failed for vin=%s", vin)
+        raise Neo4jReadError() from err
 
+    if not vin_exists:
+        raise VinNotFoundError(vin)
 
-def _derive_vin_status(events: list[ThreadEvent]) -> VinStatus:
-    """Return FINAL_GATE_COMPLETE if any QUALITY_CERTIFICATION event exists; else IN_PROGRESS."""
-    for event in events:
-        if event.eventType == EventType.QUALITY_CERTIFICATION:
-            return VinStatus.FINAL_GATE_COMPLETE
-    return VinStatus.IN_PROGRESS
+    if snapshot_event is None:
+        return ThreadSnapshotResponse(
+            vin=vin,
+            atTs=at_ts,
+            stageName=None,
+            stageNumber=None,
+            tunnelPositionMm=None,
+            parameters={},
+            dataAvailable=False,
+        )
+
+    # Resolve stage name from config
+    stage_number: int | None = snapshot_event.get("stageNumber")
+    stage_name: str | None = None
+    if stage_number is not None:
+        for s in get_stage_config():
+            if s["number"] == stage_number:
+                stage_name = s["name"]
+                break
+
+    return ThreadSnapshotResponse(
+        vin=vin,
+        atTs=at_ts,
+        stageName=stage_name,
+        stageNumber=stage_number,
+        tunnelPositionMm=snapshot_event.get("tunnelPositionMm"),
+        parameters=snapshot_event.get("parameters", {}),
+        dataAvailable=True,
+    )
 
 
 # ---------------------------------------------------------------------------
 # GET /vin/{vin}/thread/completeness
 # ---------------------------------------------------------------------------
 
-async def query_vin_completeness(
+
+async def get_thread_completeness(
     vin: str,
     pool: asyncpg.Pool,
 ) -> ThreadCompletenessResponse:
-    """Return completeness metrics, using PG cache when fresh enough."""
-    from app.config import get_settings
-    cfg = get_settings()
-
-    # Try cache first.
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT overall_completeness_pct, meets_threshold, stage_completeness,
-                   vin_status, updated_at
-            FROM vin_thread_completeness_cache
-            WHERE vin = $1
-            """,
-            vin,
-        )
-
-    if row is not None:
-        updated_at = row["updated_at"]
-        if updated_at.tzinfo is None:
-            updated_at = updated_at.replace(tzinfo=timezone.utc)
-        age_s = (datetime.now(tz=timezone.utc) - updated_at).total_seconds()
-        if age_s <= cfg.completeness_cache_ttl_s:
-            return _build_completeness_response(vin, row)
-
-    # Cache miss or stale — query Neo4j for per-stage actual counts.
-    stage_counts = await _query_stage_counts_from_neo4j(vin)
-
-    # Compute completeness from config + actual counts.
-    stages_config = get_stage_config()
-    overall_pct, stage_details = _compute_completeness(stages_config, stage_counts)
-    meets = overall_pct >= _COMPLETENESS_THRESHOLD
-
-    # Upsert cache.
-    stage_json = json.dumps([s.model_dump() for s in stage_details])
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO vin_thread_completeness_cache
-                (vin, overall_completeness_pct, meets_threshold, stage_completeness, updated_at)
-            VALUES ($1, $2, $3, $4::jsonb, now())
-            ON CONFLICT (vin) DO UPDATE
-                SET overall_completeness_pct = EXCLUDED.overall_completeness_pct,
-                    meets_threshold          = EXCLUDED.meets_threshold,
-                    stage_completeness       = EXCLUDED.stage_completeness,
-                    updated_at               = now()
-            """,
-            vin,
-            overall_pct,
-            meets,
-            stage_json,
-        )
-
-    return ThreadCompletenessResponse(
-        vin=vin,
-        overallCompletenessPercent=overall_pct,
-        meetsThreshold=meets,
-        stages=stage_details,
-    )
-
-
-def _build_completeness_response(vin: str, row: Any) -> ThreadCompletenessResponse:
-    """Reconstruct ThreadCompletenessResponse from a PG cache row."""
-    raw = row["stage_completeness"]
-    if isinstance(raw, str):
-        stage_list = json.loads(raw)
-    else:
-        stage_list = raw or []
-
-    stages = [StageCompletenessDetail(**s) for s in stage_list]
-    overall_pct = float(row["overall_completeness_pct"])
-    meets = bool(row["meets_threshold"])
-
-    return ThreadCompletenessResponse(
-        vin=vin,
-        overallCompletenessPercent=overall_pct,
-        meetsThreshold=meets,
-        stages=stages,
-    )
-
-
-async def _query_stage_counts_from_neo4j(vin: str) -> dict[int, dict[str, Any]]:
-    """Return {stageNumber: {actualSampleCount, presentParameters}} from Neo4j."""
-    from neo4j import AsyncGraphDatabase
     from app.config import get_settings
 
     cfg = get_settings()
-    async with AsyncGraphDatabase.driver(
-        cfg.neo4j_uri,
-        auth=(cfg.neo4j_user, cfg.neo4j_password),
-    ) as driver:
-        async with driver.session() as session:
-            result = await session.run(
+
+    # Check VIN exists in Neo4j first
+    vin_exists = await _check_vin_exists(vin, cfg.neo4j_read_timeout_s)
+    if not vin_exists:
+        raise VinNotFoundError(vin)
+
+    cached = await _get_completeness_cached(vin, pool)
+    if cached is not None:
+        return _build_completeness_response(vin, cached)
+
+    # Cache miss — compute from Neo4j and UPSERT
+    computed = await _compute_completeness_from_neo4j(vin, cfg.neo4j_read_timeout_s)
+    await _upsert_completeness_cache(vin, computed, pool)
+    return _build_completeness_response(vin, computed)
+
+
+async def _check_vin_exists(vin: str, timeout: float) -> bool:
+    try:
+        driver = await _neo4j_driver()
+        async with driver:
+            async with driver.session() as session:
+                result = await asyncio.wait_for(
+                    session.run("MATCH (v:VIN {vin: $vin}) RETURN v LIMIT 1", vin=vin),
+                    timeout=timeout,
+                )
+                records = await result.data()
+                return len(records) > 0
+    except asyncio.TimeoutError as err:
+        raise Neo4jUnavailableError() from err
+    except Exception as err:
+        logger.exception("Neo4j vin-exists check failed for vin=%s", vin)
+        raise Neo4jReadError() from err
+
+
+async def _get_completeness_cached(vin: str, pool: asyncpg.Pool) -> dict[str, Any] | None:
+    from app.config import get_settings
+
+    cfg = get_settings()
+    ttl = cfg.completeness_cache_ttl_s
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
                 """
-                MATCH (v:VIN {vin: $vin})-[:HAS_EVENT]->(e:ManufacturingEvent)
-                WHERE e.eventType = 'PAINT_PREP_STAGE' AND e.stageNumber IS NOT NULL
-                RETURN e.stageNumber AS stageNumber,
-                       count(e) AS sampleCount,
-                       collect(e.parameters) AS parametersList
+                SELECT overall_completeness_pct, meets_threshold, stage_completeness,
+                       vin_status, updated_at
+                FROM vin_thread_completeness_cache
+                WHERE vin = $1
+                  AND updated_at > NOW() - MAKE_INTERVAL(secs => $2)
                 """,
-                vin=vin,
+                vin,
+                int(ttl),
             )
-            rows = await result.data()
-
-    stage_counts: dict[int, dict[str, Any]] = {}
-    for row in rows:
-        stage_num = int(row["stageNumber"])
-        params_list = row.get("parametersList") or []
-        present_keys: set[str] = set()
-        for raw_params in params_list:
-            if isinstance(raw_params, str):
-                try:
-                    p = json.loads(raw_params)
-                except (ValueError, TypeError):
-                    p = {}
-            else:
-                p = raw_params or {}
-            present_keys.update(p.keys())
-
-        stage_counts[stage_num] = {
-            "actualSampleCount": int(row["sampleCount"]),
-            "presentParameters": present_keys,
+        if row is None:
+            return None
+        stage_json = row["stage_completeness"]
+        if isinstance(stage_json, str):
+            stages = json.loads(stage_json)
+        else:
+            stages = stage_json if stage_json is not None else []
+        return {
+            "overall_completeness_pct": float(row["overall_completeness_pct"]),
+            "meets_threshold": bool(row["meets_threshold"]),
+            "stages": stages,
+            "vin_status": str(row["vin_status"]),
         }
+    except asyncpg.PostgresError:
+        logger.exception("Failed to read completeness cache for vin=%s", vin)
+        return None
 
-    return stage_counts
 
+async def _compute_completeness_from_neo4j(vin: str, timeout: float) -> dict[str, Any]:
+    """Count PAINT_PREP_STAGE events per stage against expected sample counts."""
+    cypher = """
+        MATCH (v:VIN {vin: $vin})-[:HAS_EVENT]->(e)
+        WHERE e.eventType = 'PAINT_PREP_STAGE' AND e.stageNumber IS NOT NULL
+        RETURN e.stageNumber AS stageNumber, count(e) AS cnt
+    """
+    stage_counts: dict[int, int] = {}
 
-def _compute_completeness(
-    stages_config: list[dict[str, Any]],
-    stage_counts: dict[int, dict[str, Any]],
-) -> tuple[float, list[StageCompletenessDetail]]:
-    """Return (overallCompletenessPercent, stage_details_list)."""
+    try:
+        driver = await _neo4j_driver()
+        async with driver:
+            async with driver.session() as session:
+                result = await asyncio.wait_for(
+                    session.run(cypher, vin=vin),
+                    timeout=timeout,
+                )
+                rows = await result.data()
+                for row in rows:
+                    sn = row["stageNumber"]
+                    if sn is not None:
+                        stage_counts[int(sn)] = int(row["cnt"])
+    except asyncio.TimeoutError as err:
+        raise Neo4jUnavailableError() from err
+    except Exception as err:
+        logger.exception("Neo4j completeness compute failed for vin=%s", vin)
+        raise Neo4jReadError() from err
+
+    stages_cfg = get_stage_config()
+    stage_details: list[dict[str, Any]] = []
     total_expected = 0
     total_actual = 0
-    stage_details: list[StageCompletenessDetail] = []
 
-    for stage_cfg in stages_config:
-        stage_num = int(stage_cfg["stageNumber"])
-        expected_count = int(stage_cfg["expectedSampleCount"])
-        expected_params: list[str] = stage_cfg.get("expectedParameters", [])
-
-        actual_data = stage_counts.get(stage_num, {})
-        actual_count = int(actual_data.get("actualSampleCount", 0))
-        present_params: set[str] = actual_data.get("presentParameters", set())
-
-        missing_params = [p for p in expected_params if p not in present_params]
-        available = actual_count > 0
-
-        if expected_count > 0:
-            stage_pct = min(100.0, (actual_count / expected_count) * 100.0)
-        else:
-            stage_pct = 100.0
-
-        total_expected += expected_count
-        total_actual += min(actual_count, expected_count)
-
-        stage_details.append(
-            StageCompletenessDetail(
-                stageNumber=stage_num,
-                stageName=stage_cfg["stageName"],
-                available=available,
-                completenessPercent=round(stage_pct, 2),
-                expectedSampleCount=expected_count,
-                actualSampleCount=actual_count,
-                missingParameters=missing_params if missing_params else None,
-            )
-        )
+    for s in stages_cfg:
+        num = s["number"]
+        expected = s["expected_samples"]
+        actual = stage_counts.get(num, 0)
+        total_expected += expected
+        total_actual += actual
+        pct = min(100.0, (actual / expected * 100.0)) if expected > 0 else 0.0
+        missing: list[str] = s["expected_parameters"] if actual == 0 else []
+        stage_details.append({
+            "stageNumber": num,
+            "stageName": s["name"],
+            "available": actual > 0,
+            "completenessPercent": round(pct, 2),
+            "expectedSampleCount": expected,
+            "actualSampleCount": actual,
+            "missingParameters": missing,
+        })
 
     overall_pct = (
-        round((total_actual / total_expected) * 100.0, 2)
-        if total_expected > 0
-        else 0.0
+        min(100.0, total_actual / total_expected * 100.0) if total_expected > 0 else 0.0
     )
-    return overall_pct, stage_details
+
+    return {
+        "overall_completeness_pct": round(overall_pct, 2),
+        "meets_threshold": overall_pct >= _COMPLETENESS_THRESHOLD,
+        "stages": stage_details,
+        "vin_status": "IN_PROGRESS",
+    }
+
+
+async def _upsert_completeness_cache(
+    vin: str, data: dict[str, Any], pool: asyncpg.Pool
+) -> None:
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO vin_thread_completeness_cache
+                    (vin, overall_completeness_pct, meets_threshold, stage_completeness, updated_at)
+                VALUES ($1, $2, $3, $4::jsonb, NOW())
+                ON CONFLICT (vin) DO UPDATE
+                    SET overall_completeness_pct = EXCLUDED.overall_completeness_pct,
+                        meets_threshold = EXCLUDED.meets_threshold,
+                        stage_completeness = EXCLUDED.stage_completeness,
+                        updated_at = EXCLUDED.updated_at
+                """,
+                vin,
+                data["overall_completeness_pct"],
+                data["meets_threshold"],
+                json.dumps(data["stages"]),
+            )
+    except asyncpg.PostgresError:
+        logger.exception("Failed to upsert completeness cache for vin=%s", vin)
+
+
+def _build_completeness_response(vin: str, data: dict[str, Any]) -> ThreadCompletenessResponse:
+    stages = [
+        StageCompletenessDetail(
+            stageNumber=s["stageNumber"],
+            stageName=s["stageName"],
+            available=s["available"],
+            completenessPercent=s["completenessPercent"],
+            expectedSampleCount=s["expectedSampleCount"],
+            actualSampleCount=s["actualSampleCount"],
+            missingParameters=s.get("missingParameters"),
+        )
+        for s in data["stages"]
+    ]
+    return ThreadCompletenessResponse(
+        vin=vin,
+        overallCompletenessPercent=data["overall_completeness_pct"],
+        meetsThreshold=data["meets_threshold"],
+        stages=stages,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
 
+
 class VinNotFoundError(Exception):
     def __init__(self, vin: str) -> None:
         super().__init__(f"VIN not found in digital thread graph: {vin!r}")
         self.vin = vin
+
+
+class Neo4jUnavailableError(Exception):
+    pass
+
+
+class Neo4jReadError(Exception):
+    pass

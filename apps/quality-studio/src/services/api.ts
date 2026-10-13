@@ -55,6 +55,29 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Gate results — called with full path /api/v1/... by useGateResults
+// ---------------------------------------------------------------------------
+
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token =
+    typeof localStorage !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
+  const headers = new Headers(options.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  if (!res.ok) {
+    throw new ApiError(res.status, (await res.text()) || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return null as T;
+  return res.json() as Promise<T>;
+}
+
+// ---------------------------------------------------------------------------
 // VIN Digital Thread endpoints
 // ---------------------------------------------------------------------------
 

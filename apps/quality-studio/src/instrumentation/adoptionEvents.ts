@@ -90,6 +90,9 @@ export function emitClusterAlertViewed(alertId: string, clusterId: string): void
     action: "CLUSTER_ALERT_VIEWED",
     alertId,
     clusterId,
+  });
+}
+
 export function emitDefectGenomeQuery(params: {
   userId: string;
   role: string;
@@ -111,6 +114,9 @@ export function emitClusterAlertAcknowledged(alertId: string, clusterId: string)
     alertId,
     clusterId,
     sessionId: _sessionId,
+  });
+}
+
 export function emitRootCauseAssigned(params: {
   userId: string;
   role: string;

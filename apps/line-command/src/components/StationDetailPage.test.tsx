@@ -260,3 +260,62 @@ describe("StationDetailPage — already-acknowledged alert", () => {
     expect(screen.queryByRole("button", { name: /Dispatch Maintenance/i })).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dispatch button — hidden while POST is in-flight (double-submit prevention)
+// ---------------------------------------------------------------------------
+
+describe("StationDetailPage — dispatch button hidden while submitting", () => {
+  it("hides Dispatch Maintenance button while acknowledgeAndonAlert is in-flight", async () => {
+    vi.spyOn(api, "getAndonAlert").mockResolvedValue(OPEN_ALERT);
+    let resolveAck!: (value: typeof ACK_RESPONSE) => void;
+    vi.spyOn(api, "acknowledgeAndonAlert").mockReturnValue(
+      new Promise<typeof ACK_RESPONSE>((res) => { resolveAck = res; }),
+    );
+    renderPage();
+    await waitFor(() =>
+      screen.getByRole("button", { name: /Dispatch Maintenance/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Dispatch Maintenance/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Yes, Dispatch/i }));
+    // while the promise is still pending the dispatch button must not be present
+    expect(screen.queryByRole("button", { name: /Dispatch Maintenance/i })).toBeNull();
+    resolveAck(ACK_RESPONSE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Threshold crossing — only shown for predictive alerts
+// ---------------------------------------------------------------------------
+
+describe("StationDetailPage — threshold crossing visibility", () => {
+  it("renders threshold-crossing marker for a predictive alert", async () => {
+    vi.spyOn(api, "getAndonAlert").mockResolvedValue(OPEN_ALERT);
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("threshold-crossing")).toBeTruthy(),
+    );
+  });
+
+  it("does not render threshold-crossing marker for a reactive alert", async () => {
+    const reactiveAlert: AndonAlertResponse = {
+      ...OPEN_ALERT,
+      alertType: "reactive",
+      minutesToPredictedFailure: null,
+    };
+    vi.spyOn(api, "getAndonAlert").mockResolvedValue(reactiveAlert);
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("weld-current-series")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("threshold-crossing")).toBeNull();
+  });
+
+  it("renders minutesToPredictedFailure countdown in the crossing marker for a predictive alert", async () => {
+    vi.spyOn(api, "getAndonAlert").mockResolvedValue(OPEN_ALERT);
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("threshold-crossing-countdown")).toBeTruthy(),
+    );
+  });
+});

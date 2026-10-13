@@ -123,11 +123,14 @@ export function StationDetailPage({ alertId, userId, onForbidden }: Props) {
 
         <WeldTraceView
           trace={alert.weldTrace}
+          alertType={alert.alertType}
+          minutesToPredictedFailure={alert.minutesToPredictedFailure}
           thresholdCrossingAt={alert.thresholdCrossingAt}
           thresholdValue={alert.thresholdValue}
           currentSeriesLabel={t("station_detail.current_series_label")}
           voltageSeriesLabel={t("station_detail.voltage_series_label")}
           thresholdCrossingLabel={t("station_detail.threshold_crossing_label")}
+          failurePredictedLabel={t("andon.minutes_until_failure", { count: alert.minutesToPredictedFailure ?? 0 })}
         />
       </section>
 
@@ -157,8 +160,8 @@ export function StationDetailPage({ alertId, userId, onForbidden }: Props) {
       )}
 
       {dispatchState === "confirming" && (
-        <div className="dispatch-confirm-dialog" role="dialog" aria-modal="true">
-          <h4>{t("station_detail.dispatch_confirm_heading")}</h4>
+        <div className="dispatch-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="dispatch-confirm-heading">
+          <h4 id="dispatch-confirm-heading">{t("station_detail.dispatch_confirm_heading")}</h4>
           <p>{t("station_detail.dispatch_confirm_body")}</p>
           <div className="dispatch-confirm-actions">
             <button
@@ -201,23 +204,34 @@ export function StationDetailPage({ alertId, userId, onForbidden }: Props) {
 
 interface WeldTraceViewProps {
   trace: AndonAlertResponse["weldTrace"];
+  alertType: AndonAlertResponse["alertType"];
+  minutesToPredictedFailure: number | null;
   thresholdCrossingAt: string;
   thresholdValue: number | null;
   currentSeriesLabel: string;
   voltageSeriesLabel: string;
   thresholdCrossingLabel: string;
+  failurePredictedLabel: string;
 }
 
 function WeldTraceView({
   trace,
+  alertType,
+  minutesToPredictedFailure,
   thresholdCrossingAt,
   thresholdValue,
   currentSeriesLabel,
   voltageSeriesLabel,
   thresholdCrossingLabel,
+  failurePredictedLabel,
 }: WeldTraceViewProps) {
+  const isPredictive = alertType === "predictive";
   return (
-    <div className="weld-trace">
+    <div
+      className="weld-trace"
+      role="img"
+      aria-label={`${currentSeriesLabel} and ${voltageSeriesLabel} — last 60 minutes${isPredictive && thresholdValue !== null ? `. Threshold ${thresholdValue} crossed at ${thresholdCrossingAt}` : ""}`}
+    >
       <div
         className="weld-trace-series"
         aria-label={currentSeriesLabel}
@@ -236,16 +250,23 @@ function WeldTraceView({
         <span className="series-label">{voltageSeriesLabel}</span>
         <span className="series-count">{trace.weld_voltage_v.length} pts</span>
       </div>
-      <div
-        className="threshold-crossing"
-        data-testid="threshold-crossing"
-        data-crossing-at={thresholdCrossingAt}
-      >
-        <span>{thresholdCrossingLabel}: {new Date(thresholdCrossingAt).toISOString()}</span>
-        {thresholdValue !== null && (
-          <span className="threshold-value"> ({thresholdValue})</span>
-        )}
-      </div>
+      {isPredictive && (
+        <div
+          className="threshold-crossing threshold-crossing--predictive"
+          data-testid="threshold-crossing"
+          data-crossing-at={thresholdCrossingAt}
+        >
+          <span>{thresholdCrossingLabel}: {new Date(thresholdCrossingAt).toISOString()}</span>
+          {thresholdValue !== null && (
+            <span className="threshold-value"> ({thresholdValue})</span>
+          )}
+          {minutesToPredictedFailure !== null && (
+            <span className="threshold-crossing-countdown" data-testid="threshold-crossing-countdown">
+              {" "}— {failurePredictedLabel}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

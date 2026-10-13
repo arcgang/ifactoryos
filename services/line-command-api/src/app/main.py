@@ -14,7 +14,9 @@ from app import __version__
 from app.health import Health, health
 from app.routers.andon_alerts import router as andon_router
 from app.routers.ar_instructions import router as ar_router
+from app.routers.ar_sessions import router as ar_sessions_router
 from app.routers.expert_calls import router as expert_calls_router
+from app.routers.handover import router as handover_router
 from app.routers.oee import router as oee_router
 from app.routers.torque import router as torque_router
 
@@ -78,9 +80,11 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(ar_router)
+    app.include_router(ar_sessions_router)
     app.include_router(oee_router)
     app.include_router(andon_router)
     app.include_router(expert_calls_router)
+    app.include_router(handover_router)
     app.include_router(torque_router)
 
     @app.get("/health", response_model=Health, tags=["Observability"])

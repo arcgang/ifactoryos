@@ -153,9 +153,13 @@ async def submit_torque_log(
     jwt_payload: dict[str, Any] = Depends(require_bearer),
     pool: Any = Depends(get_pool),
 ) -> JSONResponse:
+    from app.auth import caller_subject
     from app.config import settings
 
     idempotency_key = str(body.idempotencyKey)
+    user_id = caller_subject(jwt_payload)
+    roles: list[str] = jwt_payload.get("roles", []) or []
+    caller_role = roles[0] if roles else "unknown"
 
     async with pool.acquire() as conn:
         if await is_duplicate(conn, idempotency_key):
@@ -228,6 +232,8 @@ async def submit_torque_log(
                 spec_nm=spec_nm,
                 tolerance_nm=tolerance_nm,
                 alert_id=alert_id,
+                user_id=user_id,
+                caller_role=caller_role,
             )
         )
 
@@ -277,6 +283,8 @@ async def _async_publish_submitted(
     spec_nm: Decimal | None,
     tolerance_nm: Decimal | None,
     alert_id: str | None,
+    user_id: str = "unknown",
+    caller_role: str = "unknown",
 ) -> None:
     """Background task: publish TorqueSubmittedEvent, OoT event, AdoptionEvent.
 
@@ -314,6 +322,8 @@ async def _async_publish_submitted(
                     TOPIC_ADOPTION_EVENT,
                     {
                         "eventId": str(uuid.uuid4()),
+                        "userId": user_id,
+                        "role": caller_role,
                         "actionType": "TORQUE_LOG_SUBMITTED",
                         "vin": vin,
                         "stationId": station_id,

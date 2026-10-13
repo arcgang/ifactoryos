@@ -37,13 +37,19 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Fail fast if Neo4j is outside the EU allowlist.
     assert_eu_residency(cfg.neo4j_uri, cfg.neo4j_eu_host_allowlist)
 
+    from app.torque_consumer import start_torque_consumer
+
+    await start_torque_consumer()
+
     yield
 
     from app.db import close_pool
     from app.kafka_producer import stop_producer
+    from app.torque_consumer import stop_torque_consumer
 
     await close_pool()
     await stop_producer()
+    await stop_torque_consumer()
 
 
 def create_app() -> FastAPI:

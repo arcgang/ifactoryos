@@ -5,6 +5,7 @@ import { AndonAlert, type AndonAlertContent } from "./components/AndonAlert";
 import { ForbiddenScreen } from "./components/ForbiddenScreen";
 import { AccessRestrictedToast } from "./components/AccessRestrictedToast";
 import { ARWorkbenchPage } from "./components/ARWorkbenchPage";
+import { TorqueOutOfToleranceToast, type TorqueOotPayload } from "./components/TorqueOutOfToleranceToast";
 import { useRbac } from "./hooks/useRbac";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ export function App() {
   const [currentRoute, setCurrentRoute] = useState<Route>("command-center");
   const [showRestrictedToast, setShowRestrictedToast] = useState(false);
   const [forbiddenResource, setForbiddenResource] = useState<string | null>(null);
+  const [torqueOotAlerts, setTorqueOotAlerts] = useState<TorqueOotPayload[]>([]);
 
   // When role resolves to assembly_associate, force redirect away from blocked routes.
   // Uses functional updater so currentRoute is read from the setter, not the closure,
@@ -109,6 +111,18 @@ export function App() {
 
   const handleReturnFromForbidden = useCallback(() => {
     setForbiddenResource(null);
+  }, []);
+
+  const handleOutOfTolerance = useCallback((payload: TorqueOotPayload) => {
+    setTorqueOotAlerts((prev) => {
+      // Deduplicate by alertId — edge reconnect may replay the same event
+      if (prev.some((a) => a.alertId === payload.alertId)) return prev;
+      return [payload, ...prev];
+    });
+  }, []);
+
+  const dismissOotAlert = useCallback((alertId: string) => {
+    setTorqueOotAlerts((prev) => prev.filter((a) => a.alertId !== alertId));
   }, []);
 
   // Loading skeleton
@@ -238,11 +252,19 @@ export function App() {
               vin="WBADT43453G PLACEHOLDER"
               userId={userId}
               onForbidden={handleForbiddenFromApi}
+              onOutOfTolerance={handleOutOfTolerance}
             />
           )}
 
           {currentRoute === "command-center" && !isAssociate && (
             <>
+              {torqueOotAlerts.map((payload) => (
+                <TorqueOutOfToleranceToast
+                  key={payload.alertId}
+                  payload={payload}
+                  onAcknowledge={() => dismissOotAlert(payload.alertId)}
+                />
+              ))}
               <AndonAlert
                 content={ELECTRODE_WEAR_ALERT}
                 variant="error"

@@ -1,0 +1,44 @@
+{
+  "type": "record",
+  "name": "PlcTorqueTraceEvent",
+  "namespace": "bmw.ifos.munich.uns.torque",
+  "doc": "Beckhoff PLC torque tightening trace event — channel uns.torque.plcTrace, topic bmw.ifos.munich.uns.torque.plc-trace.v1. Data residency: EU Germany West Central. Classification: confidential.",
+  "fields": [
+    {
+      "name": "stationId",
+      "type": "string",
+      "doc": "Assembly station identifier (e.g. MARRIAGE-01, FINAL-03)"
+    },
+    {
+      "name": "vin",
+      "type": "string",
+      "doc": "17-character VIN per ISO 3779 — pattern [A-HJ-NPR-Z0-9]{17}"
+    },
+    {
+      "name": "torqueNm",
+      "type": "double",
+      "doc": "Measured torque in Newton-metres from the Beckhoff PLC"
+    },
+    {
+      "name": "angleDeg",
+      "type": "double",
+      "doc": "Measured angle in degrees from the Beckhoff PLC"
+    },
+    {
+      "name": "timestampMs",
+      "type": "long",
+      "doc": "PLC event timestamp as Unix epoch milliseconds (UTC)"
+    },
+    {
+      "name": "idempotencyKey",
+      "type": "string",
+      "doc": "Deterministic UUID v5 derived from stationId + PLC sequence number + timestampMs. Prevents duplicate records on edge-gateway retry."
+    },
+    {
+      "name": "edgeBuffered",
+      "type": "boolean",
+      "default": false,
+      "doc": "True when this event was held in the edge ring buffer and replayed after UNS reconnection (AC-b734032a)"
+    }
+  ]
+}

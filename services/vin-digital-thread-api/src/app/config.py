@@ -51,6 +51,17 @@ _settings: Any = None
 def get_settings() -> Settings:
     """Return the active Settings instance, creating it on first call.
 
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+settings = get_settings()
     Tests may set the module-level ``_settings`` to a fake before calling
     any code that uses configuration — the first non-None value wins.
     """

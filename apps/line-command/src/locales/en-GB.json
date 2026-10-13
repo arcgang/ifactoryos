@@ -111,6 +111,33 @@
     "save": "Save",
     "saved": "Settings saved."
   },
+  "torque": {
+    "indicator": {
+      "neutral_label": "Awaiting torque tightening confirmation",
+      "neutral_text": "Awaiting tightening…",
+      "in_tolerance_label": "Torque confirmed — {{torqueNm}} Nm — logged to digital thread ({{torqueLogId}})",
+      "in_tolerance_title": "Logged to Digital Thread",
+      "in_tolerance_sub": "{{torqueNm}} Nm — within tolerance ✓",
+      "log_id_label": "Log ID",
+      "oot_label": "TORQUE OUT OF TOLERANCE — {{vin}} fastener {{fastenerPointId}}: {{torqueNm}} Nm (spec {{specNm}} Nm)",
+      "oot_title": "TORQUE OUT OF TOLERANCE",
+      "oot_sub": "{{torqueNm}} Nm recorded · spec {{specNm}} Nm",
+      "alert_id_label": "Alert ID",
+      "hold_message": "HOLD — Do not proceed. Shift Lead notified.",
+      "pending_sync_label": "Pending sync — edge gateway buffering torque data",
+      "pending_sync_title": "Pending Sync",
+      "pending_sync_sub": "UNS temporarily offline. Data cached on edge gateway."
+    },
+    "oot_toast": {
+      "title": "Torque Out of Tolerance — Shift Lead Alert",
+      "vin_label": "VIN",
+      "fastener_label": "Fastener",
+      "torque_label": "Torque",
+      "spec_label": "Spec",
+      "nm_unit": "Nm",
+      "alert_id_label": "Alert ID"
+    }
+  },
   "errors": {
     "generic": "An error occurred. Please reload the page.",
     "not_found": "Page not found.",

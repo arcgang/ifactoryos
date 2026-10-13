@@ -663,7 +663,7 @@ function AlertQueueItem({ alert, serverResyncRef, onAcknowledge }: AlertCardProp
             padding: "1px 6px",
           }}
         >
-          {alert.lineId}
+          L · {alert.lineId}
         </span>
       </div>
 

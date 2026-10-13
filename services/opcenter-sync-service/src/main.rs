@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod cursor;
 mod db;
@@ -5,13 +6,15 @@ mod event_processor;
 mod kafka;
 mod metrics;
 mod models;
+mod retry_worker;
 mod routers;
 mod schema_validator;
 mod subscription;
 
 use std::sync::Arc;
 
-use axum::{routing::get, Router};
+use axum::{routing::get, routing::post, Router};
+use rdkafka::producer::FutureProducer;
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -20,6 +23,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 pub struct AppState {
     pub pool: db::DbPool,
     pub settings: Arc<config::Settings>,
+    pub producer: Arc<FutureProducer>,
 }
 
 #[tokio::main]
@@ -49,9 +53,13 @@ async fn main() -> anyhow::Result<()> {
     // Start GraphQL subscription loop (REST polling fallback spawned internally).
     subscription::spawn_subscription_loop(settings.clone(), pool.clone(), producer.clone());
 
+    // Start retry worker for queued sequence publish jobs.
+    retry_worker::spawn_retry_worker(settings.clone(), pool.clone(), producer.clone());
+
     let state = AppState {
         pool,
         settings: settings.clone(),
+        producer,
     };
 
     let app = Router::new()
@@ -61,6 +69,15 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/andon/alerts/:alert_id",
             get(routers::andon::get_andon_alert),
+        )
+        .route(
+            "/sequence/publish",
+            post(routers::sequence::publish_sequence),
+        )
+        .route("/sequence/jobs", get(routers::sequence::list_sync_jobs))
+        .route(
+            "/sequence/jobs/:sync_job_id",
+            get(routers::sequence::get_sync_job),
         )
         .route("/metrics", get(serve_metrics))
         .with_state(state);

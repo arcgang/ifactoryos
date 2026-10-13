@@ -29,6 +29,23 @@ pub struct Settings {
     // Schema Registry
     pub schema_registry_url: String,
 
+    // Sequence publish — Planning Cockpit API key (injected by Vault agent)
+    pub planning_cockpit_api_key: String,
+
+    // Immutable audit log REST endpoint
+    pub audit_log_url: String,
+
+    // JWT validation — OIDC issuer, expected audience, and RSA public key (PEM)
+    pub jwt_issuer: String,
+    pub jwt_audience: String,
+    /// RSA public key PEM for validating BMW Entra ID tokens (injected by Vault agent).
+    #[serde(default)]
+    pub jwt_public_key: String,
+
+    // Sequence publish topics
+    pub kafka_topic_sequence_published: String,
+    pub kafka_topic_sequence_publish_failed: String,
+
     // Service tuning
     #[serde(default = "default_rest_poll_interval_secs")]
     pub rest_poll_interval_secs: u64,
@@ -36,6 +53,8 @@ pub struct Settings {
     pub http_timeout_secs: u64,
     #[serde(default = "default_bind_addr")]
     pub bind_addr: String,
+    #[serde(default = "default_retry_interval_secs")]
+    pub retry_interval_secs: u64,
 }
 
 fn default_rest_poll_interval_secs() -> u64 {
@@ -46,6 +65,9 @@ fn default_http_timeout_secs() -> u64 {
 }
 fn default_bind_addr() -> String {
     "0.0.0.0:8080".to_string()
+}
+fn default_retry_interval_secs() -> u64 {
+    30
 }
 
 impl Settings {
@@ -63,5 +85,9 @@ impl Settings {
 
     pub fn rest_poll_interval(&self) -> Duration {
         Duration::from_secs(self.rest_poll_interval_secs)
+    }
+
+    pub fn retry_interval(&self) -> Duration {
+        Duration::from_secs(self.retry_interval_secs)
     }
 }

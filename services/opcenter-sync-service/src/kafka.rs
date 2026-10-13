@@ -8,6 +8,8 @@ use tracing::{error, instrument};
 
 pub const TOPIC_OEE_UPDATED: &str = "bmw.munich.opcenter.oee.updated";
 pub const TOPIC_ANDON_ALERT: &str = "bmw.munich.opcenter.andon.alert";
+pub const TOPIC_SEQUENCE_PUBLISHED: &str = "bmw.munich.opcenter.sequence.published";
+pub const TOPIC_SEQUENCE_PUBLISH_FAILED: &str = "bmw.munich.opcenter.sequence.publish_failed";
 
 /// Create the process-lifetime Kafka producer. Called once at startup.
 pub fn create_producer(settings: &Settings) -> anyhow::Result<FutureProducer> {

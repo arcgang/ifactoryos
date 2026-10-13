@@ -23,6 +23,7 @@ pub async fn run_migrations(pool: &DbPool) -> anyhow::Result<()> {
     let migrations: &[&str] = &[
         include_str!("../migrations/20261012_001_oee_snapshot.sql"),
         include_str!("../migrations/20261012_002_andon_alert.sql"),
+        include_str!("../migrations/20261012_003_sync_jobs.sql"),
     ];
     for sql in migrations {
         client.batch_execute(sql).await?;
@@ -298,6 +299,211 @@ pub async fn query_andon_alerts(
                 &id,
                 &limit,
             ],
+        )
+        .await?;
+    Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// sync_jobs — sequence publish tracking (US-004)
+// ---------------------------------------------------------------------------
+
+/// Insert a new sync_job row. Returns the generated sync_job_id.
+pub async fn insert_sync_job(
+    client: &deadpool_postgres::Client,
+    sequence_plan_id: uuid::Uuid,
+    planner_user_id: Option<&str>,
+    status: &str,
+    idempotency_key: Option<uuid::Uuid>,
+) -> anyhow::Result<uuid::Uuid> {
+    let row = client
+        .query_one(
+            "INSERT INTO sync_jobs \
+                (sequence_plan_id, planner_user_id, status, idempotency_key) \
+             VALUES ($1, $2, $3, $4) \
+             RETURNING sync_job_id",
+            &[&sequence_plan_id, &planner_user_id, &status, &idempotency_key],
+        )
+        .await?;
+    Ok(row.get(0))
+}
+
+/// Look up an existing sync_job by idempotency_key. Returns the row if found.
+pub async fn find_sync_job_by_idempotency_key(
+    client: &deadpool_postgres::Client,
+    idempotency_key: uuid::Uuid,
+) -> anyhow::Result<Option<tokio_postgres::Row>> {
+    let row = client
+        .query_opt(
+            "SELECT sync_job_id, sequence_plan_id, planner_user_id, status, source, \
+                    opcenter_sequence_id, created_at, updated_at, last_attempt_at, \
+                    next_retry_at, attempt_count, opcenter_error, published_at, audit_event_id \
+             FROM sync_jobs \
+             WHERE idempotency_key = $1",
+            &[&idempotency_key],
+        )
+        .await?;
+    Ok(row)
+}
+
+/// Check for an in-flight job for the same sequence_plan_id.
+/// Returns true when a job with status 'queued' or 'retrying' already exists.
+pub async fn has_inflight_sync_job(
+    client: &deadpool_postgres::Client,
+    sequence_plan_id: uuid::Uuid,
+) -> anyhow::Result<bool> {
+    let row = client
+        .query_one(
+            "SELECT COUNT(*) FROM sync_jobs \
+             WHERE sequence_plan_id = $1 \
+               AND status IN ('queued', 'retrying')",
+            &[&sequence_plan_id],
+        )
+        .await?;
+    let count: i64 = row.get(0);
+    Ok(count > 0)
+}
+
+/// Update a sync_job to status=published after OpCenter confirms.
+pub async fn mark_sync_job_published(
+    client: &deadpool_postgres::Client,
+    sync_job_id: uuid::Uuid,
+    opcenter_sequence_id: &str,
+    audit_event_id: Option<uuid::Uuid>,
+    published_at: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<()> {
+    client
+        .execute(
+            "UPDATE sync_jobs \
+             SET status = 'published', \
+                 opcenter_sequence_id = $2, \
+                 audit_event_id = $3, \
+                 published_at = $4, \
+                 updated_at = NOW() \
+             WHERE sync_job_id = $1",
+            &[&sync_job_id, &opcenter_sequence_id, &audit_event_id, &published_at],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Update a sync_job to status=queued with a scheduled retry time.
+pub async fn mark_sync_job_queued(
+    client: &deadpool_postgres::Client,
+    sync_job_id: uuid::Uuid,
+    next_retry_at: chrono::DateTime<chrono::Utc>,
+    opcenter_error: Option<&str>,
+) -> anyhow::Result<()> {
+    client
+        .execute(
+            "UPDATE sync_jobs \
+             SET status = 'queued', \
+                 next_retry_at = $2, \
+                 opcenter_error = $3, \
+                 last_attempt_at = NOW(), \
+                 updated_at = NOW() \
+             WHERE sync_job_id = $1",
+            &[&sync_job_id, &next_retry_at, &opcenter_error],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Update a sync_job to status=rejected_by_opcenter (terminal).
+pub async fn mark_sync_job_rejected(
+    client: &deadpool_postgres::Client,
+    sync_job_id: uuid::Uuid,
+    opcenter_error: &str,
+) -> anyhow::Result<()> {
+    client
+        .execute(
+            "UPDATE sync_jobs \
+             SET status = 'rejected_by_opcenter', \
+                 opcenter_error = $2, \
+                 last_attempt_at = NOW(), \
+                 updated_at = NOW() \
+             WHERE sync_job_id = $1",
+            &[&sync_job_id, &opcenter_error],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Atomically pick up retry-eligible jobs, set status=retrying, return them.
+/// Uses a CTE with FOR UPDATE SKIP LOCKED to avoid worker thundering-herd.
+pub async fn claim_retry_jobs(
+    client: &deadpool_postgres::Client,
+    now: chrono::DateTime<chrono::Utc>,
+    batch_size: i64,
+) -> anyhow::Result<Vec<tokio_postgres::Row>> {
+    let rows = client
+        .query(
+            "WITH candidates AS ( \
+                 SELECT sync_job_id FROM sync_jobs \
+                 WHERE status IN ('queued', 'retrying') \
+                   AND next_retry_at <= $1 \
+                 ORDER BY next_retry_at \
+                 LIMIT $2 \
+                 FOR UPDATE SKIP LOCKED \
+             ) \
+             UPDATE sync_jobs \
+             SET status = 'retrying', \
+                 attempt_count = attempt_count + 1, \
+                 last_attempt_at = NOW(), \
+                 updated_at = NOW() \
+             FROM candidates \
+             WHERE sync_jobs.sync_job_id = candidates.sync_job_id \
+             RETURNING sync_jobs.sync_job_id, sync_jobs.sequence_plan_id, \
+                       sync_jobs.planner_user_id, sync_jobs.attempt_count, \
+                       sync_jobs.idempotency_key",
+            &[&now, &batch_size],
+        )
+        .await?;
+    Ok(rows)
+}
+
+/// Fetch a single sync_job by ID.
+pub async fn get_sync_job_by_id(
+    client: &deadpool_postgres::Client,
+    sync_job_id: uuid::Uuid,
+) -> anyhow::Result<Option<tokio_postgres::Row>> {
+    let row = client
+        .query_opt(
+            "SELECT sync_job_id, sequence_plan_id, planner_user_id, status, source, \
+                    opcenter_sequence_id, created_at, updated_at, last_attempt_at, \
+                    next_retry_at, attempt_count, opcenter_error, published_at, audit_event_id \
+             FROM sync_jobs \
+             WHERE sync_job_id = $1",
+            &[&sync_job_id],
+        )
+        .await?;
+    Ok(row)
+}
+
+/// List sync_jobs with optional status filter, keyset-paginated by created_at DESC.
+pub async fn query_sync_jobs(
+    client: &deadpool_postgres::Client,
+    status_filter: Option<&str>,
+    after_cursor_ts: Option<chrono::DateTime<chrono::Utc>>,
+    after_cursor_id: Option<uuid::Uuid>,
+    limit: i64,
+) -> anyhow::Result<Vec<tokio_postgres::Row>> {
+    let sentinel_ts = chrono::DateTime::<chrono::Utc>::MAX_UTC;
+    let sentinel_id = uuid::Uuid::max();
+    let ts = after_cursor_ts.unwrap_or(sentinel_ts);
+    let id = after_cursor_id.unwrap_or(sentinel_id);
+
+    let rows = client
+        .query(
+            "SELECT sync_job_id, sequence_plan_id, planner_user_id, status, source, \
+                    opcenter_sequence_id, created_at, updated_at, last_attempt_at, \
+                    next_retry_at, attempt_count, opcenter_error, published_at, audit_event_id \
+             FROM sync_jobs \
+             WHERE ($1::TEXT IS NULL OR status = $1) \
+               AND (created_at, sync_job_id) < ($2, $3) \
+             ORDER BY created_at DESC, sync_job_id DESC \
+             LIMIT $4",
+            &[&status_filter, &ts, &id, &limit],
         )
         .await?;
     Ok(rows)

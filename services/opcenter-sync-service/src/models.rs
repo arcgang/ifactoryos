@@ -190,3 +190,119 @@ pub struct HealthResponse {
     pub last_oee_received_at: Option<String>,
     pub last_andon_received_at: Option<String>,
 }
+
+// ---------------------------------------------------------------------------
+// Sequence publish — request / response / domain types (US-004)
+// ---------------------------------------------------------------------------
+
+/// A single VIN with its production position and option codes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VinSequenceItem {
+    /// 17-character VIN matching ^[A-HJ-NPR-Z0-9]{17}$
+    pub vin: String,
+    /// 1-based position in the production sequence
+    pub position: i32,
+    pub option_codes: Vec<String>,
+}
+
+/// POST /sequence/publish request body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequencePublishRequest {
+    pub sequence_plan_id: Uuid,
+    pub vin_sequence: Vec<VinSequenceItem>,
+    /// Must equal "planning-cockpit"
+    pub source: String,
+    pub locked_at: DateTime<Utc>,
+    pub planner_user_id: Option<String>,
+    pub idempotency_key: Option<Uuid>,
+}
+
+/// POST /sequence/publish response body (202 or 200).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequencePublishResponse {
+    pub sync_job_id: Uuid,
+    pub opcenter_sequence_id: Option<String>,
+    pub status: String,
+    pub source: String,
+    pub published_at: Option<String>,
+    pub audit_event_id: Option<Uuid>,
+    pub retry_scheduled_at: Option<String>,
+}
+
+/// Sync job domain row — mirrors DB columns.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncJob {
+    pub sync_job_id: Uuid,
+    pub sequence_plan_id: Uuid,
+    pub planner_user_id: Option<String>,
+    pub status: String,
+    pub source: String,
+    pub opcenter_sequence_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_attempt_at: Option<DateTime<Utc>>,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub attempt_count: i32,
+    pub opcenter_error: Option<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub audit_event_id: Option<Uuid>,
+}
+
+/// GET /sequence/jobs list response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncJobListResponse {
+    pub data: Vec<SyncJobResponse>,
+    pub page: CursorPage,
+}
+
+/// SyncJob shape exposed in the API (matches LLD SyncJob schema).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncJobResponse {
+    pub sync_job_id: Uuid,
+    pub sequence_plan_id: Uuid,
+    pub planner_user_id: Option<String>,
+    pub status: String,
+    pub source: Option<String>,
+    pub opcenter_sequence_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_attempt_at: Option<String>,
+    pub next_retry_at: Option<String>,
+    pub attempt_count: i32,
+    pub opcenter_error: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Kafka event payloads for sequence publish / publish-failed (AsyncAPI)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequencePublishedEvent {
+    pub event_id: Uuid,
+    pub event_type: String,
+    pub sync_job_id: Uuid,
+    pub sequence_plan_id: Uuid,
+    pub opcenter_sequence_id: String,
+    pub source: String,
+    pub published_at: String,
+    pub correlation_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequencePublishFailedEvent {
+    pub event_id: Uuid,
+    pub event_type: String,
+    pub sync_job_id: Uuid,
+    pub sequence_plan_id: Uuid,
+    pub status: String,
+    pub opcenter_error: Option<String>,
+    pub retry_scheduled_at: Option<String>,
+    pub correlation_id: Uuid,
+}

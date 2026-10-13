@@ -101,12 +101,10 @@ function renderInstructions(
 
 beforeEach(async () => {
   await i18n.changeLanguage("en-GB");
-  vi.useFakeTimers();
 });
 
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
@@ -383,6 +381,9 @@ describe("State: fallback — 504 response", () => {
 // ---------------------------------------------------------------------------
 
 describe("State: fallback — client-side 10 s timeout", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("shows fallback panel when 10 s elapses with no response", async () => {
     const neverResolves = () => new Promise<ArInstructionResponse>(() => {/* never */});
     renderInstructions(neverResolves);

@@ -121,12 +121,18 @@ beforeEach(() => {
   FakeEventSource.last = null;
   (globalThis as unknown as Record<string, unknown>).EventSource = FakeEventSource;
 
-  vi.spyOn(globalThis, "fetch").mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(MOCK_THRESHOLDS),
-    text: () => Promise.resolve(""),
-  } as Response);
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    const body = url.includes("/alerts")
+      ? { data: [], page: { next_cursor: null, limit: 50 } }
+      : MOCK_THRESHOLDS;
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(""),
+    } as Response);
+  });
 });
 
 // ── Acceptance tests ──────────────────────────────────────────────────────────

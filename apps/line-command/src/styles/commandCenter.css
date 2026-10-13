@@ -1,0 +1,47 @@
+/* ── Line Command design tokens ── */
+:root {
+  --lc-bg: #0b0d14;
+  --lc-surface: #13151f;
+  --lc-card: #1a1d2a;
+  --lc-card-alt: #1f2231;
+  --lc-border: #272b3d;
+  --lc-border-light: #32374f;
+  --lc-bmw-blue: #0066b1;
+  --lc-accent: #1a8fff;
+  --lc-text: #eef1ff;
+  --lc-text-muted: #7b83a3;
+  --lc-text-dim: #4a5070;
+  --lc-good: #22c55e;
+  --lc-warn: #f59e0b;
+  --lc-crit: #ef4444;
+  --lc-advisory: #60a5fa;
+  --lc-badge-new: #7c3aed;
+
+  /* z-index scale (shared with other line-command panels) */
+  --lc-z-topbar: 100;
+  --lc-z-sidenav: 90;
+  --lc-z-modal: 200;
+}
+
+/* ── Skeleton shimmer animation ── */
+@keyframes lc-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Live-indicator pulse animation ── */
+@keyframes lc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Reduced-motion overrides ── */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes lc-shimmer {
+    0%, 100% { background-position: 0 0; }
+  }
+
+  @keyframes lc-pulse {
+    0%, 100% { opacity: 1; }
+  }
+}

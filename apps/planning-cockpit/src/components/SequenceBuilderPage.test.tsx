@@ -403,7 +403,7 @@ describe("SequenceBuilderPage — publish to OpCenter", () => {
     });
 
     expect(screen.getByText("OPC-SEQ-2026-042-A-88142")).toBeTruthy();
-    expect(screen.getByText("2026-10-13T06:17:38Z")).toBeTruthy();
+    expect(screen.getByText("2026-10-13T06:17:38.000Z")).toBeTruthy();
     expect(
       screen.getByRole("heading", { name: /successfully published to siemens opcenter/i }),
     ).toBeTruthy();

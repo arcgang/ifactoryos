@@ -3,11 +3,14 @@
 # Receives:
 #   - OTLP gRPC from planning-cockpit (port 4317, TLS 1.3)
 #   - Kafka messages from line-command adoption topic (factory.munich.line-command.adoption.v1)
+#   - Kafka messages from quality-studio adoption topic (uns.munich.i4.adoption.events)
+#   - Kafka messages from Fabric certificate topic (bmw.ifos.munich.fabric.certificate.issued.v1)
 # Routes to Azure Monitor Log Analytics workspace law-ifos-euwe-pr
 # via the azuremonitor exporter (adoptionevent table).
 #
 # Realises: US-019 · BR-12 (planning-cockpit)
 #           US-020 · BR-12 (line-command)
+#           US-021 · BR-12 (quality-studio WAU + A7 certificate metric)
 # NFR-18: 13-month retention applied at LAW table level (see main.tf).
 
 receivers:
@@ -40,6 +43,51 @@ receivers:
         key_file: /etc/otel/tls/tls.key
     encoding: json
     # Retry on transient broker errors; do not discard messages.
+    initial_offset: latest
+
+  # Kafka receiver — quality-studio AdoptionEvent messages (US-021 · BR-12).
+  # Consumer group observability-adoption-consumer per architecture spec.
+  # Meaningful actions: PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED,
+  # CERTIFY, CERTIFICATE_STUDIO_OPEN. LOGIN events also consumed so login-only sessions
+  # can be identified and excluded from WAU at the KQL layer.
+  # Credentials injected via otel-collector-azmon-credentials secret (Vault agent).
+  kafka/quality_studio_adoption:
+    brokers:
+      - uns-kafka-bootstrap.confluent.svc.cluster.local:9092
+    topic: uns.munich.i4.adoption.events
+    group_id: observability-adoption-consumer
+    auth:
+      sasl:
+        username: "${KAFKA_QS_SASL_USERNAME}"
+        password: "${KAFKA_QS_SASL_PASSWORD}"
+        mechanism: SCRAM-SHA-512
+      tls:
+        ca_file: /etc/otel/tls/ca.crt
+        cert_file: /etc/otel/tls/tls.crt
+        key_file: /etc/otel/tls/tls.key
+    encoding: json
+    initial_offset: latest
+
+  # Kafka receiver — CertificateIssuedEvent (evt:bmw.ifos.munich.fabric.certificate.issued.v1).
+  # Consumer group observability-certificate-consumer.
+  # Fields consumed: fabricTransactionId, sourceSystem, vin, issuedAt, sessionId.
+  # A7 = count(sourceSystem='quality-studio') / count(*) over the measurement window.
+  # Credentials injected via otel-collector-azmon-credentials secret (Vault agent).
+  kafka/fabric_certificate_issued:
+    brokers:
+      - uns-kafka-bootstrap.confluent.svc.cluster.local:9092
+    topic: bmw.ifos.munich.fabric.certificate.issued.v1
+    group_id: observability-certificate-consumer
+    auth:
+      sasl:
+        username: "${KAFKA_CERT_SASL_USERNAME}"
+        password: "${KAFKA_CERT_SASL_PASSWORD}"
+        mechanism: SCRAM-SHA-512
+      tls:
+        ca_file: /etc/otel/tls/ca.crt
+        cert_file: /etc/otel/tls/tls.crt
+        key_file: /etc/otel/tls/tls.key
+    encoding: json
     initial_offset: latest
 
 processors:
@@ -100,6 +148,36 @@ processors:
         value: line-command
         action: upsert
 
+  resource/label_quality_studio:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: service.name
+        value: quality-studio
+        action: upsert
+      - key: plant
+        value: munich
+        action: upsert
+      - key: component
+        value: quality-studio
+        action: upsert
+
+  resource/label_fabric_certificate:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: service.name
+        value: hyperledger-fabric-api
+        action: upsert
+      - key: plant
+        value: munich
+        action: upsert
+      - key: component
+        value: hyperledger-fabric-api
+        action: upsert
+
   # Filter: planning-cockpit adoption events only.
   filter/planning_cockpit_adoption:
     spans:
@@ -118,6 +196,25 @@ processors:
         match_type: regexp
         body:
           value: ".*"  # pass all; KQL enforces meaningful-action vs login-only rule
+
+  # Filter: quality-studio adoption events — all action types pass through
+  # (including LOGIN) so the KQL layer can apply the login-only exclusion rule.
+  # Meaningful actions: PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED,
+  # CERTIFY, CERTIFICATE_STUDIO_OPEN.
+  filter/quality_studio_adoption:
+    logs:
+      include:
+        match_type: regexp
+        body:
+          value: ".*"  # pass all; KQL enforces meaningful-action vs login-only rule
+
+  # Filter: CertificateIssuedEvent — pass all fields for A7 cross-reference.
+  filter/fabric_certificate_issued:
+    logs:
+      include:
+        match_type: regexp
+        body:
+          value: ".*"  # pass all certificate events for A7 calculation
 
 exporters:
   # Azure Monitor — Log Analytics workspace law-ifos-euwe-pr
@@ -143,6 +240,16 @@ service:
     logs/line_command:
       receivers:  [kafka/line_command_adoption]
       processors: [batch, attributes/redact_pii, resource/label_line_command, filter/line_command_adoption]
+      exporters:  [azuremonitor]
+    # Quality-studio Kafka JSON logs → AdoptionEvent_CL (US-021 · BR-12)
+    logs/quality_studio:
+      receivers:  [kafka/quality_studio_adoption]
+      processors: [batch, attributes/redact_pii, resource/label_quality_studio, filter/quality_studio_adoption]
+      exporters:  [azuremonitor]
+    # Fabric CertificateIssuedEvent Kafka JSON logs → AdoptionEvent_CL (A7 metric)
+    logs/fabric_certificate:
+      receivers:  [kafka/fabric_certificate_issued]
+      processors: [batch, attributes/redact_pii, resource/label_fabric_certificate, filter/fabric_certificate_issued]
       exporters:  [azuremonitor]
     metrics:
       receivers:  [otlp]

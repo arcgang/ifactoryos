@@ -1,20 +1,18 @@
-"""Integration tests for Line Command WAU login-only session exclusion (US-020 · BR-12).
+"""Integration tests for WAU login-only session exclusion (US-020 · US-021 · BR-12).
 
-These tests verify the WAU calculation rule implemented in the KQL saved searches
-`line_command_shift_lead_wau` and `line_command_associate_wau`.
+These tests verify the WAU calculation rule implemented in the KQL saved searches:
+  - line_command_shift_lead_wau / line_command_associate_wau (US-020)
+  - quality_studio_paint_engineer_wau / quality_studio_quality_validator_wau (US-021)
 
-The Python function `compute_line_command_wau` mirrors the KQL logic exactly so
-that the tests act as a runnable specification against which the KQL can be
-verified.  The rule under test:
+The Python functions mirror the KQL logic exactly so that the tests act as a
+runnable specification against which the KQL can be verified.  The rule under test:
 
   A user-day counts as active only when at least one AdoptionEvent for that
-  userId on that calendar day has actionType IN
-  ('ALERT_ACKNOWLEDGED', 'HANDOVER_SUBMITTED', 'AR_SESSION_STARTED',
-   'TORQUE_LOG_SUBMITTED').
+  userId on that calendar day has actionType IN the meaningful-action set.
 
-  Sessions where the only recorded event is a kiosk login (no meaningful-action
+  Sessions where the only recorded event is a LOGIN (no meaningful-action
   AdoptionEvent within the session window) are excluded from the weekly active
-  user count (US-020 AC-19b649cd).
+  user count (US-020 AC-19b649cd; US-021 AC2).
 
 Acceptance criteria verified here:
   (a) A session with only a LOGIN event → WAU contribution of 0 for that user-day.
@@ -37,12 +35,25 @@ import pytest
 # WAU calculation — Python mirror of the KQL saved queries
 # ---------------------------------------------------------------------------
 
-MEANINGFUL_ACTIONS: frozenset[str] = frozenset(
+LINE_COMMAND_MEANINGFUL_ACTIONS: frozenset[str] = frozenset(
     [
         "ALERT_ACKNOWLEDGED",
         "HANDOVER_SUBMITTED",
         "AR_SESSION_STARTED",
         "TORQUE_LOG_SUBMITTED",
+    ]
+)
+
+# Kept as an alias so existing code referencing MEANINGFUL_ACTIONS still works.
+MEANINGFUL_ACTIONS: frozenset[str] = LINE_COMMAND_MEANINGFUL_ACTIONS
+
+QUALITY_STUDIO_MEANINGFUL_ACTIONS: frozenset[str] = frozenset(
+    [
+        "PROCESS_REPLAY_LAUNCH",
+        "DEFECT_GENOME_QUERY",
+        "ROOT_CAUSE_ASSIGNED",
+        "CERTIFY",
+        "CERTIFICATE_STUDIO_OPEN",
     ]
 )
 
@@ -418,3 +429,296 @@ class TestMultiWeek:
         assert wau.get(week_46, 0) == 1, (
             f"W46 should have WAU=1; got {wau.get(week_46)}"
         )
+
+
+# ===========================================================================
+# Quality Studio WAU — US-021 · BR-12
+# ===========================================================================
+
+def compute_quality_studio_wau(
+    events: list[dict[str, Any]],
+    role_filter: str,
+    window_start: str,
+    window_end: str,
+) -> dict[tuple[int, int], int]:
+    """Compute WAU per ISO calendar week for a Quality Studio persona.
+
+    Mirrors the KQL queries quality_studio_paint_engineer_wau and
+    quality_studio_quality_validator_wau.
+
+    Args:
+        events: List of AdoptionEvent dicts with fields:
+                component, actionType, userId, role, timestamp (ISO 8601 UTC).
+        role_filter: 'PAINT_ENGINEER' or 'QUALITY_GATE_VALIDATOR'.
+        window_start: ISO 8601 date string (inclusive).
+        window_end:   ISO 8601 date string (inclusive).
+
+    Returns:
+        Dict mapping (iso_year, iso_week) → distinct active user count.
+        A user is active in a week only if they have ≥1 meaningful action on
+        at least one day that week.  Login-only days do not count.
+    """
+    ws_dt = datetime.fromisoformat(window_start).replace(tzinfo=timezone.utc)
+    we_dt = datetime.fromisoformat(window_end).replace(tzinfo=timezone.utc)
+
+    # UTC+1 offset for Europe/Berlin in November (standard time)
+    berlin_offset = timedelta(hours=1)
+
+    user_day_meaningful: dict[tuple[str, str], bool] = defaultdict(bool)
+
+    for evt in events:
+        if evt.get("component") != "quality-studio":
+            continue
+        if evt.get("role") != role_filter:
+            continue
+        ts = evt.get("timestamp", "")
+        dt_utc = datetime.fromisoformat(ts.rstrip("Z")).replace(tzinfo=timezone.utc)
+        if dt_utc < ws_dt or dt_utc > we_dt:
+            continue
+
+        user_id = evt["userId"]
+        # Bucket by Berlin calendar day (UTC+1 in November)
+        dt_berlin = dt_utc + berlin_offset
+        day_key = dt_berlin.strftime("%Y-%m-%d")
+        action = evt.get("actionType", "")
+        if action in QUALITY_STUDIO_MEANINGFUL_ACTIONS:
+            user_day_meaningful[(user_id, day_key)] = True
+        else:
+            if (user_id, day_key) not in user_day_meaningful:
+                user_day_meaningful[(user_id, day_key)] = False
+
+    week_users: dict[tuple[int, int], set[str]] = defaultdict(set)
+    for (user_id, day_key), had_meaningful in user_day_meaningful.items():
+        if had_meaningful:
+            week_key = _iso_to_week_key(day_key + "T00:00:00Z")
+            week_users[week_key].add(user_id)
+
+    return {week: len(users) for week, users in week_users.items()}
+
+
+def _make_qs_event(
+    user_id: str,
+    action: str,
+    timestamp: str,
+    role: str = "PAINT_ENGINEER",
+    component: str = "quality-studio",
+) -> dict[str, Any]:
+    return {
+        "userId": user_id,
+        "role": role,
+        "actionType": action,
+        "timestamp": timestamp,
+        "component": component,
+        "vin": "WBY73CF080NCH14427",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Quality Studio: login-only session exclusion (US-021 AC2)
+# ---------------------------------------------------------------------------
+
+
+class TestQualityStudioLoginOnlyExclusion:
+    def test_login_only_session_contributes_zero_wau(self) -> None:
+        """A quality-studio user with only LOGIN on a day is NOT counted as active."""
+        events = [_make_qs_event("qs-001", "LOGIN", _DAY_1)]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        assert sum(wau.values()) == 0, (
+            f"Expected WAU=0 for login-only session; got {wau}"
+        )
+
+    def test_multiple_logins_same_day_still_zero_wau(self) -> None:
+        """Multiple LOGINs in a single quality-studio day produce WAU=0."""
+        events = [
+            _make_qs_event("qs-001", "LOGIN", _DAY_1),
+            _make_qs_event("qs-001", "LOGIN", _DAY_1),
+            _make_qs_event("qs-002", "LOGIN", _DAY_1),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        assert sum(wau.values()) == 0
+
+    def test_login_only_different_users_different_days_still_zero(self) -> None:
+        """Login-only sessions across multiple quality-studio users and days → WAU=0."""
+        events = [
+            _make_qs_event("qs-001", "LOGIN", _DAY_1),
+            _make_qs_event("qs-002", "LOGIN", _DAY_2),
+            _make_qs_event("qs-003", "LOGIN", _DAY_3),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        assert sum(wau.values()) == 0
+
+
+# ---------------------------------------------------------------------------
+# Quality Studio: meaningful action inclusion
+# ---------------------------------------------------------------------------
+
+
+class TestQualityStudioMeaningfulActionInclusion:
+    @pytest.mark.parametrize(
+        "action",
+        [
+            "PROCESS_REPLAY_LAUNCH",
+            "DEFECT_GENOME_QUERY",
+            "ROOT_CAUSE_ASSIGNED",
+            "CERTIFY",
+            "CERTIFICATE_STUDIO_OPEN",
+        ],
+    )
+    def test_each_meaningful_action_produces_wau_1(self, action: str) -> None:
+        """Each individual Quality Studio meaningful action counts the user as active."""
+        events = [_make_qs_event("qs-001", action, _DAY_1)]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        week_key = _iso_to_week_key(_DAY_1)
+        assert wau.get(week_key, 0) == 1, (
+            f"Expected WAU=1 for action={action!r}; got {wau}"
+        )
+
+    def test_login_plus_meaningful_action_counts_as_active(self) -> None:
+        """A session starting with LOGIN then a meaningful action counts as active."""
+        events = [
+            _make_qs_event("qs-001", "LOGIN", _DAY_1),
+            _make_qs_event("qs-001", "CERTIFY", _DAY_1),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        week_key = _iso_to_week_key(_DAY_1)
+        assert wau.get(week_key, 0) == 1
+
+    def test_two_users_both_active_counts_as_wau_2(self) -> None:
+        """Two distinct quality-studio users each with a meaningful action → WAU=2."""
+        events = [
+            _make_qs_event("qs-001", "PROCESS_REPLAY_LAUNCH", _DAY_1),
+            _make_qs_event("qs-002", "DEFECT_GENOME_QUERY", _DAY_2),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        week_key = _iso_to_week_key(_DAY_1)
+        assert wau.get(week_key, 0) == 2
+
+    def test_same_user_multiple_meaningful_actions_same_week_counts_once(self) -> None:
+        """A single quality-studio user with multiple actions in a week is counted once."""
+        events = [
+            _make_qs_event("qs-001", "PROCESS_REPLAY_LAUNCH", _DAY_1),
+            _make_qs_event("qs-001", "CERTIFY", _DAY_2),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        week_key = _iso_to_week_key(_DAY_1)
+        assert wau.get(week_key, 0) == 1
+
+
+# ---------------------------------------------------------------------------
+# Quality Studio: role filtering — PAINT_ENGINEER vs QUALITY_GATE_VALIDATOR
+# ---------------------------------------------------------------------------
+
+
+class TestQualityStudioRoleFiltering:
+    def test_paint_engineer_events_not_counted_for_quality_validator(self) -> None:
+        """PAINT_ENGINEER events must not appear in QUALITY_GATE_VALIDATOR WAU."""
+        events = [
+            _make_qs_event("qs-001", "CERTIFY", _DAY_1, role="PAINT_ENGINEER"),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "QUALITY_GATE_VALIDATOR", _WINDOW_START, _WINDOW_END
+        )
+        assert sum(wau.values()) == 0
+
+    def test_quality_validator_events_not_counted_for_paint_engineer(self) -> None:
+        """QUALITY_GATE_VALIDATOR events must not appear in PAINT_ENGINEER WAU."""
+        events = [
+            _make_qs_event(
+                "qs-001", "CERTIFY", _DAY_1, role="QUALITY_GATE_VALIDATOR"
+            ),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        assert sum(wau.values()) == 0
+
+    def test_mixed_roles_counted_independently(self) -> None:
+        """Paint engineer and quality validator events produce separate WAU counts."""
+        events = [
+            _make_qs_event("pe-001", "PROCESS_REPLAY_LAUNCH", _DAY_1, role="PAINT_ENGINEER"),
+            _make_qs_event("qv-001", "CERTIFY", _DAY_1, role="QUALITY_GATE_VALIDATOR"),
+            _make_qs_event("qv-002", "CERTIFICATE_STUDIO_OPEN", _DAY_2, role="QUALITY_GATE_VALIDATOR"),
+        ]
+        week_key = _iso_to_week_key(_DAY_1)
+        pe_wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        qv_wau = compute_quality_studio_wau(
+            events, "QUALITY_GATE_VALIDATOR", _WINDOW_START, _WINDOW_END
+        )
+        assert pe_wau.get(week_key, 0) == 1
+        assert qv_wau.get(week_key, 0) == 2
+
+
+# ---------------------------------------------------------------------------
+# Quality Studio: login-only week exclusion across multiple weeks
+# ---------------------------------------------------------------------------
+
+
+class TestQualityStudioMultiWeek:
+    def test_login_only_week_not_in_wau(self) -> None:
+        """A quality-studio user logs in on W45 (no action) and acts on W46 — W45=0."""
+        events = [
+            _make_qs_event("qs-001", "LOGIN", _DAY_1),            # W45 — login only
+            _make_qs_event("qs-001", "CERTIFY", _DAY_3),           # W46 — meaningful
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        week_45 = _iso_to_week_key(_DAY_1)
+        week_46 = _iso_to_week_key(_DAY_3)
+        assert wau.get(week_45, 0) == 0, (
+            f"W45 should have WAU=0 (login-only); got {wau.get(week_45)}"
+        )
+        assert wau.get(week_46, 0) == 1, (
+            f"W46 should have WAU=1; got {wau.get(week_46)}"
+        )
+
+    def test_active_in_two_separate_weeks_produces_two_entries(self) -> None:
+        """A quality-studio user with a meaningful action in each of two weeks appears in both."""
+        events = [
+            _make_qs_event("qs-001", "PROCESS_REPLAY_LAUNCH", _DAY_1),  # W45
+            _make_qs_event("qs-001", "DEFECT_GENOME_QUERY", _DAY_3),    # W46
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        assert len(wau) == 2
+        for count in wau.values():
+            assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# Quality Studio: component isolation — quality-studio events only
+# ---------------------------------------------------------------------------
+
+
+class TestQualityStudioComponentFiltering:
+    def test_line_command_events_ignored_by_quality_studio_wau(self) -> None:
+        """Events from component='line-command' must not appear in quality-studio WAU."""
+        events = [
+            _make_qs_event(
+                "qs-001",
+                "CERTIFY",
+                _DAY_1,
+                component="line-command",
+            ),
+        ]
+        wau = compute_quality_studio_wau(
+            events, "PAINT_ENGINEER", _WINDOW_START, _WINDOW_END
+        )
+        assert sum(wau.values()) == 0

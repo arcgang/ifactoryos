@@ -11,13 +11,15 @@ import { ProcessReplayPage } from "./components/ProcessReplayPage";
 import { ClusterAlertPanel } from "./components/ClusterAlertPanel";
 import { AlertDetailView } from "./components/AlertDetailView";
 import { DefectGenomePage } from "./components/DefectGenomePage";
+import { CertificateStudioPage } from "./components/CertificateStudioPage";
 
 type Route =
   | { page: "dashboard" }
   | { page: "replay"; vin: string }
   | { page: "alertDetail"; alertId: string }
   | { page: "gateCommand" }
-  | { page: "defectGenome" };
+  | { page: "defectGenome" }
+  | { page: "certificateStudio"; certificateId: string };
 
 // Mock OIDC context — in production this comes from the BMW Entra ID provider
 const MOCK_USER_ID = "kb-entra-001";
@@ -131,6 +133,19 @@ function QualityStudioShell() {
     );
   }
 
+  if (route.page === "certificateStudio") {
+    return (
+      <main>
+        <Suspense fallback={<p>{t("certificateStudio.loading")}</p>}>
+          <CertificateStudioPage
+            certificateId={route.certificateId}
+            onBack={() => navigate({ page: "dashboard" })}
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
   return (
     <main>
       <h1>{t("app.title")}</h1>
@@ -179,7 +194,21 @@ function QualityStudioShell() {
               {t("nav.gateCommand")}
             </button>
           </li>
-          <li>{t("nav.certificateStudio")}</li>
+          <li>
+            <button
+              type="button"
+              onClick={() =>
+                navigate({
+                  page: "certificateStudio",
+                  certificateId: "00000000-0000-0000-0000-000000000001",
+                })
+              }
+              aria-current={route.page === "certificateStudio" ? "page" : undefined}
+              data-testid="nav-certificate-studio"
+            >
+              {t("nav.certificateStudio")}
+            </button>
+          </li>
         </ul>
       </nav>
 

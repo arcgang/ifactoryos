@@ -1,5 +1,6 @@
--- Migration: create fabric_certificate
--- Mirrors Fabric ledger anchors as a queryable local store.
+-- Migration: 20261013_002_fabric_certificate
+-- Mirrors every anchored Digital Birth Certificate for queryable operational use.
+-- The Fabric ledger is the tamper-evident anchor; this table serves list/filter/export.
 -- Retained 7 years per EU Battery Passport compliance and immutable-audit-log policy.
 -- sourceSystem column enables A7 metric (≥90% certs via quality-studio).
 
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS fabric_certificate (
 
 COMMENT ON TABLE fabric_certificate IS 'data_residency=eu-germany-west-central classification=confidential retain=7y';
 
+-- Shift export: filter by shift_id with recency ordering
 CREATE INDEX IF NOT EXISTS idx_fabric_certificate_vin
     ON fabric_certificate (vin);
 

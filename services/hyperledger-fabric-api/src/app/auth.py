@@ -1,4 +1,9 @@
-"""JWT bearer authentication and RBAC enforcement for hyperledger-fabric-api."""
+"""JWT Bearer authentication and role enforcement for hyperledger-fabric-api.
+
+BMW Entra ID OIDC tokens are validated here. Two roles are enforced:
+  - CERTIFICATE_ISSUER: required for POST /certificate/issue
+  - CERTIFICATE_READER: required for GET /certificates, GET /certificate/{id}, GET /certificate/{id}/verify
+"""
 
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     certificate_issuer_role: str = "CERTIFICATE_ISSUER"
     certificate_reader_role: str = "CERTIFICATE_READER"
 
-    # PostgreSQL (Citus)
+    # PostgreSQL (Citus) — mirrored certificate store
     citus_url: str = "postgresql://postgres:local@localhost:5434/app"
 
     # Kafka
@@ -24,13 +24,16 @@ class Settings(BaseSettings):
     kafka_sasl_username: str = ""
     kafka_sasl_password: str = ""
 
-    # Hyperledger Fabric peer
+    # Hyperledger Fabric — injected by Vault agent at pod startup
     fabric_peer_endpoint: str = "localhost:7051"
     fabric_tls_cert_path: str = "/var/run/secrets/fabric/tls.crt"
     fabric_client_cert_path: str = "/var/run/secrets/fabric/client.crt"
     fabric_client_key_path: str = "/var/run/secrets/fabric/client.key"
-    fabric_channel_name: str = "mychannel"
+    fabric_channel_name: str = "certificate-channel"
     fabric_chaincode_name: str = "certificate"
+    fabric_msp_id: str = "quality-studio-fabric-client"
+
+    # Fabric commit timeout (55 s — leaves 5 s buffer against the 60 s SLA)
     fabric_transaction_timeout_seconds: float = 55.0
 
 

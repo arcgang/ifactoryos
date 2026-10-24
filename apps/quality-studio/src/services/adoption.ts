@@ -12,7 +12,8 @@ const OTLP_ENDPOINT =
 
 export type AdoptionAction =
   | "GATE_COMMAND_OPEN"
-  | "CERTIFY";
+  | "CERTIFY"
+  | "CERTIFICATE_STUDIO_OPEN";
 
 export interface AdoptionEvent {
   userId: string;

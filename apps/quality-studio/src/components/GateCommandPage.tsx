@@ -9,16 +9,21 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  certifyVehicle,
+  issueCertificate,
   getOverrideStatus,
   submitOverrideRequest,
 } from "../services/api";
 import type {
   CertifyResponse,
+  CertificateIssueResponse,
+  GateResult,
   GateResultRecord,
   GateType,
   HealthScore,
   PerGateResult,
+  StationCode,
+  StationResult,
+  GateResultSnapshot,
 } from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 import { ALL_GATE_TYPES, useGateResults } from "../hooks/useGateResults";
@@ -46,6 +51,55 @@ const GATE_ICON: Record<GateType, string> = {
 };
 
 const OVERRIDE_POLL_MS = 5_000;
+
+const GATE_TYPE_TO_STATION_CODE: Record<GateType, StationCode> = {
+  dimensional: "DIM",
+  leak: "LEAK",
+  electrical: "ELEC",
+  nvh: "NVH",
+  adas: "ADAS",
+};
+
+const GATE_RESULT_TO_STATION_RESULT: Record<GateResult, StationResult> = {
+  pass: "PASS",
+  conditional_pass: "CONDITIONAL",
+  fail: "FAIL",
+};
+
+async function computeSha256Hex(payload: string): Promise<string> {
+  const encoded = new TextEncoder().encode(payload);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function generateUuid(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function buildGateResultSnapshot(
+  results: GateResultRecord[],
+  gateId: string,
+): GateResultSnapshot {
+  return {
+    gateId,
+    stationResults: results.map((r) => ({
+      stationCode: GATE_TYPE_TO_STATION_CODE[r.gateType],
+      result: GATE_RESULT_TO_STATION_RESULT[r.result],
+      details:
+        r.measurements.length > 0
+          ? `${r.measurements[0].name}: ${r.measurements[0].value} ${r.measurements[0].unit}`
+          : undefined,
+    })),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Health score computation
@@ -831,6 +885,173 @@ export function CertificateStudioPanel({ cert }: CertificateStudioPanelProps) {
 }
 
 // ---------------------------------------------------------------------------
+// CertificateDetailCard — shown after successful issueCertificate call
+// ---------------------------------------------------------------------------
+
+interface CertificateDetailCardProps {
+  response: CertificateIssueResponse;
+  vin: string;
+  validatorId: string;
+  issuedAt: string;
+  gateResultSnapshot: GateResultSnapshot;
+  healthScore: number;
+  onVerify?: () => void;
+}
+
+export function CertificateDetailCard({
+  response,
+  vin,
+  validatorId,
+  issuedAt,
+  gateResultSnapshot,
+  healthScore,
+  onVerify,
+}: CertificateDetailCardProps) {
+  const { t } = useTranslation();
+
+  return (
+    <section
+      className="qs-cert-detail-card"
+      aria-labelledby="cert-detail-heading"
+      data-testid="certificate-detail-card"
+    >
+      <header className="qs-cert-detail-header">
+        <span className="qs-cert-detail-icon" aria-hidden="true">✓</span>
+        <div className="qs-cert-detail-header-main">
+          <h2 id="cert-detail-heading" className="qs-cert-detail-title">
+            {t("certificateStudio.digitalBirthCertificate")}
+          </h2>
+          <p className="qs-cert-detail-subtitle">
+            {response.idempotent
+              ? t("certificateStudio.idempotentReplay")
+              : t("certificateStudio.anchoredSuccess")}
+          </p>
+        </div>
+        <span
+          className="qs-cert-status-pill"
+          aria-label={t("certificateStudio.anchoredStatus")}
+        >
+          {t("certificateStudio.anchored")}
+        </span>
+      </header>
+
+      <dl className="qs-cert-detail-fields">
+        <div className="qs-cert-detail-field">
+          <dt>{t("gateCommand.vinLabel")}</dt>
+          <dd className="qs-cert-detail-mono" data-testid="cert-detail-vin">
+            {vin}
+          </dd>
+        </div>
+        <div className="qs-cert-detail-field">
+          <dt>{t("certificateStudio.certificateId")}</dt>
+          <dd className="qs-cert-detail-mono" data-testid="cert-detail-id">
+            {response.certificateId}
+          </dd>
+        </div>
+        <div className="qs-cert-detail-field">
+          <dt>{t("certificateStudio.issuedAt")}</dt>
+          <dd data-testid="cert-detail-issued-at">
+            {new Date(issuedAt).toISOString()}
+          </dd>
+        </div>
+        <div className="qs-cert-detail-field">
+          <dt>{t("certificateStudio.anchoredAt")}</dt>
+          <dd data-testid="cert-detail-anchored-at">
+            {new Date(response.anchoredAt).toISOString()}
+          </dd>
+        </div>
+        <div className="qs-cert-detail-field">
+          <dt>{t("gateCommand.validatorId")}</dt>
+          <dd data-testid="cert-detail-validator">{validatorId}</dd>
+        </div>
+        <div className="qs-cert-detail-field">
+          <dt>{t("gateCommand.healthScore")}</dt>
+          <dd data-testid="cert-detail-health-score">{healthScore.toFixed(1)}</dd>
+        </div>
+      </dl>
+
+      <div
+        className="qs-cert-detail-fabric-block"
+        aria-label={t("certificateStudio.fabricAnchorDetails")}
+      >
+        <h3 className="qs-cert-detail-fabric-title">
+          {t("certificateStudio.fabricAnchor")}
+        </h3>
+        <div className="qs-cert-detail-fabric-row">
+          <span className="qs-cert-detail-fabric-key">
+            {t("certificateStudio.fabricTransactionId")}
+          </span>
+          <code
+            className="qs-cert-detail-fabric-val"
+            data-testid="cert-detail-fabric-tx-id"
+          >
+            {response.fabricTransactionId}
+          </code>
+        </div>
+        <div className="qs-cert-detail-fabric-row">
+          <span className="qs-cert-detail-fabric-key">
+            {t("certificateStudio.fabricBlockNumber")}
+          </span>
+          <code
+            className="qs-cert-detail-fabric-val"
+            data-testid="cert-detail-fabric-block"
+          >
+            {response.fabricBlockNumber}
+          </code>
+        </div>
+        <div className="qs-cert-detail-fabric-row">
+          <span className="qs-cert-detail-fabric-key">
+            {t("certificateStudio.certificateHash")}
+          </span>
+          <code
+            className="qs-cert-detail-fabric-val"
+            data-testid="cert-detail-hash"
+          >
+            {response.certificateHash}
+          </code>
+        </div>
+      </div>
+
+      <div className="qs-cert-detail-snapshot">
+        <h3>{t("gateCommand.gateSnapshot")}</h3>
+        <ul
+          aria-label={t("gateCommand.gateSnapshot")}
+          className="qs-cert-detail-station-list"
+        >
+          {gateResultSnapshot.stationResults.map((sr) => (
+            <li
+              key={sr.stationCode}
+              className={`qs-cert-station-row qs-cert-station-row--${sr.result.toLowerCase()}`}
+              data-testid={`cert-detail-station-${sr.stationCode}`}
+            >
+              <span className="qs-cert-station-code">{sr.stationCode}</span>
+              <span className="qs-cert-station-result">{sr.result}</span>
+              {sr.details && (
+                <span className="qs-cert-station-detail">{sr.details}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {onVerify && (
+        <div className="qs-cert-detail-actions">
+          <button
+            type="button"
+            className="qs-btn qs-btn--verify"
+            onClick={onVerify}
+            aria-label={t("certificateStudio.verifyAriaLabel")}
+            data-testid="verify-tamper-button"
+          >
+            {t("certificateStudio.verifyTamperEvidence")}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GateCompletenessCard — standalone completeness + certify card (from main)
 // ---------------------------------------------------------------------------
 
@@ -1171,11 +1392,22 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [certifyError, setCertifyError] = useState<string | null>(null);
-  const [certificate, setCertificate] = useState<CertifyResponse | null>(null);
+  const [certifyErrorCode, setCertifyErrorCode] = useState<number | null>(null);
+  const [issuedCertificate, setIssuedCertificate] = useState<CertificateIssueResponse | null>(null);
+  const [issuedAt, setIssuedAt] = useState<string>("");
+  const [issuedSnapshot, setIssuedSnapshot] = useState<GateResultSnapshot | null>(null);
+  const [certifyCountdown, setCertifyCountdown] = useState<number>(60);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [overrideApproved, setOverrideApproved] = useState(false);
 
-  // Note: GATE_COMMAND_OPEN is emitted via adoption.ts (legacy)
-  // but we will migrate to the new instrumentation layer once adopted studio-wide
+  const stopCountdown = useCallback(() => {
+    if (countdownRef.current !== null) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => stopCountdown, [stopCountdown]);
 
   const canCertify =
     (phase === "populated" || overrideApproved) &&
@@ -1193,29 +1425,88 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
     if (!score || !canCertify) return;
     setCertifyState("loading");
     setCertifyError(null);
-    try {
-      const resp = await certifyVehicle({
-        vin,
-        gateResultsSnapshot: deduped,
-        healthScore: score,
-        validatorId: userId || "unknown",
+    setCertifyErrorCode(null);
+    setCertifyCountdown(60);
+
+    countdownRef.current = setInterval(() => {
+      setCertifyCountdown((prev) => {
+        if (prev <= 1) {
+          stopCountdown();
+          return 0;
+        }
+        return prev - 1;
       });
-      setCertificate(resp);
+    }, 1000);
+
+    const certificateId = generateUuid();
+    const now = new Date().toISOString();
+    const numericHealth =
+      score.overall === "pass"
+        ? 95.0
+        : score.overall === "conditional_pass"
+          ? 82.0
+          : 40.0;
+
+    const gateId = deduped.length > 0 ? deduped[0].gateId : "GATE-FINAL";
+    const snapshot = buildGateResultSnapshot(deduped, gateId);
+
+    const canonicalPayload = JSON.stringify({
+      certificateId,
+      vin,
+      gateResultSnapshot: snapshot,
+      healthScore: numericHealth,
+      validatorId: userId || "unknown",
+      issuedAt: now,
+    });
+
+    try {
+      const certHash = await computeSha256Hex(canonicalPayload);
+
+      const { response } = await issueCertificate({
+        certificateId,
+        vin,
+        gateResultSnapshot: snapshot,
+        healthScore: numericHealth,
+        validatorId: userId || "unknown",
+        issuedAt: now,
+        certificateHash: certHash,
+        sourceSystem: "quality-studio",
+      });
+
+      stopCountdown();
+      setIssuedCertificate(response);
+      setIssuedAt(now);
+      setIssuedSnapshot(snapshot);
       setCertifyState("success");
 
       void emitCertify({
         userId: userId || "unknown",
         role: "QUALITY_GATE_VALIDATOR",
         vin,
-        fabricTxHash: resp.fabricTxHash,
+        fabricTxHash: response.fabricTransactionId,
       });
     } catch (err) {
-      setCertifyError(
-        err instanceof Error ? err.message : t("errors.serverError"),
-      );
+      stopCountdown();
+      if (err instanceof Error) {
+        // Try parse status from ApiError
+        const apiErr = err as { status?: number };
+        const status = apiErr.status;
+        setCertifyErrorCode(status ?? null);
+        if (status === 504) {
+          setCertifyError(t("certificateStudio.error504"));
+        } else if (status === 409) {
+          setCertifyError(t("certificateStudio.error409"));
+        } else if (status === 403) {
+          setCertifyError(t("certificateStudio.error403"));
+        } else {
+          setCertifyError(err.message || t("errors.serverError"));
+        }
+      } else {
+        setCertifyError(t("errors.serverError"));
+      }
       setCertifyState("error");
     }
-  }, [score, canCertify, vin, deduped, userId, t]);
+  }, [score, canCertify, vin, deduped, userId, t, stopCountdown]);
 
   const elapsedSec = Math.floor(elapsedMs / 1000);
 
@@ -1223,8 +1514,23 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
   // Certificate success screen
   // ---------------------------------------------------------------------------
 
-  if (certifyState === "success" && certificate) {
-    return <CertificateStudioPanel cert={certificate} />;
+  if (certifyState === "success" && issuedCertificate && issuedSnapshot) {
+    return (
+      <CertificateDetailCard
+        response={issuedCertificate}
+        vin={vin}
+        validatorId={userId || "unknown"}
+        issuedAt={issuedAt}
+        gateResultSnapshot={issuedSnapshot}
+        healthScore={
+          score?.overall === "pass"
+            ? 95.0
+            : score?.overall === "conditional_pass"
+              ? 82.0
+              : 40.0
+        }
+      />
+    );
   }
 
   return (
@@ -1375,38 +1681,67 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
 
           {/* Certify action bar */}
           <div className="qs-certify-bar" data-testid="certify-bar">
-            <button
-              type="button"
-              className="qs-btn qs-btn--certify"
-              onClick={() => {
-                void handleCertify();
-              }}
-              disabled={!canCertify}
-              aria-disabled={!canCertify}
-              title={
-                !canCertify
-                  ? t("gateCommand.certifyDisabledTooltip", {
-                      gates: missingGateTypes
-                        .map((g) => GATE_TYPE_LABELS[g])
-                        .join(", "),
-                    })
-                  : undefined
-              }
-              data-testid="certify-button"
-            >
-              {certifyState === "loading"
-                ? t("gateCommand.loading")
-                : t("gateCommand.certify")}
-            </button>
+            {certifyState === "loading" ? (
+              <div
+                className="qs-certify-in-progress"
+                role="status"
+                aria-live="polite"
+                data-testid="certify-in-progress"
+              >
+                <span className="gate-spinner" aria-hidden="true" />
+                <span className="qs-certify-countdown-label">
+                  {t("certificateStudio.anchoringInProgress", {
+                    seconds: certifyCountdown,
+                  })}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="qs-btn qs-btn--certify"
+                onClick={() => {
+                  void handleCertify();
+                }}
+                disabled={!canCertify}
+                aria-disabled={!canCertify}
+                aria-label={t("certificateStudio.certifyAriaLabel", { vin })}
+                title={
+                  !canCertify
+                    ? t("gateCommand.certifyDisabledTooltip", {
+                        gates: missingGateTypes
+                          .map((g) => GATE_TYPE_LABELS[g])
+                          .join(", "),
+                      })
+                    : undefined
+                }
+                data-testid="certify-button"
+              >
+                {t("gateCommand.certify")}
+              </button>
+            )}
 
             {certifyState === "error" && certifyError && (
-              <p
+              <div
                 role="alert"
-                className="qs-error-inline"
+                className="qs-certify-error"
                 data-testid="certify-error"
               >
-                {certifyError}
-              </p>
+                <p className="qs-error-inline">{certifyError}</p>
+                {certifyErrorCode === 504 && (
+                  <button
+                    type="button"
+                    className="qs-btn qs-btn--retry"
+                    onClick={() => {
+                      setCertifyState("idle");
+                      setCertifyError(null);
+                      setCertifyErrorCode(null);
+                    }}
+                    data-testid="certify-retry-button"
+                  >
+                    {t("defectDashboard.retry")}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </>

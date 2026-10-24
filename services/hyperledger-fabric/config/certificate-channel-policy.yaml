@@ -1,0 +1,40 @@
+# certificate-channel endorsement and commit policy
+#
+# The quality-studio-fabric-client MSP holds both Endorsement and Commit rights.
+# All transactions must be endorsed and committed within 55 seconds to satisfy
+# the 60-second end-to-end SLA (AC-0ed51f1f), reserving 5 s for caller overhead.
+#
+# References:
+#   Hyperledger Fabric 2.5 lifecycle chaincode policy syntax:
+#   https://hyperledger-fabric.readthedocs.io/en/release-2.5/endorsement-policies.html
+
+channel: certificate-channel
+chaincode: certificate
+
+endorsement_policy:
+  # Only the quality-studio-fabric-client MSP may endorse transactions.
+  rule: "OR('quality-studio-fabric-clientMSP.peer')"
+
+commit_policy:
+  # The same MSP identity holds Commit rights.
+  rule: "OR('quality-studio-fabric-clientMSP.member')"
+
+lifecycle_policy:
+  # Channel admin approval requires the quality-studio-fabric-client MSP.
+  rule: "OR('quality-studio-fabric-clientMSP.admin')"
+
+timeouts:
+  # Maximum time allowed for Fabric to endorse + commit a transaction.
+  # The hyperledger-fabric-api sets a 55-second client-side deadline, which maps to
+  # HTTP 504 if exceeded, leaving 5 seconds of buffer for the 60 s SLA.
+  endorse_timeout_s: 30
+  broadcast_timeout_s: 25
+  # Total: 55 s commit deadline enforced by hyperledger-fabric-api
+
+access_control:
+  # MSP identity that may submit chaincode invoke transactions
+  invoker_msp: quality-studio-fabric-client
+  # Roles granted to the invoker MSP
+  roles:
+    - Endorsement
+    - Commit

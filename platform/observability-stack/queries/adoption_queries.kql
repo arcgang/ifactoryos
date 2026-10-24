@@ -218,3 +218,129 @@ AdoptionEvent_CL
 | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
 | project week_label, week_number, year_number, deviceType_s, stationId_s, ar_session_count
 | order by year_number asc, week_number asc, stationId_s asc, deviceType_s asc;
+
+
+// ============================================================================
+// Quality Studio WAU and A7 queries — US-021 · BR-12
+//
+// Meaningful actions for WAU calculation:
+//   PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED,
+//   CERTIFY, CERTIFICATE_STUDIO_OPEN.
+//
+// A user-day counts as active only when at least one AdoptionEvent for that
+// userId on that calendar day has actionType IN the meaningful-action set.
+// Sessions where the only recorded event is LOGIN (no meaningful-action event)
+// are excluded from the WAU count — this enforces US-021 AC2.
+//
+// Timestamps bucketed per calendar day in EU/Berlin timezone (UTC+1 in Nov).
+//
+// Gate 1 targets:
+//   Paint Engineer WAU      ≥80% (role=PAINT_ENGINEER)
+//   Quality Validator WAU   ≥90% (role=QUALITY_GATE_VALIDATOR)
+//   A7 (certs via QS)       ≥90%
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Query 7: quality_studio_paint_engineer_wau
+//
+// Gate 1 metric: Quality Studio Paint Engineer WAU (target ≥80%).
+// Distinct PAINT_ENGINEER userId per calendar week with ≥1 meaningful action.
+// Login-only days excluded.
+// ----------------------------------------------------------------------------
+// @name quality_studio_paint_engineer_wau
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+let meaningful_actions = dynamic([
+    "PROCESS_REPLAY_LAUNCH",
+    "DEFECT_GENOME_QUERY",
+    "ROOT_CAUSE_ASSIGNED",
+    "CERTIFY",
+    "CERTIFICATE_STUDIO_OPEN"
+]);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    component_s  = tostring(Properties_d["component"]),
+    actionType_s = tostring(Properties_d["actionType"]),
+    userId_s     = tostring(Properties_d["userId"]),
+    role_s       = tostring(Properties_d["role"])
+| where component_s == "quality-studio" and role_s == "PAINT_ENGINEER"
+// Day bucket in Europe/Berlin (UTC+1 in November)
+| extend berlin_time = TimeGenerated + 1h
+| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+    by userId_s,
+       day_s       = format_datetime(berlin_time, "yyyy-MM-dd"),
+       week_number = week_of_year(berlin_time),
+       year_number = getyear(berlin_time)
+| where has_meaningful
+| summarize wau = dcount(userId_s) by week_number, year_number
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, wau
+| order by year_number asc, week_number asc;
+
+
+// ----------------------------------------------------------------------------
+// Query 8: quality_studio_quality_validator_wau
+//
+// Gate 1 metric: Quality Studio Quality Validator WAU (target ≥90%).
+// Distinct QUALITY_GATE_VALIDATOR userId per calendar week with ≥1 meaningful action.
+// Login-only days excluded.
+// ----------------------------------------------------------------------------
+// @name quality_studio_quality_validator_wau
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+let meaningful_actions = dynamic([
+    "PROCESS_REPLAY_LAUNCH",
+    "DEFECT_GENOME_QUERY",
+    "ROOT_CAUSE_ASSIGNED",
+    "CERTIFY",
+    "CERTIFICATE_STUDIO_OPEN"
+]);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    component_s  = tostring(Properties_d["component"]),
+    actionType_s = tostring(Properties_d["actionType"]),
+    userId_s     = tostring(Properties_d["userId"]),
+    role_s       = tostring(Properties_d["role"])
+| where component_s == "quality-studio" and role_s == "QUALITY_GATE_VALIDATOR"
+// Day bucket in Europe/Berlin (UTC+1 in November)
+| extend berlin_time = TimeGenerated + 1h
+| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+    by userId_s,
+       day_s       = format_datetime(berlin_time, "yyyy-MM-dd"),
+       week_number = week_of_year(berlin_time),
+       year_number = getyear(berlin_time)
+| where has_meaningful
+| summarize wau = dcount(userId_s) by week_number, year_number
+| extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+| project week_label, week_number, year_number, wau
+| order by year_number asc, week_number asc;
+
+
+// ----------------------------------------------------------------------------
+// Query 9: a7_certificate_via_quality_studio
+//
+// Gate 1 metric A7: % of certificates issued via Quality Studio (target ≥90%).
+// A7 = count(sourceSystem='quality-studio') / count(*).
+// CertificateIssuedEvent fields: fabricTransactionId, sourceSystem, vin, issuedAt.
+// fabricTransactionId enables cross-reference with the Fabric anchor count.
+// ----------------------------------------------------------------------------
+// @name a7_certificate_via_quality_studio
+let window_start = datetime(2025-11-01);
+let window_end   = datetime(2025-11-28T23:59:59Z);
+AdoptionEvent_CL
+| where TimeGenerated >= window_start and TimeGenerated <= window_end
+| extend
+    component_s    = tostring(Properties_d["component"]),
+    actionType_s   = tostring(Properties_d["actionType"]),
+    sourceSystem_s = tostring(Properties_d["sourceSystem"]),
+    fabricTxId_s   = tostring(Properties_d["fabricTransactionId"])
+| where component_s == "hyperledger-fabric-api" and actionType_s == "CertificateIssued"
+| summarize
+    total_certs           = count(),
+    qs_certs              = countif(sourceSystem_s == "quality-studio"),
+    legacy_certs          = countif(sourceSystem_s == "legacy"),
+    distinct_fabric_txids = dcount(fabricTxId_s)
+| extend a7_pct = round(todouble(qs_certs) / toreal(total_certs) * 100.0, 2)
+| project total_certs, qs_certs, legacy_certs, distinct_fabric_txids, a7_pct;

@@ -33,6 +33,33 @@ export interface RootCauseAssignedEvent {
   timestamp: string;
 }
 
+export interface CertificateStudioOpenEvent {
+  action: "CERTIFICATE_STUDIO_OPEN";
+  userId: string;
+  role: string;
+  vin: string;
+  sessionId: string;
+  timestamp: string;
+}
+
+export interface CertifyEvent {
+  action: "CERTIFY";
+  userId: string;
+  role: string;
+  vin: string;
+  fabricTxHash: string;
+  sessionId: string;
+  timestamp: string;
+}
+
+export interface LoginEvent {
+  action: "LOGIN";
+  userId: string;
+  role: string;
+  sessionId: string;
+  timestamp: string;
+}
+
 function generateSessionId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -60,7 +87,7 @@ const COLLECTOR_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_OTLP_ENDPOINT ??
   "/api/v1/ingest/events";
 
-function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCauseAssignedEvent | ClusterAlertViewedEvent | ClusterAlertAcknowledgedEvent): void {
+function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCauseAssignedEvent | ClusterAlertViewedEvent | ClusterAlertAcknowledgedEvent | CertificateStudioOpenEvent | CertifyEvent | LoginEvent): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
   }
@@ -127,6 +154,51 @@ export function emitRootCauseAssigned(params: {
     userId: params.userId,
     role: params.role,
     clusterId: params.clusterId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function emitCertificateStudioOpen(params: {
+  userId: string;
+  role: string;
+  vin: string;
+}): void {
+  emit({
+    action: "CERTIFICATE_STUDIO_OPEN",
+    userId: params.userId,
+    role: params.role,
+    vin: params.vin,
+    sessionId: _sessionId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function emitCertify(params: {
+  userId: string;
+  role: string;
+  vin: string;
+  fabricTxHash: string;
+}): void {
+  emit({
+    action: "CERTIFY",
+    userId: params.userId,
+    role: params.role,
+    vin: params.vin,
+    fabricTxHash: params.fabricTxHash,
+    sessionId: _sessionId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function emitLogin(params: {
+  userId: string;
+  role: string;
+}): void {
+  emit({
+    action: "LOGIN",
+    userId: params.userId,
+    role: params.role,
+    sessionId: _sessionId,
     timestamp: new Date().toISOString(),
   });
 }

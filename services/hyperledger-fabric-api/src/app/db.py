@@ -10,10 +10,9 @@ _pool: asyncpg.Pool | None = None
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        from app.config import get_settings
+        from app.config import settings
 
-        cfg = get_settings()
-        _pool = await asyncpg.create_pool(cfg.citus_url, min_size=2, max_size=10)
+        _pool = await asyncpg.create_pool(settings.citus_url, min_size=2, max_size=10)
     return _pool
 
 

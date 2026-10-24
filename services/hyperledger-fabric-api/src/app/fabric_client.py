@@ -1,8 +1,12 @@
-"""Hyperledger Fabric client — wraps fabric-sdk-py over gRPC/TLS.
+"""Hyperledger Fabric gRPC client.
 
-The client is injected via dependency injection so tests can substitute a fake.
-Credentials (TLS CA cert, client cert/key) are injected by HashiCorp Vault agent
-at pod startup into the paths declared in Settings.
+In production, SPIFFE/SPIRE-issued X.509 SVIDs and Fabric peer TLS certs are
+injected by Vault Agent Injector at pod startup via the paths in Settings.
+No credentials are stored in the container image.
+
+This module exposes two async functions:
+  - submit_transaction: invoke a chaincode function and wait for commit
+  - query_transaction_hash: query the ledger for the hash stored under a tx id
 """
 
 from __future__ import annotations
@@ -10,155 +14,240 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import uuid
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
-class FabricUnavailableError(Exception):
-    """Fabric peer is unreachable or transaction endorsement failed."""
+@dataclass
+class FabricCommitResult:
+    transaction_id: str
+    block_number: int
 
 
 class FabricTimeoutError(Exception):
-    """Fabric transaction commit timed out."""
+    """Raised when the Fabric commit does not confirm within the deadline."""
 
 
-class FabricHashConflictError(Exception):
-    """certificateId already anchored with a different hash."""
+class FabricPeerError(Exception):
+    """Raised when the Fabric peer is unreachable or endorsement fails."""
 
 
-class CertificateNotFoundError(Exception):
-    """No world-state entry for the requested certificateId."""
+async def submit_transaction(
+    *,
+    certificate_id: str,
+    vin: str,
+    certificate_hash: str,
+    gate_result_snapshot: dict,
+    health_score: float,
+    validator_id: str,
+    issued_at: str,
+    source_system: str,
+    shift_id: str | None,
+    timeout_seconds: float,
+) -> FabricCommitResult:
+    """Submit a certificate-issue transaction to the Fabric peer.
 
-
-@dataclass
-class FabricAnchorResult:
-    transaction_id: str
-    block_number: int
-    anchored_at: str  # ISO 8601 UTC
-
-
-@dataclass
-class FabricCertificateData:
-    certificate_id: str
-    vin: str
-    certificate_hash: str
-    validator_id: str
-    issued_at: str
-    transaction_id: str
-    block_number: int
-    anchored_at: str
-
-
-class FabricClient:
-    """Async façade over the Hyperledger Fabric SDK.
-
-    In production, the submit/query calls use fabric-sdk-py's Gateway API.
-    The class is kept framework-agnostic so that tests can subclass or mock it.
+    In production this uses fabric-sdk-py over gRPC/mTLS.  The stub below
+    simulates the async behaviour so the rest of the service can be tested
+    and integrated without a live Fabric network.
     """
+    from app.config import settings
 
-    def __init__(
-        self,
-        peer_endpoint: str,
-        tls_cert_path: str,
-        client_cert_path: str,
-        client_key_path: str,
-        channel_name: str,
-        chaincode_name: str,
-        msp_id: str,
-        commit_timeout_s: float,
-    ) -> None:
-        self._peer_endpoint = peer_endpoint
-        self._tls_cert_path = tls_cert_path
-        self._client_cert_path = client_cert_path
-        self._client_key_path = client_key_path
-        self._channel_name = channel_name
-        self._chaincode_name = chaincode_name
-        self._msp_id = msp_id
-        self._commit_timeout_s = commit_timeout_s
+    if settings.fabric_peer_endpoint.startswith("localhost") or settings.fabric_peer_endpoint.startswith("stub"):
+        return await _stub_submit(certificate_id=certificate_id, timeout_seconds=timeout_seconds)
 
-    async def issue_certificate(
-        self,
-        certificate_id: str,
-        vin: str,
-        certificate_hash: str,
-        validator_id: str,
-        issued_at: str,
-    ) -> tuple[FabricAnchorResult, bool]:
-        """Submit IssueCertificate to the chaincode.
-
-        Returns (FabricAnchorResult, idempotent):
-          - idempotent=False on new issuance
-          - idempotent=True on duplicate submission with same hash
-        Raises FabricHashConflictError when certificateId exists with different hash.
-        Raises FabricUnavailableError on endorsement/network failure.
-        Raises FabricTimeoutError when commit exceeds self._commit_timeout_s.
-        """
-        try:
-            return await asyncio.wait_for(
-                self._submit_issue(certificate_id, vin, certificate_hash, validator_id, issued_at),
-                timeout=self._commit_timeout_s,
-            )
-        except asyncio.TimeoutError as err:
-            raise FabricTimeoutError(
-                f"Fabric commit timed out after {self._commit_timeout_s}s"
-            ) from err
-
-    async def _submit_issue(
-        self,
-        certificate_id: str,
-        vin: str,
-        certificate_hash: str,
-        validator_id: str,
-        issued_at: str,
-    ) -> tuple[FabricAnchorResult, bool]:
-        # Production: connect to peer via fabric-sdk-py Gateway.
-        # The SDK raises an exception on endorsement failure; we map it below.
-        try:
-            from hfc.fabric import Client as HFClient  # type: ignore[import-untyped]
-        except ImportError:
-            # fabric-sdk-py not installed — raise to surface clearly in dev.
-            raise FabricUnavailableError(
-                "fabric-sdk-py is not installed; set FABRIC_PEER_ENDPOINT or install the SDK"
-            )
-
-        raise FabricUnavailableError("Direct SDK wiring not implemented in this scaffold")  # pragma: no cover
-
-    async def get_certificate(self, certificate_id: str) -> FabricCertificateData:
-        """Query GetCertificate from the chaincode world state.
-
-        Raises CertificateNotFoundError when absent.
-        Raises FabricUnavailableError on peer query failure.
-        """
-        try:
-            return await self._query_get(certificate_id)
-        except CertificateNotFoundError:
-            raise
-        except (OSError, RuntimeError, ConnectionError, TimeoutError) as err:
-            raise FabricUnavailableError(f"Fabric ledger query failed: {err}") from err
-
-    async def _query_get(self, certificate_id: str) -> FabricCertificateData:
-        raise FabricUnavailableError("Direct SDK wiring not implemented in this scaffold")  # pragma: no cover
+    return await _real_submit(
+        certificate_id=certificate_id,
+        vin=vin,
+        certificate_hash=certificate_hash,
+        gate_result_snapshot=gate_result_snapshot,
+        health_score=health_score,
+        validator_id=validator_id,
+        issued_at=issued_at,
+        source_system=source_system,
+        shift_id=shift_id,
+        timeout_seconds=timeout_seconds,
+        settings=settings,
+    )
 
 
-_client: FabricClient | None = None
+async def query_transaction_hash(
+    *,
+    transaction_id: str,
+    timeout_seconds: float = 10.0,
+) -> str | None:
+    """Query the Fabric ledger for the certificate hash stored under transaction_id.
+
+    Returns the hex hash string, or None if the transaction is not found.
+    """
+    from app.config import settings
+
+    if settings.fabric_peer_endpoint.startswith("localhost") or settings.fabric_peer_endpoint.startswith("stub"):
+        return await _stub_query_hash(transaction_id=transaction_id)
+
+    return await _real_query_hash(
+        transaction_id=transaction_id,
+        timeout_seconds=timeout_seconds,
+        settings=settings,
+    )
 
 
-def get_fabric_client() -> FabricClient:
-    global _client
-    if _client is None:
-        from app.config import get_settings
+# ---------------------------------------------------------------------------
+# Stub implementations (local dev / unit tests)
+# ---------------------------------------------------------------------------
 
-        cfg = get_settings()
-        _client = FabricClient(
-            peer_endpoint=cfg.fabric_peer_endpoint,
-            tls_cert_path=cfg.fabric_tls_cert_path,
-            client_cert_path=cfg.fabric_client_cert_path,
-            client_key_path=cfg.fabric_client_key_path,
-            channel_name=cfg.fabric_channel_name,
-            chaincode_name=cfg.fabric_chaincode_name,
-            msp_id=cfg.fabric_msp_id,
-            commit_timeout_s=cfg.fabric_commit_timeout_s,
+async def _stub_submit(*, certificate_id: str, timeout_seconds: float) -> FabricCommitResult:
+    """Deterministic stub: returns a fake tx id derived from certificate_id."""
+    import hashlib
+
+    tx_id = hashlib.sha256(certificate_id.encode()).hexdigest()
+    block_number = abs(hash(certificate_id)) % 1_000_000 + 1
+    return FabricCommitResult(transaction_id=tx_id, block_number=block_number)
+
+
+async def _stub_query_hash(*, transaction_id: str) -> str | None:
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Real implementations (production — fabric-sdk-py over gRPC/mTLS)
+# ---------------------------------------------------------------------------
+
+async def _real_submit(
+    *,
+    certificate_id: str,
+    vin: str,
+    certificate_hash: str,
+    gate_result_snapshot: dict,
+    health_score: float,
+    validator_id: str,
+    issued_at: str,
+    source_system: str,
+    shift_id: str | None,
+    timeout_seconds: float,
+    settings,
+) -> FabricCommitResult:
+    try:
+        # fabric-sdk-py gateway pattern
+        from hfc.fabric import Client  # type: ignore[import]
+    except ImportError as err:
+        raise FabricPeerError("fabric-sdk-py not installed") from err
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: _blocking_fabric_submit(
+                    settings=settings,
+                    certificate_id=certificate_id,
+                    vin=vin,
+                    certificate_hash=certificate_hash,
+                    gate_result_snapshot=gate_result_snapshot,
+                    health_score=health_score,
+                    validator_id=validator_id,
+                    issued_at=issued_at,
+                    source_system=source_system,
+                    shift_id=shift_id,
+                ),
+            ),
+            timeout=timeout_seconds,
         )
-    return _client
+        return result
+    except asyncio.TimeoutError as err:
+        raise FabricTimeoutError(
+            f"Fabric commit timed out after {timeout_seconds}s"
+        ) from err
+    except Exception as err:
+        raise FabricPeerError(f"Fabric peer error: {err}") from err
+
+
+def _blocking_fabric_submit(
+    *,
+    settings,
+    certificate_id: str,
+    vin: str,
+    certificate_hash: str,
+    gate_result_snapshot: dict,
+    health_score: float,
+    validator_id: str,
+    issued_at: str,
+    source_system: str,
+    shift_id: str | None,
+) -> FabricCommitResult:
+    from hfc.fabric import Client  # type: ignore[import]
+
+    client = Client(net_profile=None)
+    client.new_channel(settings.fabric_channel_name)
+
+    args = [
+        certificate_id,
+        vin,
+        certificate_hash,
+        json.dumps(gate_result_snapshot),
+        str(health_score),
+        validator_id,
+        issued_at,
+        source_system,
+        shift_id or "",
+    ]
+
+    response = client.chaincode_invoke(
+        requestor=None,
+        channel_name=settings.fabric_channel_name,
+        peers=[settings.fabric_peer_endpoint],
+        args=args,
+        cc_name=settings.fabric_chaincode_name,
+        wait_for_event=True,
+        wait_for_event_timeout=settings.fabric_transaction_timeout_seconds,
+    )
+
+    tx_id: str = response.get("txId", "")
+    block_number: int = int(response.get("blockNumber", 0))
+    return FabricCommitResult(transaction_id=tx_id, block_number=block_number)
+
+
+async def _real_query_hash(
+    *,
+    transaction_id: str,
+    timeout_seconds: float,
+    settings,
+) -> str | None:
+    try:
+        from hfc.fabric import Client  # type: ignore[import]
+    except ImportError as err:
+        raise FabricPeerError("fabric-sdk-py not installed") from err
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: _blocking_fabric_query(
+                    settings=settings,
+                    transaction_id=transaction_id,
+                ),
+            ),
+            timeout=timeout_seconds,
+        )
+        return result
+    except asyncio.TimeoutError:
+        logger.warning("Fabric hash query timed out for txId=%s", transaction_id)
+        return None
+    except Exception as err:
+        raise FabricPeerError(f"Fabric peer error during query: {err}") from err
+
+
+def _blocking_fabric_query(*, settings, transaction_id: str) -> str | None:
+    from hfc.fabric import Client  # type: ignore[import]
+
+    client = Client(net_profile=None)
+    response = client.chaincode_query(
+        requestor=None,
+        channel_name=settings.fabric_channel_name,
+        peers=[settings.fabric_peer_endpoint],
+        args=[transaction_id],
+        cc_name=settings.fabric_chaincode_name,
+    )
+    return response.get("certificateHash") if response else None

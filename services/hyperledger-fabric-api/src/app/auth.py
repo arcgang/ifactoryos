@@ -8,21 +8,31 @@ BMW Entra ID OIDC tokens are validated here. Two roles are enforced:
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
 from jose import JWTError, jwt
 
-_bearer = HTTPBearer(auto_error=False)
+from app.config import settings
+
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _make_error(code: str, message: str) -> dict[str, Any]:
     return {"code": code, "message": message, "correlation_id": str(uuid.uuid4())}
 
 
-def _decode_token(token: str) -> dict[str, Any]:
+async def require_bearer(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> dict[str, Any]:
+    """Dependency: returns the decoded JWT payload or raises 401."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_make_error("MISSING_TOKEN", "Authorization header required"),
+        )
+    token = credentials.credentials
     try:
         payload: dict[str, Any] = jwt.decode(
             token,
@@ -35,26 +45,6 @@ def _decode_token(token: str) -> dict[str, Any]:
             },
         )
     except JWTError as err:
-        raise ValueError("Token decode failed") from err
-    return payload
-
-
-def _has_role(claims: dict[str, Any], role: str) -> bool:
-    roles: list[str] = claims.get("roles") or claims.get("scp", "").split()
-    return role in roles
-
-
-async def require_bearer(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-) -> dict[str, Any]:
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_make_error("MISSING_TOKEN", "Bearer token required"),
-        )
-    try:
-        payload = _decode_token(credentials.credentials)
-    except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_make_error("INVALID_TOKEN", "Bearer token is invalid or expired"),
@@ -62,35 +52,43 @@ async def require_bearer(
     return payload
 
 
-def require_issuer_role(
+def require_certificate_issuer(
     payload: dict[str, Any] = Depends(require_bearer),
 ) -> dict[str, Any]:
-    from app.config import get_settings
-
-    cfg = get_settings()
-    if not _has_role(payload, cfg.certificate_issuer_role):
+    """Dependency: raises 403 unless the JWT carries CERTIFICATE_ISSUER role."""
+    roles: list[str] = payload.get("roles", []) or []
+    scopes: list[str] = payload.get("scp", "").split() if payload.get("scp") else []
+    all_grants = set(roles) | set(scopes)
+    if settings.certificate_issuer_role not in all_grants:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_make_error(
-                "INSUFFICIENT_ROLE",
-                f"Caller lacks required role: {cfg.certificate_issuer_role}",
+                "FORBIDDEN",
+                f"Caller requires {settings.certificate_issuer_role} role",
             ),
         )
     return payload
 
 
-def require_reader_role(
+def require_certificate_reader(
     payload: dict[str, Any] = Depends(require_bearer),
 ) -> dict[str, Any]:
-    from app.config import get_settings
-
-    cfg = get_settings()
-    if not _has_role(payload, cfg.certificate_reader_role):
+    """Dependency: raises 403 unless the JWT carries CERTIFICATE_ISSUER or CERTIFICATE_READER."""
+    roles: list[str] = payload.get("roles", []) or []
+    scopes: list[str] = payload.get("scp", "").split() if payload.get("scp") else []
+    all_grants = set(roles) | set(scopes)
+    allowed = {settings.certificate_issuer_role, settings.certificate_reader_role}
+    if not (all_grants & allowed):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_make_error(
-                "INSUFFICIENT_ROLE",
-                f"Caller lacks required role: {cfg.certificate_reader_role}",
+                "FORBIDDEN",
+                f"Caller requires {settings.certificate_issuer_role} or {settings.certificate_reader_role} role",
             ),
         )
     return payload
+
+
+def caller_subject(payload: dict[str, Any]) -> str:
+    """Extract the JWT subject (caller identity) for audit records."""
+    return str(payload.get("sub") or payload.get("oid") or "unknown")

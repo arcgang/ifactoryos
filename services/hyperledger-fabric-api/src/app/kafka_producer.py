@@ -1,30 +1,43 @@
-"""Kafka producer — one shared producer per process lifetime."""
+"""Kafka producer — one shared producer per process lifetime.
+
+Uses SASL/SCRAM-SHA-512 + SSL (SPIFFE mTLS) per CONN-005 when credentials
+are configured; falls back to plaintext for local development.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 
-from aiokafka import AIOKafkaProducer
-
 logger = logging.getLogger(__name__)
 
-_producer: AIOKafkaProducer | None = None
+_producer = None
 
 TOPIC_CERTIFICATE_ISSUED = "bmw.ifos.munich.fabric.certificate.issued.v1"
 TOPIC_CERTIFICATE_VERIFY_FAILED = "bmw.ifos.munich.fabric.certificate.verify-failed.v1"
 
 
-async def get_producer() -> AIOKafkaProducer:
+async def get_producer():
     global _producer
     if _producer is None:
-        from app.config import get_settings
+        from aiokafka import AIOKafkaProducer
 
-        cfg = get_settings()
-        _producer = AIOKafkaProducer(
-            bootstrap_servers=cfg.kafka_bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode(),
-        )
+        from app.config import settings
+
+        kwargs: dict = {
+            "bootstrap_servers": settings.kafka_bootstrap_servers,
+            "value_serializer": lambda v: json.dumps(v).encode(),
+        }
+        if settings.kafka_sasl_username:
+            kwargs.update(
+                {
+                    "security_protocol": "SASL_SSL",
+                    "sasl_mechanism": "SCRAM-SHA-512",
+                    "sasl_plain_username": settings.kafka_sasl_username,
+                    "sasl_plain_password": settings.kafka_sasl_password,
+                }
+            )
+        _producer = AIOKafkaProducer(**kwargs)
         await _producer.start()
     return _producer
 
@@ -43,4 +56,4 @@ async def publish(topic: str, payload: dict) -> None:
         producer = await get_producer()
         await producer.send_and_wait(topic, payload)
     except KafkaError as err:
-        logger.exception("Failed to publish to topic %s", topic, exc_info=err)
+        logger.exception("Failed to publish to topic %s: %s", topic, err)

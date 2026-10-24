@@ -25,10 +25,10 @@ import type {
   StationResult,
   GateResultSnapshot,
 } from "../services/api";
-import { emitAdoptionEvent } from "../services/adoption";
 import { useAuth } from "../hooks/useAuth";
 import { ALL_GATE_TYPES, useGateResults } from "../hooks/useGateResults";
 import { useHistoricalDistribution } from "../hooks/useHistoricalDistribution";
+import { emitCertify, emitCertificateStudioOpen } from "../instrumentation/adoptionEvents";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -814,6 +814,17 @@ interface CertificateStudioPanelProps {
 
 export function CertificateStudioPanel({ cert }: CertificateStudioPanelProps) {
   const { t } = useTranslation();
+  const { userId } = useAuth();
+
+  // Emit CERTIFICATE_STUDIO_OPEN adoption event on mount
+  useEffect(() => {
+    void emitCertificateStudioOpen({
+      userId: userId || "unknown",
+      role: "QUALITY_GATE_VALIDATOR",
+      vin: cert.vin,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cert.vin]); // Emit once per vin, not on auth refresh
 
   return (
     <section
@@ -1398,18 +1409,6 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
 
   useEffect(() => stopCountdown, [stopCountdown]);
 
-  // Emit GATE_COMMAND_OPEN adoption event on mount
-  useEffect(() => {
-    void emitAdoptionEvent({
-      userId,
-      role: "QUALITY_GATE_VALIDATOR",
-      action: "GATE_COMMAND_OPEN",
-      vin,
-      timestamp: new Date().toISOString(),
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vin]); // userId intentionally omitted — emit once per vin, not on auth refresh
-
   const canCertify =
     (phase === "populated" || overrideApproved) &&
     certifyState === "idle";
@@ -1480,13 +1479,11 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
       setIssuedSnapshot(snapshot);
       setCertifyState("success");
 
-      void emitAdoptionEvent({
-        userId: userId || "",
+      void emitCertify({
+        userId: userId || "unknown",
         role: "QUALITY_GATE_VALIDATOR",
-        action: "CERTIFY",
         vin,
         fabricTxHash: response.fabricTransactionId,
-        timestamp: new Date().toISOString(),
       });
     } catch (err) {
       stopCountdown();
@@ -1534,10 +1531,6 @@ export function GateCommandPage({ vin }: GateCommandPageProps) {
         }
       />
     );
-  }
-
-  if (certifyState === "success" && certificate) {
-    return <CertificateStudioPanel cert={certificate} />;
   }
 
   return (

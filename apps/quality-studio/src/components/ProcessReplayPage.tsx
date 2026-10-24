@@ -13,6 +13,8 @@ import type {
   ProcessReplayResponse,
   ThreadSnapshotResponse,
 } from "../types/processReplay";
+import { useAuth } from "../hooks/useAuth";
+import { emitProcessReplayLaunch } from "../instrumentation/adoptionEvents";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -413,6 +415,7 @@ type ReplayState =
 
 export function ProcessReplayPage({ vin, onBack }: Props) {
   const { t } = useTranslation();
+  const { userId } = useAuth();
   const [replayState, setReplayState] = useState<ReplayState>({ type: "loading" });
   const [scrubPercent, setScrubPercent] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<ThreadSnapshotResponse | null>(null);
@@ -420,6 +423,12 @@ export function ProcessReplayPage({ vin, onBack }: Props) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Emit PROCESS_REPLAY_LAUNCH adoption event on mount
+  useEffect(() => {
+    void emitProcessReplayLaunch(vin);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vin]); // Emit once per vin, not on auth refresh
 
   // Fetch replay on mount
   useEffect(() => {

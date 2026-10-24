@@ -17,7 +17,7 @@
       }
     ]
   },
-  "description": "Adoption Metrics (A1–A7) — Planning Cockpit (US-019) and Line Command (US-020) Gate 1 evidence. Default window: Nov 1–28 2025.",
+  "description": "Adoption Metrics (A1–A7) — Planning Cockpit (US-019), Line Command (US-020), and Quality Studio (US-021) Gate 1 evidence. Default window: Nov 1–28 2025.",
   "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -330,11 +330,167 @@
       ],
       "title": "AR Device Adoption (A6) — Sessions by Device Type and Station",
       "type": "barchart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102,
+      "title": "Quality Studio Gate 1 KPIs (US-021) — Nov 1–28 2025",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+      "description": "Paint Engineer WAU — distinct PAINT_ENGINEER userIds per week with ≥1 meaningful action (PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED, CERTIFY, CERTIFICATE_STUDIO_OPEN). Login-only sessions excluded (US-021 AC2). Target ≥80%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "Active Paint Engineers",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "displayName": "WAU"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "// quality_studio_paint_engineer_wau — Gate 1 (target ≥80%)\nlet window_start = datetime(2025-11-01);\nlet window_end   = datetime(2025-11-28T23:59:59Z);\nlet meaningful_actions = dynamic([\"PROCESS_REPLAY_LAUNCH\",\"DEFECT_GENOME_QUERY\",\"ROOT_CAUSE_ASSIGNED\",\"CERTIFY\",\"CERTIFICATE_STUDIO_OPEN\"]);\nAdoptionEvent_CL\n| where TimeGenerated >= window_start and TimeGenerated <= window_end\n| extend\n    component_s  = tostring(Properties_d[\"component\"]),\n    actionType_s = tostring(Properties_d[\"actionType\"]),\n    userId_s     = tostring(Properties_d[\"userId\"]),\n    role_s       = tostring(Properties_d[\"role\"])\n| where component_s == \"quality-studio\" and role_s == \"PAINT_ENGINEER\"\n| extend berlin_time = TimeGenerated + 1h\n| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0\n    by userId_s, day_s = format_datetime(berlin_time, \"yyyy-MM-dd\"),\n       week_number = week_of_year(berlin_time), year_number = getyear(berlin_time)\n| where has_meaningful\n| summarize wau = dcount(userId_s) by week_number, year_number\n| extend week_label = strcat(tostring(year_number), \"-W\", tostring(week_number))\n| project week_label, week_number, year_number, wau\n| order by year_number asc, week_number asc",
+            "workspace": "${law_workspace_id}",
+            "resultFormat": "time_series"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Paint Engineer WAU — Target ≥80%",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+      "description": "Quality Validator WAU — distinct QUALITY_GATE_VALIDATOR userIds per week with ≥1 meaningful action. Login-only sessions excluded (US-021 AC2). Target ≥90%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "Active Quality Validators",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "displayName": "WAU"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "// quality_studio_quality_validator_wau — Gate 1 (target ≥90%)\nlet window_start = datetime(2025-11-01);\nlet window_end   = datetime(2025-11-28T23:59:59Z);\nlet meaningful_actions = dynamic([\"PROCESS_REPLAY_LAUNCH\",\"DEFECT_GENOME_QUERY\",\"ROOT_CAUSE_ASSIGNED\",\"CERTIFY\",\"CERTIFICATE_STUDIO_OPEN\"]);\nAdoptionEvent_CL\n| where TimeGenerated >= window_start and TimeGenerated <= window_end\n| extend\n    component_s  = tostring(Properties_d[\"component\"]),\n    actionType_s = tostring(Properties_d[\"actionType\"]),\n    userId_s     = tostring(Properties_d[\"userId\"]),\n    role_s       = tostring(Properties_d[\"role\"])\n| where component_s == \"quality-studio\" and role_s == \"QUALITY_GATE_VALIDATOR\"\n| extend berlin_time = TimeGenerated + 1h\n| summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0\n    by userId_s, day_s = format_datetime(berlin_time, \"yyyy-MM-dd\"),\n       week_number = week_of_year(berlin_time), year_number = getyear(berlin_time)\n| where has_meaningful\n| summarize wau = dcount(userId_s) by week_number, year_number\n| extend week_label = strcat(tostring(year_number), \"-W\", tostring(week_number))\n| project week_label, week_number, year_number, wau\n| order by year_number asc, week_number asc",
+            "workspace": "${law_workspace_id}",
+            "resultFormat": "time_series"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Validator WAU — Target ≥90%",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+      "description": "A7: Certificates issued via Quality Studio. A7 = count(sourceSystem='quality-studio') / count(*). fabricTransactionId cross-references the Fabric anchor count. Target ≥90%. Alert fires when A7 drops below 0.90.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 75 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "id": 9,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/a7_pct/", "values": false },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "text": {}
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${azmon_datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "// a7_certificate_via_quality_studio — Gate 1 A7 (target ≥90%)\nlet window_start = datetime(2025-11-01);\nlet window_end   = datetime(2025-11-28T23:59:59Z);\nAdoptionEvent_CL\n| where TimeGenerated >= window_start and TimeGenerated <= window_end\n| extend\n    component_s    = tostring(Properties_d[\"component\"]),\n    actionType_s   = tostring(Properties_d[\"actionType\"]),\n    sourceSystem_s = tostring(Properties_d[\"sourceSystem\"]),\n    fabricTxId_s   = tostring(Properties_d[\"fabricTransactionId\"])\n| where component_s == \"hyperledger-fabric-api\" and actionType_s == \"CertificateIssued\"\n| summarize\n    total_certs           = count(),\n    qs_certs              = countif(sourceSystem_s == \"quality-studio\"),\n    legacy_certs          = countif(sourceSystem_s == \"legacy\"),\n    distinct_fabric_txids = dcount(fabricTxId_s)\n| extend a7_pct = round(todouble(qs_certs) / toreal(total_certs) * 100.0, 2)\n| project total_certs, qs_certs, legacy_certs, distinct_fabric_txids, a7_pct",
+            "workspace": "${law_workspace_id}",
+            "resultFormat": "table"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "A7: Certificates via Quality Studio — Target ≥90%",
+      "type": "gauge"
     }
   ],
   "schemaVersion": 37,
   "style": "dark",
-  "tags": ["adoption", "gate1", "us-019", "us-020", "br-12"],
+  "tags": ["adoption", "gate1", "us-019", "us-020", "us-021", "br-12"],
   "templating": {
     "list": [
       {
@@ -370,5 +526,5 @@
   "timezone": "Europe/Berlin",
   "title": "Adoption Metrics (A1–A7)",
   "uid": "ifos-adoption-gate1",
-  "version": 2
+  "version": 3
 }

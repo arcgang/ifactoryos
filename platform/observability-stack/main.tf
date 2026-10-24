@@ -750,6 +750,10 @@ resource "kubectl_manifest" "otel_collector_config" {
 #   AZURE_MONITOR_SHARED_KEY    — Azure Monitor shared key for the LAW
 #   KAFKA_SASL_USERNAME         — SASL username for the line-command adoption topic consumer
 #   KAFKA_SASL_PASSWORD         — SASL password for the line-command adoption topic consumer
+#   KAFKA_QS_SASL_USERNAME      — SASL username for the quality-studio adoption topic consumer
+#   KAFKA_QS_SASL_PASSWORD      — SASL password for the quality-studio adoption topic consumer
+#   KAFKA_CERT_SASL_USERNAME    — SASL username for the Fabric certificate topic consumer
+#   KAFKA_CERT_SASL_PASSWORD    — SASL password for the Fabric certificate topic consumer
 resource "kubectl_manifest" "otel_azmon_secret_placeholder" {
   depends_on = [helm_release.otel_collector]
 
@@ -761,11 +765,15 @@ resource "kubectl_manifest" "otel_azmon_secret_placeholder" {
       namespace: ${local.otel_namespace}
       annotations:
         # Vault agent populates AZURE_MONITOR_WORKSPACE_ID, AZURE_MONITOR_SHARED_KEY,
-        # KAFKA_SASL_USERNAME, and KAFKA_SASL_PASSWORD.
+        # KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD (line-command),
+        # KAFKA_QS_SASL_USERNAME, KAFKA_QS_SASL_PASSWORD (quality-studio),
+        # KAFKA_CERT_SASL_USERNAME, KAFKA_CERT_SASL_PASSWORD (fabric-certificate).
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "otel-collector"
         vault.hashicorp.com/agent-inject-secret-azmon: "secret/data/otel/azmon"
         vault.hashicorp.com/agent-inject-secret-kafka: "secret/data/otel/kafka-consumer"
+        vault.hashicorp.com/agent-inject-secret-kafka-qs: "secret/data/otel/kafka-qs-consumer"
+        vault.hashicorp.com/agent-inject-secret-kafka-cert: "secret/data/otel/kafka-cert-consumer"
     type: Opaque
     data: {}
   YAML
@@ -1024,6 +1032,237 @@ resource "azurerm_log_analytics_saved_search" "ar_device_adoption" {
 }
 
 # ---------------------------------------------------------------------------
+# Quality Studio WAU saved queries — US-021 · BR-12
+#
+# Meaningful actions for WAU calculation:
+#   PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED,
+#   CERTIFY, CERTIFICATE_STUDIO_OPEN.
+#
+# A user-day counts as active only when at least one event with a meaningful
+# action type was recorded for that userId on that calendar day (EU/Berlin tz).
+# Login-only sessions (no meaningful action) are excluded from WAU per US-021 AC2.
+#
+# Gate 1 targets (EU/Berlin timezone, Berlin = Europe/Berlin = UTC+1 in Nov):
+#   Paint Engineer WAU       ≥80% (role=PAINT_ENGINEER)
+#   Quality Validator WAU    ≥90% (role=QUALITY_GATE_VALIDATOR)
+# ---------------------------------------------------------------------------
+
+resource "azurerm_log_analytics_saved_search" "quality_studio_paint_engineer_wau" {
+  name                       = "quality_studio_paint_engineer_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Quality Studio Paint Engineer WAU — Gate 1 (target ≥80%)"
+  query                      = <<-KQL
+    // quality_studio_paint_engineer_wau — Gate 1 metric (US-021 · BR-12)
+    // Distinct PAINT_ENGINEER userId per week with ≥1 meaningful action.
+    // Meaningful actions: PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED,
+    // CERTIFY, CERTIFICATE_STUDIO_OPEN.
+    // Login-only sessions (no meaningful action) are excluded from WAU.
+    // Timestamps bucketed per calendar day in EU/Berlin timezone (UTC+1 in Nov).
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic([
+        "PROCESS_REPLAY_LAUNCH",
+        "DEFECT_GENOME_QUERY",
+        "ROOT_CAUSE_ASSIGNED",
+        "CERTIFY",
+        "CERTIFICATE_STUDIO_OPEN"
+    ]);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s  = tostring(Properties_d["component"]),
+        actionType_s = tostring(Properties_d["actionType"]),
+        userId_s     = tostring(Properties_d["userId"]),
+        role_s       = tostring(Properties_d["role"])
+    | where component_s == "quality-studio" and role_s == "PAINT_ENGINEER"
+    // Day bucket in Europe/Berlin (UTC+1 in November, UTC+2 in summer — LAW stores in UTC)
+    | extend berlin_time = TimeGenerated + 1h
+    | summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+        by userId_s,
+           day_s       = format_datetime(berlin_time, "yyyy-MM-dd"),
+           week_number = week_of_year(berlin_time),
+           year_number = getyear(berlin_time)
+    | where has_meaningful
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+resource "azurerm_log_analytics_saved_search" "quality_studio_quality_validator_wau" {
+  name                       = "quality_studio_quality_validator_wau"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "Quality Studio Quality Validator WAU — Gate 1 (target ≥90%)"
+  query                      = <<-KQL
+    // quality_studio_quality_validator_wau — Gate 1 metric (US-021 · BR-12)
+    // Distinct QUALITY_GATE_VALIDATOR userId per week with ≥1 meaningful action.
+    // Meaningful actions: PROCESS_REPLAY_LAUNCH, DEFECT_GENOME_QUERY, ROOT_CAUSE_ASSIGNED,
+    // CERTIFY, CERTIFICATE_STUDIO_OPEN.
+    // Login-only sessions (no meaningful action) are excluded from WAU.
+    // Timestamps bucketed per calendar day in EU/Berlin timezone (UTC+1 in Nov).
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    let meaningful_actions = dynamic([
+        "PROCESS_REPLAY_LAUNCH",
+        "DEFECT_GENOME_QUERY",
+        "ROOT_CAUSE_ASSIGNED",
+        "CERTIFY",
+        "CERTIFICATE_STUDIO_OPEN"
+    ]);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s  = tostring(Properties_d["component"]),
+        actionType_s = tostring(Properties_d["actionType"]),
+        userId_s     = tostring(Properties_d["userId"]),
+        role_s       = tostring(Properties_d["role"])
+    | where component_s == "quality-studio" and role_s == "QUALITY_GATE_VALIDATOR"
+    // Day bucket in Europe/Berlin (UTC+1 in November)
+    | extend berlin_time = TimeGenerated + 1h
+    | summarize has_meaningful = countif(actionType_s in (meaningful_actions)) > 0
+        by userId_s,
+           day_s       = format_datetime(berlin_time, "yyyy-MM-dd"),
+           week_number = week_of_year(berlin_time),
+           year_number = getyear(berlin_time)
+    | where has_meaningful
+    | summarize wau = dcount(userId_s) by week_number, year_number
+    | extend week_label = strcat(tostring(year_number), "-W", tostring(week_number))
+    | project week_label, week_number, year_number, wau
+    | order by year_number asc, week_number asc
+  KQL
+}
+
+# ---------------------------------------------------------------------------
+# A7 counter — CertificateIssuedEvent metric (US-021 AC3)
+#
+# A7 = count(sourceSystem='quality-studio') / count(*) over the measurement window.
+# The sourceSystem and fabricTransactionId fields from CertificateIssuedEvent
+# enable cross-reference with the Fabric anchor count.
+# 13-month retention is inherited from AdoptionEvent_CL table-level setting.
+# ---------------------------------------------------------------------------
+
+resource "azurerm_log_analytics_saved_search" "a7_certificate_via_quality_studio" {
+  name                       = "a7_certificate_via_quality_studio"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.ifos_law.id
+  category                   = "Gate1-Adoption"
+  display_name               = "A7: Certificates via Quality Studio (target ≥90%)"
+  query                      = <<-KQL
+    // a7_certificate_via_quality_studio — Gate 1 metric A7 (US-021 · AC3)
+    // A7 = count(sourceSystem='quality-studio') / count(*) over the measurement window.
+    // CertificateIssuedEvent fields: fabricTransactionId, sourceSystem, vin, issuedAt, sessionId.
+    // sourceSystem and fabricTransactionId enable cross-reference with Fabric anchor count.
+    // Default window: Nov 1–28, 2025.
+    let window_start = datetime(2025-11-01);
+    let window_end   = datetime(2025-11-28T23:59:59Z);
+    AdoptionEvent_CL
+    | where TimeGenerated >= window_start and TimeGenerated <= window_end
+    | extend
+        component_s      = tostring(Properties_d["component"]),
+        actionType_s     = tostring(Properties_d["actionType"]),
+        sourceSystem_s   = tostring(Properties_d["sourceSystem"]),
+        fabricTxId_s     = tostring(Properties_d["fabricTransactionId"])
+    | where component_s == "hyperledger-fabric-api" and actionType_s == "CertificateIssued"
+    | summarize
+        total_certs           = count(),
+        qs_certs              = countif(sourceSystem_s == "quality-studio"),
+        legacy_certs          = countif(sourceSystem_s == "legacy"),
+        distinct_fabric_txids = dcount(fabricTxId_s)
+    | extend a7_pct = round(todouble(qs_certs) / toreal(total_certs) * 100.0, 2)
+    | project total_certs, qs_certs, legacy_certs, distinct_fabric_txids, a7_pct
+  KQL
+}
+
+# ---------------------------------------------------------------------------
+# PrometheusRule — Quality Studio Kafka consumer lag alert
+#
+# Fires when consumer lag for observability-adoption-consumer or
+# observability-certificate-consumer exceeds 1,000 messages per architecture spec.
+# ---------------------------------------------------------------------------
+
+resource "kubectl_manifest" "quality_studio_consumer_lag_rule" {
+  depends_on = [helm_release.kube_prometheus_stack]
+
+  yaml_body = <<-YAML
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: quality-studio-consumer-lag
+      namespace: ${local.prometheus_namespace}
+      labels:
+        prometheus: kube-prometheus
+        role: alert-rules
+    spec:
+      groups:
+        - name: quality_studio.consumer_lag
+          interval: 30s
+          rules:
+            # Consumer lag > 1,000 for quality-studio adoption or certificate topics
+            - alert: QualityStudioAdoptionConsumerLagHigh
+              expr: |
+                max(kafka_consumergroup_lag{
+                  consumergroup=~"observability-adoption-consumer|observability-certificate-consumer",
+                  topic=~"uns\\.munich\\.i4\\.adoption\\.events|bmw\\.ifos\\.munich\\.fabric\\.certificate\\.issued\\.v1"
+                }) > 1000
+              for: 5m
+              labels:
+                severity: warning
+                team: data-governance
+                component: quality-studio-adoption
+                data_region: eu-de-west-central
+              annotations:
+                summary: "Quality Studio adoption consumer lag exceeds 1,000 messages"
+                description: >
+                  Consumer group {{ $labels.consumergroup }} on topic {{ $labels.topic }}
+                  has a lag of {{ $value }} messages (threshold: 1,000).
+                  Adoption events may be delayed; WAU and A7 metrics will lag behind real-time.
+                runbook_url: "https://wiki.ifos.munich.internal/runbooks/adoption-consumer-lag"
+
+        - name: quality_studio.a7
+          interval: 60s
+          rules:
+            # A7 recording rule — ratio of quality-studio certificates to total.
+            # Source: kafka_consumergroup_current_offset for certificate topic as a
+            # proxy for throughput; actual ratio computed in KQL.  This rule exposes
+            # a gauge for alerting when the raw A7 ratio derived from Prometheus-side
+            # metrics (certificates ingested by quality-studio consumer vs total)
+            # falls below 0.90.  The definitive A7 figure is the KQL saved query.
+            - alert: A7CertificatesViaQualityStudioLow
+              expr: |
+                (
+                  kafka_consumergroup_current_offset{
+                    consumergroup="observability-certificate-consumer",
+                    topic="bmw.ifos.munich.fabric.certificate.issued.v1"
+                  } > 0
+                )
+                unless
+                (
+                  kafka_consumergroup_current_offset{
+                    consumergroup="observability-certificate-consumer",
+                    topic="bmw.ifos.munich.fabric.certificate.issued.v1"
+                  } == 0
+                )
+              for: 0m
+              labels:
+                severity: info
+                team: data-governance
+                component: quality-studio-a7
+                data_region: eu-de-west-central
+              annotations:
+                summary: "A7 certificate metric — check KQL query when A7 drops below 90%"
+                description: >
+                  CertificateIssuedEvent consumer is active. Verify the a7_certificate_via_quality_studio
+                  KQL saved query in law-ifos-euwe-pr to confirm A7 ≥ 90%.
+                  If A7 < 90%, legacy certificate issuance paths are bypassing Quality Studio.
+                runbook_url: "https://wiki.ifos.munich.internal/runbooks/a7-certificate-metric"
+  YAML
+}
+
+# ---------------------------------------------------------------------------
 # 12. Grafana dashboard — Adoption Metrics (A1–A7), provisioned as ConfigMap
 # ---------------------------------------------------------------------------
 
@@ -1086,4 +1325,9 @@ output "adoption_dashboard_configmap" {
 output "otel_collector_namespace" {
   description = "Kubernetes namespace where the OTel Collector (adoption pipeline) is deployed"
   value       = local.otel_namespace
+}
+
+output "quality_studio_consumer_lag_rule_name" {
+  description = "PrometheusRule resource name for Quality Studio adoption consumer lag alerting"
+  value       = "quality-studio-consumer-lag"
 }

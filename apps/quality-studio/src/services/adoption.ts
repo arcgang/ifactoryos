@@ -1,10 +1,14 @@
 /**
  * Adoption event emitter — sends usage telemetry to the observability stack
- * via OTLP HTTP endpoint. Best-effort: failures are silently swallowed.
+ * via HTTP endpoint. Best-effort: failures are silently swallowed.
+ *
+ * Note: This is a legacy interface used by the existing Gate Command and
+ * Certify flow. New code should use the instrumentation/adoptionEvents.ts
+ * module which supports all event types and session tracking.
  */
 
 const OTLP_ENDPOINT =
-  import.meta.env.VITE_OTLP_ENDPOINT ?? "/api/v1/telemetry/adoption";
+  import.meta.env.VITE_OTLP_ENDPOINT ?? "/api/v1/ingest/events";
 
 export type AdoptionAction =
   | "GATE_COMMAND_OPEN"

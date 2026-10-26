@@ -133,7 +133,11 @@ beforeEach(async () => {
   vi.mocked(apiModule.apiRequest).mockReset();
   mockGetUserMedia.mockReset();
   mockAddTrack.mockReset();
-  mockCreateDataChannel.mockReset();
+  mockCreateDataChannel.mockImplementation((): DataChannelHandle => {
+    const dc: DataChannelHandle = { onmessage: null, close: vi.fn() };
+    _lastDataChannel = dc;
+    return dc;
+  });
   mockPcClose.mockReset();
   _lastDataChannel = null;
 });

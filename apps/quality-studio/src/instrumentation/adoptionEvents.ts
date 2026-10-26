@@ -92,12 +92,12 @@ function emit(event: ProcessReplayLaunchEvent | DefectGenomeQueryEvent | RootCau
     window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
   }
   if (typeof fetch !== "undefined") {
-    void fetch(COLLECTOR_URL, {
+    void Promise.resolve(fetch(COLLECTOR_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(event),
       keepalive: true,
-    }).catch(() => {
+    })).catch(() => {
       // Fire-and-forget — instrumentation errors must never surface to engineers.
     });
   }

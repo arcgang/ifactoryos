@@ -963,23 +963,20 @@ describe("GateCompletenessCard — Manual Override modal", () => {
 describe("Gate Command — instrumentation adoption events", () => {
   it("emits CERTIFY event with fabricTxHash on successful certify", async () => {
     vi.spyOn(api, "listGateResults").mockResolvedValue(
-      makeListResponse([
-        makeGateResult({
-          gateType: "dimensional",
-          result: "pass",
-        }),
-      ]),
+      makeListResponse(ALL_PASS_RESULTS),
     );
-    vi.spyOn(api, "certifyVehicle").mockResolvedValue({
-      certificateId: "cert-123",
-      fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
-      vin: "WBY73CF080NCH14427",
-      issuedAt: "2026-10-13T09:31:16.000Z",
-      validatorId: "kb-entra-001",
-      healthScore: { overall: "pass", perGate: {} },
-      gateResultsSnapshot: [],
+    vi.spyOn(api, "issueCertificate").mockResolvedValue({
+      response: {
+        certificateId: "cert-123",
+        vin: "WBY73CF080NCH14427",
+        fabricTransactionId: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
+        fabricBlockNumber: 42,
+        anchoredAt: "2026-10-13T09:31:16.000Z",
+        certificateHash: "deadbeef",
+      },
+      status: 200,
     });
-    const emitSpy = vi.spyOn(adoptionEvents, "emitCertify").mockResolvedValue(undefined);
+    const emitSpy = vi.spyOn(adoptionEvents, "emitCertify").mockImplementation(() => undefined);
 
     renderPage();
 
@@ -992,7 +989,7 @@ describe("Gate Command — instrumentation adoption events", () => {
     await waitFor(() =>
       expect(emitSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: "CERTIFY",
+          userId: expect.any(String),
           role: "QUALITY_GATE_VALIDATOR",
           vin: "WBY73CF080NCH14427",
           fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
@@ -1001,42 +998,39 @@ describe("Gate Command — instrumentation adoption events", () => {
     );
   });
 
-  it("emits CERTIFICATE_STUDIO_OPEN event when certificate panel is rendered", async () => {
-    vi.spyOn(api, "listGateResults").mockResolvedValue(
-      makeListResponse([
-        makeGateResult({
-          gateType: "dimensional",
-          result: "pass",
-        }),
-      ]),
-    );
-    vi.spyOn(api, "certifyVehicle").mockResolvedValue({
+  it("emits CERTIFICATE_STUDIO_OPEN event when CertificateStudioPanel mounts", () => {
+    const emitSpy = vi.spyOn(adoptionEvents, "emitCertificateStudioOpen").mockImplementation(() => undefined);
+
+    const cert: api.CertifyResponse = {
       certificateId: "cert-123",
       fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
       vin: "WBY73CF080NCH14427",
       issuedAt: "2026-10-13T09:31:16.000Z",
       validatorId: "kb-entra-001",
-      healthScore: { overall: "pass", perGate: {} },
+      healthScore: {
+        overall: "pass",
+        perGate: {
+          dimensional: "pass",
+          leak: "pass",
+          electrical: "pass",
+          nvh: "pass",
+          adas: "pass",
+        },
+      },
       gateResultsSnapshot: [],
-    });
-    const emitSpy = vi.spyOn(adoptionEvents, "emitCertificateStudioOpen").mockResolvedValue(undefined);
+    };
 
-    renderPage();
-
-    await waitFor(() =>
-      expect(screen.getByTestId("certify-button")).toBeTruthy(),
+    render(
+      <I18nextProvider i18n={i18n}>
+        <CertificateStudioPanel cert={cert} />
+      </I18nextProvider>,
     );
 
-    fireEvent.click(screen.getByTestId("certify-button"));
-
-    await waitFor(() =>
-      expect(emitSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: "CERTIFICATE_STUDIO_OPEN",
-          role: "QUALITY_GATE_VALIDATOR",
-          vin: "WBY73CF080NCH14427",
-        }),
-      ),
+    expect(emitSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "QUALITY_GATE_VALIDATOR",
+        vin: "WBY73CF080NCH14427",
+      }),
     );
   });
 });

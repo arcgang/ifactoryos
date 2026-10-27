@@ -113,7 +113,12 @@ describe("StationDetailPage — alert fetch returns trace arrays and crossing fi
   it("renders minutesToPredictedFailure value of 12", async () => {
     vi.spyOn(api, "getAndonAlert").mockResolvedValue(OPEN_ALERT);
     renderPage();
-    await waitFor(() => expect(screen.getByText(/12/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId("threshold-crossing-countdown")).toBeTruthy(),
+    );
+    // "12" appears in both the countdown span and the meta section — use getAllByText
+    const matches = screen.getAllByText(/12/);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders recommended action text", async () => {

@@ -431,6 +431,9 @@ describe("SequenceBuilderPage — publish to OpCenter", () => {
     );
 
     render(<SequenceBuilderPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: /publish to opcenter/i }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /publish to opcenter/i }));
     fireEvent.click(
       screen.getByRole("button", { name: /publish \d+ vins to opcenter/i }),
@@ -447,6 +450,9 @@ describe("SequenceBuilderPage — publish to OpCenter", () => {
     vi.mocked(api.publishSequence).mockResolvedValue(PUBLISHED_RESPONSE);
 
     render(<SequenceBuilderPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: /publish to opcenter/i }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /publish to opcenter/i }));
     fireEvent.click(
       screen.getByRole("button", { name: /publish \d+ vins to opcenter/i }),

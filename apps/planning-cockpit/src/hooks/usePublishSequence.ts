@@ -19,13 +19,11 @@ export type PublishState =
   | { phase: "error"; message: string; isRejected: boolean };
 
 const POLL_INTERVAL_MS = 30_000;
-const PENDING_KEY = "ifos_pending_publish";
 
-interface PendingPublishRecord {
-  syncJobId: string;
-  sequencePlanId: string;
-  retryScheduledAt: string | null;
-}
+const PAGE_SESSION_ID =
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : "session-" + Math.random().toString(36).slice(2);
 
 function emitAdoptionEvent(
   userId: string,
@@ -48,33 +46,12 @@ function emitAdoptionEvent(
     ).otelClient?.track === "function"
   ) {
     (
-      window as Window & { otelClient: { track: (e: unknown) => void } }
+      window as unknown as Window & { otelClient: { track: (e: unknown) => void } }
     ).otelClient.track(event);
   }
   window.dispatchEvent(new CustomEvent("ifos:adoption", { detail: event }));
 }
 
-function getUserIdFromToken(): string {
-  try {
-    const token = localStorage.getItem("ifos_planning_cockpit_token");
-    if (!token) return "anonymous";
-    const payload = token.split(".")[1];
-    if (!payload) return "anonymous";
-    const decoded = JSON.parse(atob(payload)) as Record<string, unknown>;
-    return (decoded.sub as string) ?? "anonymous";
-  } catch {
-    return "anonymous";
-  }
-}
-
-function getSessionId(): string {
-  const key = "ifos_session_id";
-  const existing = sessionStorage.getItem(key);
-  if (existing) return existing;
-  const id = "session-" + Math.random().toString(36).slice(2);
-  sessionStorage.setItem(key, id);
-  return id;
-}
 
 export interface UsePublishSequenceResult {
   publishState: PublishState;
@@ -93,32 +70,6 @@ export function usePublishSequence(
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Restore pending publish from localStorage on mount
-  useEffect(() => {
-    const raw = localStorage.getItem(PENDING_KEY);
-    if (!raw) return;
-    try {
-      const record = JSON.parse(raw) as PendingPublishRecord;
-      if (record.sequencePlanId !== sequencePlanId) return;
-      setPublishState({
-        phase: "queued",
-        response: {
-          syncJobId: record.syncJobId,
-          opcenterSequenceId: null,
-          status: "queued",
-          source: "planning-cockpit",
-          publishedAt: null,
-          retryScheduledAt: record.retryScheduledAt,
-        },
-        syncJobId: record.syncJobId,
-        retryScheduledAt: record.retryScheduledAt,
-      });
-      setPollingSyncJobId(record.syncJobId);
-    } catch {
-      localStorage.removeItem(PENDING_KEY);
-    }
-  }, [sequencePlanId]);
-
   // Restore any queued jobs for this plan from the server on mount
   useEffect(() => {
     let cancelled = false;
@@ -131,12 +82,6 @@ export function usePublishSequence(
         if (!match) return;
         setPublishState((prev) => {
           if (prev.phase !== "idle") return prev;
-          const record: PendingPublishRecord = {
-            syncJobId: match.syncJobId,
-            sequencePlanId: match.sequencePlanId,
-            retryScheduledAt: match.nextRetryAt ?? null,
-          };
-          localStorage.setItem(PENDING_KEY, JSON.stringify(record));
           return {
             phase: "queued",
             response: {
@@ -153,8 +98,8 @@ export function usePublishSequence(
         });
         setPollingSyncJobId(match.syncJobId);
       })
-      .catch(() => {
-        // non-fatal — offline restore from localStorage is the fallback
+      .catch((err: unknown) => {
+        console.warn("usePublishSequence: failed to restore queued jobs", err);
       });
     return () => {
       cancelled = true;
@@ -171,12 +116,12 @@ export function usePublishSequence(
       let job: SyncJob;
       try {
         job = await getSyncJob(syncJobId);
-      } catch {
+      } catch (err: unknown) {
+        console.warn("usePublishSequence: poll failed, will retry", err);
         return;
       }
 
       if (job.status === "published") {
-        localStorage.removeItem(PENDING_KEY);
         const response: SequencePublishResponse = {
           syncJobId: job.syncJobId,
           opcenterSequenceId: job.opcenterSequenceId ?? null,
@@ -188,8 +133,8 @@ export function usePublishSequence(
         setPublishState({ phase: "published", response });
         setPollingSyncJobId(null);
         emitAdoptionEvent(
-          getUserIdFromToken(),
-          getSessionId(),
+          "anonymous",
+          PAGE_SESSION_ID,
           job.opcenterSequenceId ?? "",
           job.lastAttemptAt ?? new Date().toISOString(),
         );
@@ -197,7 +142,6 @@ export function usePublishSequence(
         job.status === "failed" ||
         job.status === "rejected_by_opcenter"
       ) {
-        localStorage.removeItem(PENDING_KEY);
         setPublishState({
           phase: "error",
           message: job.opcenterError ?? "Publish failed",
@@ -237,8 +181,8 @@ export function usePublishSequence(
         try {
           const parsed = JSON.parse(rawBody) as { message?: string };
           if (parsed.message) rawBody = parsed.message;
-        } catch {
-          // leave rawBody as-is
+        } catch (parseErr: unknown) {
+          console.debug("usePublishSequence: error body is not JSON", parseErr);
         }
         setPublishState({
           phase: "error",
@@ -249,21 +193,14 @@ export function usePublishSequence(
       }
 
       if (response.status === "published") {
-        localStorage.removeItem(PENDING_KEY);
         setPublishState({ phase: "published", response });
         emitAdoptionEvent(
-          getUserIdFromToken(),
-          getSessionId(),
+          "anonymous",
+          PAGE_SESSION_ID,
           response.opcenterSequenceId ?? "",
           response.publishedAt ?? new Date().toISOString(),
         );
       } else if (response.status === "queued") {
-        const record: PendingPublishRecord = {
-          syncJobId: response.syncJobId,
-          sequencePlanId: req.sequencePlanId,
-          retryScheduledAt: response.retryScheduledAt ?? null,
-        };
-        localStorage.setItem(PENDING_KEY, JSON.stringify(record));
         setPublishState({
           phase: "queued",
           response,

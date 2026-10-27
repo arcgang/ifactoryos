@@ -103,7 +103,7 @@ describe("ARWorkbenchPage — adoption event endpoints", () => {
     expect(path).toBe("/api/v1/ar/sessions");
     expect(options?.method).toBe("POST");
 
-    const body = JSON.parse(options?.body);
+    const body = JSON.parse(options?.body as string);
     expect(body.vin).toBe("WBS11EM030CHX9104");
     expect(body.stationId).toBe("MARRIAGE-01");
     expect(body.deviceType).toMatch(/HoloLens2|iPad/);
@@ -128,7 +128,7 @@ describe("ARWorkbenchPage — adoption event endpoints", () => {
         };
       }
       if (typeof path === "string" && path.includes("/ar/sessions")) {
-        const body = JSON.parse(options?.body);
+        const body = JSON.parse(options?.body as string);
         capturedKeys.push(body.idempotencyKey);
       }
       return {};
@@ -199,7 +199,7 @@ describe("ARWorkbenchPage — adoption event endpoints", () => {
       ([path]) => typeof path === "string" && path.includes("/ar/sessions"),
     );
     const [, options] = sessionPostCall!;
-    const body = JSON.parse(options?.body);
+    const body = JSON.parse(options?.body as string);
 
     // Verify no biometric fields are present
     expect(body).not.toHaveProperty("gaze");

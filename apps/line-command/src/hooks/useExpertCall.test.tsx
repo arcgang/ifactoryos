@@ -24,7 +24,7 @@ vi.mock("../services/api", () => ({
 
 // Mock navigator.mediaDevices
 const mockGetUserMedia = vi.fn();
-Object.defineProperty(global.navigator, "mediaDevices", {
+Object.defineProperty(globalThis.navigator, "mediaDevices", {
   value: { getUserMedia: mockGetUserMedia },
   writable: true,
   configurable: true,

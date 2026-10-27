@@ -63,7 +63,7 @@ describe("useHandoverSubmission", () => {
     expect(path).toBe("/api/v1/handover");
     expect(options?.method).toBe("POST");
 
-    const body = JSON.parse(options?.body);
+    const body = JSON.parse(options?.body as string);
     expect(body.shiftId).toBe("SH-20261012-2");
     expect(body.lineId).toBe("WL-A");
     expect(body.shiftStartTs).toBe("2026-10-12T14:00:00Z");
@@ -82,7 +82,7 @@ describe("useHandoverSubmission", () => {
     });
 
     const [, options] = mockApiRequest.mock.calls[0];
-    const body = JSON.parse(options?.body);
+    const body = JSON.parse(options?.body as string);
 
     // Idempotency key should be a UUID
     expect(body.idempotencyKey).toMatch(
@@ -102,7 +102,7 @@ describe("useHandoverSubmission", () => {
     });
 
     let [, options] = mockApiRequest.mock.calls[mockApiRequest.mock.calls.length - 1];
-    let body = JSON.parse(options?.body);
+    let body = JSON.parse(options?.body as string);
     capturedKeys.push(body.idempotencyKey);
 
     // Second submit attempt
@@ -111,7 +111,7 @@ describe("useHandoverSubmission", () => {
     });
 
     [, options] = mockApiRequest.mock.calls[mockApiRequest.mock.calls.length - 1];
-    body = JSON.parse(options?.body);
+    body = JSON.parse(options?.body as string);
     capturedKeys.push(body.idempotencyKey);
 
     // Both keys should be identical
@@ -197,7 +197,7 @@ describe("useHandoverSubmission", () => {
     });
 
     const [, options] = mockApiRequest.mock.calls[0];
-    const body = JSON.parse(options?.body);
+    const body = JSON.parse(options?.body as string);
 
     expect(body.heldVins).toEqual([
       "WBS11000X0CHX8812",

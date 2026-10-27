@@ -15,8 +15,8 @@ function emitAdoptionEvent(name: string, attributes: Record<string, string | num
       end: `${name}:end`,
       detail: { ...attributes, topic: "factory.munich.line-command.adoption.v1" },
     });
-  } catch {
-    // best-effort
+  } catch (err) {
+    console.error("[adoption] performance.measure failed", err);
   }
 }
 
@@ -334,7 +334,7 @@ function AlertCountdown({ initialMinutes, serverResyncRef }: CountdownProps) {
   return (
     <span
       aria-live="polite"
-      aria-label={t("andon.minutes_until_failure", { count: String(minutes) })}
+      aria-label={t("andon.minutes_until_failure", { count: minutes })}
       style={{
         alignItems: "center",
         background: urgent
@@ -848,8 +848,8 @@ export function CommandCenterPage({ lineId }: Props) {
     try {
       await acknowledgeAlert(alertId, "resolved", stationId);
       setAlerts((prev) => prev.filter((a) => a.alertId !== alertId));
-    } catch {
-      // leave the alert in place; the user can retry
+    } catch (err) {
+      console.error("[andon] acknowledgeAlert failed, alert left in place", err);
     }
   }, []);
 
@@ -862,8 +862,8 @@ export function CommandCenterPage({ lineId }: Props) {
           await acknowledgeAlert(pendingHandover.alertId, "resolved", alert.stationId);
         }
       }
-    } catch {
-      // best-effort
+    } catch (err) {
+      console.error("[andon] acknowledgeAlert for handover failed", err);
     }
     // Clear optimistically regardless of API result
     setPendingHandover(null);

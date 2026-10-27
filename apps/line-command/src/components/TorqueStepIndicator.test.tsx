@@ -14,8 +14,8 @@ import type { TorqueOotPayload } from "./TorqueOutOfToleranceToast";
 
 async function expectNoAxeCriticalViolations(container: HTMLElement): Promise<void> {
   const results = await axe.run(container);
-  const critical = results.violations.filter((v) => v.impact === "critical");
-  expect(critical, `axe critical violations: ${critical.map((v) => v.id).join(", ")}`).toHaveLength(0);
+  const critical = results.violations.filter((v: axe.Result) => v.impact === "critical");
+  expect(critical, `axe critical violations: ${critical.map((v: axe.Result) => v.id).join(", ")}`).toHaveLength(0);
 }
 
 // ---------------------------------------------------------------------------

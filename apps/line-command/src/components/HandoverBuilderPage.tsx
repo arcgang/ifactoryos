@@ -1061,18 +1061,18 @@ export function HandoverBuilderPage({ oeeSnapshots = [], userId = "" }: Props) {
           </button>
           <button
             type="button"
-            disabled={!canSubmit || phase === "submitting"}
-            aria-disabled={!canSubmit || phase === "submitting"}
+            disabled={!canSubmit}
+            aria-disabled={!canSubmit}
             onClick={() => void handleSubmit()}
             style={{
-              background: canSubmit && phase !== "submitting" ? "var(--lc-bmw-blue, #0066b1)" : "rgba(0,102,177,.35)",
+              background: canSubmit ? "var(--lc-bmw-blue, #0066b1)" : "rgba(0,102,177,.35)",
               border: "none",
               borderRadius: "6px",
               color: "#fff",
-              cursor: canSubmit && phase !== "submitting" ? "pointer" : "not-allowed",
+              cursor: canSubmit ? "pointer" : "not-allowed",
               fontSize: "13px",
               fontWeight: 700,
-              opacity: canSubmit && phase !== "submitting" ? 1 : 0.5,
+              opacity: canSubmit ? 1 : 0.5,
               padding: "8px 18px",
             }}
           >

@@ -56,7 +56,7 @@ export function AndonAlert({
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
         {countdown && (
-          <div className="countdown-chip" aria-label={t("andon.minutes_until_failure", { count: countdown })}>
+          <div className="countdown-chip" aria-label={t("andon.minutes_until_failure", { count: Number(countdown) })}>
             ⏱ {countdown}
           </div>
         )}

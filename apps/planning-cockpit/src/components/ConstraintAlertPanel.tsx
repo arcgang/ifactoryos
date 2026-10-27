@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { acknowledgeAlert, getMy26Config, postResequence, publishSequence } from "../services/api";
+import { acknowledgeAlert, getMy26Config, postResequence, publishAlertSequence } from "../services/api";
 import type { ConstraintAlertRecord } from "../types/alerts";
 import type { OptimizeResponse, RankedVin } from "../types/optimizer";
 import { emitPublishConfirmedEvent } from "../instrumentation/sessionEvents";
@@ -208,11 +208,11 @@ function AlertCard({ alert, onDismissed }: AlertCardProps) {
           try {
             const activeConfig = await getMy26Config();
             my26ConfigVersion = activeConfig ? String(activeConfig.configId) : null;
-          } catch {
-            // best-effort
+          } catch (err: unknown) {
+            console.warn("ConstraintAlertPanel: failed to fetch my26 config", err);
           }
         }
-        await publishSequence({ sequenceId, isResequence: true, my26ConfigVersion });
+        await publishAlertSequence({ sequenceId, isResequence: true, my26ConfigVersion });
         emitPublishConfirmedEvent();
         emitAdoptionEvent("resequence_published", { sequenceId, my26ConfigVersion });
         setPublished(true);
@@ -231,8 +231,8 @@ function AlertCard({ alert, onDismissed }: AlertCardProps) {
     setDismissing(true);
     try {
       await acknowledgeAlert(alert.alertId);
-    } catch {
-      // best-effort acknowledge; dismiss locally regardless
+    } catch (err: unknown) {
+      console.warn("ConstraintAlertPanel: failed to acknowledge alert", err);
     } finally {
       setDismissing(false);
       onDismissed(alert.alertId);

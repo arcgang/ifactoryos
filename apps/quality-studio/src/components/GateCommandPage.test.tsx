@@ -963,12 +963,7 @@ describe("GateCompletenessCard — Manual Override modal", () => {
 describe("Gate Command — instrumentation adoption events", () => {
   it("emits CERTIFY event with fabricTxHash on successful certify", async () => {
     vi.spyOn(api, "listGateResults").mockResolvedValue(
-      makeListResponse([
-        makeGateResult({
-          gateType: "dimensional",
-          result: "pass",
-        }),
-      ]),
+      makeListResponse(ALL_PASS_RESULTS),
     );
     vi.spyOn(api, "certifyVehicle").mockResolvedValue({
       certificateId: "cert-123",
@@ -1003,12 +998,7 @@ describe("Gate Command — instrumentation adoption events", () => {
 
   it("emits CERTIFICATE_STUDIO_OPEN event when certificate panel is rendered", async () => {
     vi.spyOn(api, "listGateResults").mockResolvedValue(
-      makeListResponse([
-        makeGateResult({
-          gateType: "dimensional",
-          result: "pass",
-        }),
-      ]),
+      makeListResponse(ALL_PASS_RESULTS),
     );
     vi.spyOn(api, "certifyVehicle").mockResolvedValue({
       certificateId: "cert-123",

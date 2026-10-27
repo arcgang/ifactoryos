@@ -107,12 +107,7 @@ beforeEach(() => {
 
 describe("SequenceBuilderPage — idle state", () => {
   it("renders Run Optimizer button in idle state", () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(makeMonteCarloResponse()),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(makeMonteCarloResponse());
 
     render(<SequenceBuilderPage />);
 
@@ -128,12 +123,7 @@ describe("SequenceBuilderPage — idle state", () => {
 
 describe("SequenceBuilderPage — monte_carlo result", () => {
   it("renders ranked sequence table with position, constraintScore, VIP badge, and REGULATORY HOLD badge", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(makeMonteCarloResponse()),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(makeMonteCarloResponse());
 
     render(<SequenceBuilderPage />);
 
@@ -163,12 +153,7 @@ describe("SequenceBuilderPage — monte_carlo result", () => {
   });
 
   it("does NOT render heuristic banner when resultType is monte_carlo", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(makeMonteCarloResponse()),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(makeMonteCarloResponse());
 
     render(<SequenceBuilderPage />);
     await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
@@ -185,12 +170,7 @@ describe("SequenceBuilderPage — monte_carlo result", () => {
     // shuffle the rankedSequence
     resp.rankedSequence = [...resp.rankedSequence].reverse();
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(resp),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(resp);
 
     render(<SequenceBuilderPage />);
     await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
@@ -207,12 +187,7 @@ describe("SequenceBuilderPage — monte_carlo result", () => {
 
 describe("SequenceBuilderPage — heuristic_fallback result", () => {
   it("renders heuristic fallback banner when resultType is heuristic_fallback", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(makeHeuristicResponse()),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(makeHeuristicResponse());
 
     render(<SequenceBuilderPage />);
     await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
@@ -233,12 +208,7 @@ describe("SequenceBuilderPage — heuristic_fallback result", () => {
       makeRankedVin(2, { regulatoryHold: true }),
     ];
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(resp),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(resp);
 
     render(<SequenceBuilderPage />);
     await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
@@ -260,39 +230,21 @@ describe("SequenceBuilderPage — polling", () => {
 
   it("polls GET /optimize/{runId} every 2 s and stops on 200 with a result", async () => {
     let callCount = 0;
-    vi.spyOn(globalThis, "fetch").mockImplementation((url: RequestInfo | URL) => {
-      const urlStr = typeof url === "string" ? url : url.toString();
-      if (urlStr.includes(`/optimize/${RUN_ID}`)) {
-        callCount++;
-        if (callCount >= 2) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve(makeMonteCarloResponse()),
-            text: () => Promise.resolve(""),
-          } as Response);
-        }
-        // First poll returns a response without rankedSequence (still running)
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ ...makeMonteCarloResponse(), rankedSequence: [] }),
-          text: () => Promise.resolve(""),
-        } as Response);
+    // POST returns runId but empty rankedSequence (triggers polling)
+    vi.mocked(api.postOptimize).mockResolvedValue({ ...makeMonteCarloResponse(), rankedSequence: [] });
+    // GET: first call returns empty, second returns full result
+    vi.mocked(api.getOptimizeRun).mockImplementation(() => {
+      callCount++;
+      if (callCount >= 2) {
+        return Promise.resolve(makeMonteCarloResponse());
       }
-      // POST /optimize — returns runId but empty rankedSequence (triggers polling)
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ ...makeMonteCarloResponse(), rankedSequence: [] }),
-        text: () => Promise.resolve(""),
-      } as Response);
+      return Promise.resolve({ ...makeMonteCarloResponse(), rankedSequence: [] });
     });
 
     render(<SequenceBuilderPage />);
-    await act(async () => {
-      await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
-    });
+    fireEvent.click(screen.getByTestId("run-optimizer-btn"));
+    // flush the postOptimize promise and state update
+    await act(async () => { await Promise.resolve(); });
 
     // running indicator is visible after POST resolves (no timer advance needed)
     expect(screen.getByTestId("running-indicator")).toBeTruthy();
@@ -310,12 +262,7 @@ describe("SequenceBuilderPage — polling", () => {
 
 describe("SequenceBuilderPage — OTel adoption event", () => {
   it("emits optimizer_run adoption event within 1 s of button click", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(makeMonteCarloResponse()),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue(makeMonteCarloResponse());
 
     const events: CustomEvent[] = [];
     window.addEventListener("ifos:adoption", ((e: CustomEvent) => {
@@ -327,7 +274,7 @@ describe("SequenceBuilderPage — OTel adoption event", () => {
 
     await waitFor(() => {
       const optimizerEvents = events.filter(
-        (e) => (e.detail as { action: string }).action === "optimizer_run",
+        (e) => (e.detail as { actionType: string }).actionType === "optimizer_run",
       );
       expect(optimizerEvents.length).toBeGreaterThanOrEqual(1);
     });
@@ -345,17 +292,13 @@ describe("SequenceBuilderPage — timeout branch", () => {
   it("shows error state after 45 s of polling with no result", async () => {
     // POST returns empty sequence (triggers polling)
     // All polls return empty sequence too
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ ...makeMonteCarloResponse(), rankedSequence: [] }),
-      text: () => Promise.resolve(""),
-    } as Response);
+    vi.mocked(api.postOptimize).mockResolvedValue({ ...makeMonteCarloResponse(), rankedSequence: [] });
+    vi.mocked(api.getOptimizeRun).mockResolvedValue({ ...makeMonteCarloResponse(), rankedSequence: [] });
 
     render(<SequenceBuilderPage />);
-    await act(async () => {
-      await userEvent.setup({ delay: null }).click(screen.getByTestId("run-optimizer-btn"));
-    });
+    fireEvent.click(screen.getByTestId("run-optimizer-btn"));
+    // flush the postOptimize promise and state update
+    await act(async () => { await Promise.resolve(); });
 
     expect(screen.getByTestId("running-indicator")).toBeTruthy();
 

@@ -113,7 +113,8 @@ describe("StationDetailPage — alert fetch returns trace arrays and crossing fi
   it("renders minutesToPredictedFailure value of 12", async () => {
     vi.spyOn(api, "getAndonAlert").mockResolvedValue(OPEN_ALERT);
     renderPage();
-    await waitFor(() => expect(screen.getByText(/12/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId("minutes-to-failure")).toBeTruthy());
+    expect(screen.getByTestId("minutes-to-failure").textContent).toContain("12");
   });
 
   it("renders recommended action text", async () => {

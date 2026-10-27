@@ -136,7 +136,7 @@ export function StationDetailPage({ alertId, userId, onForbidden }: Props) {
 
       <section className="station-detail-meta" aria-label="Alert metadata">
         {alert.minutesToPredictedFailure !== null && (
-          <p>
+          <p data-testid="minutes-to-failure">
             <strong>{t("station_detail.minutes_to_failure_label")}:</strong>{" "}
             {alert.minutesToPredictedFailure}
           </p>

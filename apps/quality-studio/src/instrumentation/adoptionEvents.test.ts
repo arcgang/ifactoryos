@@ -11,7 +11,7 @@ import {
 } from "./adoptionEvents";
 
 // Mock the fetch API
-global.fetch = vi.fn();
+globalThis.fetch = vi.fn();
 
 describe("adoptionEvents — event emission", () => {
   beforeEach(() => {
@@ -22,7 +22,7 @@ describe("adoptionEvents — event emission", () => {
   it("emitProcessReplayLaunch emits event with correct shape", async () => {
     emitProcessReplayLaunch("WBSDE4C07NCK19847");
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/v1/ingest/events",
       expect.objectContaining({
         method: "POST",
@@ -30,7 +30,7 @@ describe("adoptionEvents — event emission", () => {
       }),
     );
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body).toMatchObject({
       action: "PROCESS_REPLAY_LAUNCH",
@@ -47,7 +47,7 @@ describe("adoptionEvents — event emission", () => {
       defectClass: "Crater",
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/v1/ingest/events",
       expect.objectContaining({
         method: "POST",
@@ -55,7 +55,7 @@ describe("adoptionEvents — event emission", () => {
       }),
     );
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body).toMatchObject({
       action: "DEFECT_GENOME_QUERY",
@@ -74,7 +74,7 @@ describe("adoptionEvents — event emission", () => {
       clusterId: "DG-0042",
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/v1/ingest/events",
       expect.objectContaining({
         method: "POST",
@@ -82,7 +82,7 @@ describe("adoptionEvents — event emission", () => {
       }),
     );
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body).toMatchObject({
       action: "ROOT_CAUSE_ASSIGNED",
@@ -100,7 +100,7 @@ describe("adoptionEvents — event emission", () => {
       vin: "WBSDE4C07NCK19847",
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/v1/ingest/events",
       expect.objectContaining({
         method: "POST",
@@ -108,7 +108,7 @@ describe("adoptionEvents — event emission", () => {
       }),
     );
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body).toMatchObject({
       action: "CERTIFICATE_STUDIO_OPEN",
@@ -128,7 +128,7 @@ describe("adoptionEvents — event emission", () => {
       fabricTxHash: "a3f9c2d1e8b047bf2e1d5f8a3c9d6b2e",
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/v1/ingest/events",
       expect.objectContaining({
         method: "POST",
@@ -136,7 +136,7 @@ describe("adoptionEvents — event emission", () => {
       }),
     );
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body).toMatchObject({
       action: "CERTIFY",
@@ -155,7 +155,7 @@ describe("adoptionEvents — event emission", () => {
       role: "QUALITY_GATE_VALIDATOR",
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/v1/ingest/events",
       expect.objectContaining({
         method: "POST",
@@ -163,7 +163,7 @@ describe("adoptionEvents — event emission", () => {
       }),
     );
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
     expect(body).toMatchObject({
       action: "LOGIN",
@@ -196,7 +196,7 @@ describe("adoptionEvents — session tracking", () => {
     expect(sessionId2).toBe(sessionId3);
 
     // Verify both events used the same sessionId
-    const calls = (global.fetch as any).mock.calls;
+    const calls = (globalThis.fetch as any).mock.calls;
     const body1 = JSON.parse(calls[0][1].body);
     const body2 = JSON.parse(calls[1][1].body);
     expect(body1.sessionId).toBe(body2.sessionId);
@@ -232,7 +232,7 @@ describe("adoptionEvents — login-only session exclusion", () => {
       role: "QUALITY_GATE_VALIDATOR",
     });
 
-    const callArgs = (global.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(callArgs[1].body);
 
     expect(meaningfulActions).not.toContain(body.action);

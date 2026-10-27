@@ -1,7 +1,7 @@
 import "../i18n";
 import { render, screen, act, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SequenceBuilderPage } from "./SequenceBuilderPage";
 import type { OptimizeResponse } from "../types/optimizer";
 import type { SequencePublishResponse } from "../types/sequence";

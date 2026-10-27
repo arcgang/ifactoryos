@@ -393,16 +393,17 @@ describe("Gate Command — Certify button state", () => {
     vi.spyOn(api, "listGateResults").mockResolvedValue(
       makeListResponse(ALL_PASS_RESULTS),
     );
-    vi.spyOn(api, "certifyVehicle").mockResolvedValue({
-      certificateId: "cert-001",
-      fabricTxHash: "0xabc123",
-      vin: "WBY73CF080NCH14427",
-      issuedAt: "2026-10-13T14:10:00Z",
-      validatorId: "user-001",
-      healthScore: { overall: "pass", perGate: { dimensional: "pass", leak: "pass", electrical: "pass", nvh: "pass", adas: "pass" } },
-      gateResultsSnapshot: ALL_PASS_RESULTS,
+    vi.spyOn(api, "issueCertificate").mockResolvedValue({
+      response: {
+        certificateId: "cert-001",
+        vin: "WBY73CF080NCH14427",
+        fabricTransactionId: "0xabc123",
+        fabricBlockNumber: 42,
+        anchoredAt: "2026-10-13T14:10:05Z",
+        certificateHash: "abc123hash",
+      },
+      status: 201,
     });
-    vi.spyOn(adoption, "emitAdoptionEvent").mockResolvedValue(undefined);
 
     renderPage();
 
@@ -413,11 +414,11 @@ describe("Gate Command — Certify button state", () => {
     fireEvent.click(screen.getByTestId("certify-button"));
 
     await waitFor(() =>
-      expect(screen.getByTestId("certificate-panel")).toBeTruthy(),
+      expect(screen.getByTestId("certificate-detail-card")).toBeTruthy(),
     );
 
-    expect(screen.getByTestId("cert-vin").textContent).toBe("WBY73CF080NCH14427");
-    expect(screen.getByTestId("cert-fabric-hash").textContent).toContain("0xabc123");
+    expect(screen.getByTestId("cert-detail-vin").textContent).toBe("WBY73CF080NCH14427");
+    expect(screen.getByTestId("cert-detail-fabric-tx-id").textContent).toContain("0xabc123");
   });
 });
 
@@ -462,18 +463,20 @@ describe("Gate Command — adoption events", () => {
     vi.spyOn(api, "listGateResults").mockResolvedValue(
       makeListResponse([]),
     );
-    const emitSpy = vi.spyOn(adoption, "emitAdoptionEvent").mockResolvedValue(undefined);
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     renderPage();
 
     await waitFor(() =>
-      expect(emitSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: "GATE_COMMAND_OPEN",
-          role: "QUALITY_GATE_VALIDATOR",
-          vin: "WBY73CF080NCH14427",
-        }),
-      ),
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([evt]) =>
+            evt instanceof CustomEvent &&
+            evt.type === "ifos:adoption" &&
+            (evt as CustomEvent<{ action: string; vin: string }>).detail.action === "GATE_COMMAND_OPEN" &&
+            (evt as CustomEvent<{ action: string; vin: string }>).detail.vin === "WBY73CF080NCH14427",
+        ),
+      ).toBe(true),
     );
   });
 
@@ -481,16 +484,18 @@ describe("Gate Command — adoption events", () => {
     vi.spyOn(api, "listGateResults").mockResolvedValue(
       makeListResponse(ALL_PASS_RESULTS),
     );
-    vi.spyOn(api, "certifyVehicle").mockResolvedValue({
-      certificateId: "cert-002",
-      fabricTxHash: "0xdeadbeef",
-      vin: "WBY73CF080NCH14427",
-      issuedAt: "2026-10-13T14:10:00Z",
-      validatorId: "user-002",
-      healthScore: { overall: "pass", perGate: { dimensional: "pass", leak: "pass", electrical: "pass", nvh: "pass", adas: "pass" } },
-      gateResultsSnapshot: ALL_PASS_RESULTS,
+    vi.spyOn(api, "issueCertificate").mockResolvedValue({
+      response: {
+        certificateId: "cert-002",
+        vin: "WBY73CF080NCH14427",
+        fabricTransactionId: "0xdeadbeef",
+        fabricBlockNumber: 7,
+        anchoredAt: "2026-10-13T14:10:05Z",
+        certificateHash: "deadbeefhash",
+      },
+      status: 201,
     });
-    const emitSpy = vi.spyOn(adoption, "emitAdoptionEvent").mockResolvedValue(undefined);
+    const emitSpy = vi.spyOn(adoptionEvents, "emitCertify");
 
     renderPage();
 
@@ -503,7 +508,6 @@ describe("Gate Command — adoption events", () => {
     await waitFor(() =>
       expect(emitSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: "CERTIFY",
           role: "QUALITY_GATE_VALIDATOR",
           vin: "WBY73CF080NCH14427",
           fabricTxHash: "0xdeadbeef",
@@ -813,7 +817,7 @@ describe("GateCompletenessCard — timeout countdown", () => {
     );
 
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("Gate station timeout");
+    expect(alert.textContent).toContain("Incomplete Gate Results — Timeout");
   });
 
   it("polling stops after timeout (fetch count does not increase after timeout)", async () => {

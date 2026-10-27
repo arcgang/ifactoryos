@@ -154,7 +154,7 @@ describe("ClusterAlertPanel", () => {
       expect(screen.getByTestId(`alert-row-${alert.alert_id}`)).toBeDefined(),
     );
     // Truncated cluster id and root cause visible
-    expect(screen.getByText(/aaaaaaaa/)).toBeDefined();
+    expect(screen.getByText(/cccccccc/)).toBeDefined();
     expect(screen.getByText(/E-coat voltage drop at stage 6/)).toBeDefined();
   });
 

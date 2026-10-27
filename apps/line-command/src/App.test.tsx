@@ -46,7 +46,7 @@ function renderApp() {
 /** Flush the initial useEffect tick (sets loading=false) inside act. */
 async function flushEffects() {
   await act(async () => {
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
   });
 }
 

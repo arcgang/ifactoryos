@@ -143,7 +143,7 @@ describe("OEE tiles", () => {
     });
 
     const regions = screen.getAllByRole("region");
-    expect(regions.length).toBe(4);
+    expect(regions.length).toBe(5);
   });
 
   it("each OEE tile shows the lineId", async () => {

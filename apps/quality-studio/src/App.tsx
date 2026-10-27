@@ -189,7 +189,7 @@ function QualityStudioShell() {
               type="button"
               onClick={() => navigate({ page: "gateCommand" })}
               data-testid="nav-gate-command"
-              aria-current={route.page === "gateCommand" ? "page" : undefined}
+              aria-current={(route as Route).page === "gateCommand" ? "page" : undefined}
             >
               {t("nav.gateCommand")}
             </button>
@@ -203,7 +203,7 @@ function QualityStudioShell() {
                   certificateId: "00000000-0000-0000-0000-000000000001",
                 })
               }
-              aria-current={route.page === "certificateStudio" ? "page" : undefined}
+              aria-current={(route as Route).page === "certificateStudio" ? "page" : undefined}
               data-testid="nav-certificate-studio"
             >
               {t("nav.certificateStudio")}

@@ -976,7 +976,7 @@ describe("Gate Command — instrumentation adoption events", () => {
       vin: "WBY73CF080NCH14427",
       issuedAt: "2026-10-13T09:31:16.000Z",
       validatorId: "kb-entra-001",
-      healthScore: { overall: "pass", perGate: {} },
+      healthScore: { overall: "pass", perGate: { dimensional: "pass", leak: "pass", electrical: "pass", nvh: "pass", adas: "pass" } },
       gateResultsSnapshot: [],
     });
     const emitSpy = vi.spyOn(adoptionEvents, "emitCertify").mockResolvedValue(undefined);
@@ -1016,7 +1016,7 @@ describe("Gate Command — instrumentation adoption events", () => {
       vin: "WBY73CF080NCH14427",
       issuedAt: "2026-10-13T09:31:16.000Z",
       validatorId: "kb-entra-001",
-      healthScore: { overall: "pass", perGate: {} },
+      healthScore: { overall: "pass", perGate: { dimensional: "pass", leak: "pass", electrical: "pass", nvh: "pass", adas: "pass" } },
       gateResultsSnapshot: [],
     });
     const emitSpy = vi.spyOn(adoptionEvents, "emitCertificateStudioOpen").mockResolvedValue(undefined);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getAllVinThreadEvents } from "../services/api";
-import type { ThreadEvent, VinThreadResponse } from "../types/digitalThread";
+import type { ThreadEvent, VinThreadResponse } from "../types/processReplay";
 
 interface Props {
   vin: string;
